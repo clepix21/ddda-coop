@@ -112,6 +112,37 @@ bool make_roam_save(std::vector<uint8_t> &out)
 
 } // namespace
 
+// Shared world (shared_world=1), guest: the host's save as this guest's own world: its own character
+// is the Arisen (taken from the pawn holding it, whose place the host's Arisen takes; or put over the
+// host's Arisen when the host has not merged it yet), with its own bag.
+bool roam_world_from_host(const std::vector<uint8_t> &host, std::vector<uint8_t> &out)
+{
+    std::string xml, own_char, bag;
+    uint32_t head[8];
+    if (!save_unpack(host, xml, head) || !storage_guest_character(own_char))
+        return false;
+    std::string name = save_character_name(own_char);
+    int pawn = -1;
+    for (int p = 0; p < kPawns && pawn < 0; ++p) {
+        std::string ch;
+        if (save_character(xml, p, ch) && save_character_name(ch) == name)
+            pawn = p;
+    }
+    bool swapped = pawn >= 0 && save_swap_arisen_pawn(xml, pawn);
+    if (!swapped && !save_put_arisen_everywhere(xml, own_char))
+        return false;
+    std::vector<uint8_t> own;
+    std::string own_xml;
+    uint32_t own_head[8];
+    if (storage_guest_own_save(own) && save_unpack(own, own_xml, own_head) && save_bag(own_xml, 0, bag))
+        save_put_bag_everywhere(xml, 0, bag);
+    if (!save_pack(xml, head, out))
+        return false;
+    logf("roam: shared world: %s is this guest's Arisen%s", name.c_str(),
+         swapped ? " (the host's Arisen on its pawn)" : " (the host has not merged it yet)");
+    return true;
+}
+
 bool net_guest_roaming() { return g_roaming != 0; }
 bool roam_busy() { return g_step != ATTACHED && g_step != ROAMING; }
 

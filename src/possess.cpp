@@ -216,6 +216,7 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
         g_arisen_tick = GetTickCount();
         net_capture(ch, 0);
         enemies_run_queued(ch);
+        exp_sync_apply(); // shared world: the exp other players earned
     } else if (pawn >= 0) {
         g_pawn[pawn] = ch;
         g_pawn_tick[pawn] = GetTickCount();
@@ -230,11 +231,18 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
         }
     // set by net_start (late with net_late=1: walks first); a guest exploring on its own (roam.cpp)
     // plays its own Arisen with its own controller
-    bool guest = net_role() == NET_GUEST && !net_guest_roaming();
+    bool guest = net_role() == NET_GUEST && !net_guest_roaming() && !net_shared();
+    // shared world: a pawn that shows another player is that player's puppet; back to its AI after
+    bool puppet = pawn >= 0 && net_puppet(1 + pawn);
+    static uintptr_t puppet_forced[kPawns] = {};
+    if (pawn >= 0 && !puppet && puppet_forced[pawn] == ch) {
+        game::at<uint8_t>(ch + game::kCmd, game::kCmdMode) = 0;
+        puppet_forced[pawn] = 0;
+    }
     int who = 0;
     if (vt == game::kVtPlayer)
         who = ARISEN; // other players never drive the Arisen, possessed or not
-    else if (pawn >= 0 && (guest || g_ctl[pawn].on))
+    else if (pawn >= 0 && (guest || puppet || g_ctl[pawn].on))
         who = PAWN_BASE + pawn; // on the guest, the whole party are puppets of the host
     if (!who)
         return 0;
@@ -246,12 +254,14 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
         return 0;
     memcpy(copy, reinterpret_cast<const void *>(in), kInputSize);
     keep_idle(copy);
-    if (guest) { // puppets: no local input at all, no AI
+    if (guest || (puppet && who != ARISEN)) { // puppets: no local input at all, no AI
         for (int i = 0; i < 4; ++i)
             if (i != g_idle)
                 hide_slot(copy, i);
         if (who != ARISEN)
             game::at<uint8_t>(ch + game::kCmd, game::kCmdMode) = 1;
+        if (puppet)
+            puppet_forced[pawn] = ch;
         *out_copy = copy;
         input_redirect_set(reinterpret_cast<uintptr_t>(copy), true);
         return who;

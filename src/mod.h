@@ -59,6 +59,15 @@ void progress_after_write();                              // not a guest: the ga
 void roam_tick();          // guest, net thread
 bool roam_busy();          // leaving or coming back
 bool net_guest_roaming();  // the guest plays its own Arisen, no host sync
+bool net_shared();         // net.cpp: shared_world=1, every player its own character in its own world copy
+bool net_puppet(int i);    // shared world: local party index i shows another player in this area
+bool roam_world_from_host(const std::vector<uint8_t> &host, std::vector<uint8_t> &out); // roam.cpp
+bool net_shared_in_host_area(); // shared world, guest: in the host's area now
+// exp_sync.cpp: shared world, one exp for all players
+bool exp_sync_install();
+long long exp_sync_total();                 // exp this world gave its Arisen
+void exp_sync_seen(int slot, long long total); // another player's total (net thread)
+void exp_sync_apply();                      // game thread: give what the others earned
 int net_guest_my_pawn();   // net.cpp: the pawn the host gave this guest, -1 = none
 void save_guard_poll();
 bool save_guard_active();

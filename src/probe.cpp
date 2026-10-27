@@ -34,7 +34,7 @@ void __fastcall hk_finalize(uintptr_t ch)
         enemies_on_finalize(ch);
         return;
     }
-    if (net_role() != NET_GUEST)
+    if (net_role() != NET_GUEST && !net_shared())
         return;
     int idx = party_index(ch);
     if (idx >= 0) {
@@ -92,9 +92,9 @@ void __fastcall hk_update(uintptr_t ch)
     g_orig(ch);
     if (who)
         possess_post(who, copy);
-    if (who && net_role() == NET_GUEST)
+    if (who && (net_role() == NET_GUEST || net_shared()))
         net_apply_snapshot(ch, possess_party_index(who));
-    if (net_role() == NET_HOST) {
+    if (net_role() == NET_HOST || net_shared()) {
         int idx = party_index(ch);
         if (idx >= 0)
             net_host_record(ch, idx);

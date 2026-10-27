@@ -53,6 +53,7 @@ static DWORD WINAPI pad_thread(LPVOID)
     if (!cfg_block_saves())
         logf("save-guard: off (saves work normally)");
     probe_install();
+    exp_sync_install();
     enemies_install();
     stages_install();
     talk_install();

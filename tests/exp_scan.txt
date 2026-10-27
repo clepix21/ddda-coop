@@ -1,0 +1,4 @@
+# Exp search (single copy, guild save: the Arisen's exp is 9207312, its main pawn's 9207312 too).
+wait 3000
+uscan arisen 9207312
+wait 2000

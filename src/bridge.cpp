@@ -155,6 +155,53 @@ void run_line(const char *line)
                 watch_start(p + off, long(count), 0, true); // HP: damage only
         }
         _snprintf(g_current, sizeof g_current, "watchp %s +%X +%X", who, poff, off);
+    } else if (strncmp(line, "uscan ", 6) == 0) {
+        // uscan <arisen|pawn> <u32>: where is this integer (the exp), in the object or up to two
+        // pointers away? Logs each address and its path.
+        char who[16] = {};
+        unsigned v = 0;
+        uintptr_t obj = 0;
+        if (sscanf(line + 6, "%15s %u", who, &v) == 2)
+            obj = strcmp(who, "pawn") == 0 ? possess_main_pawn() : possess_arisen();
+        int hits = 0;
+        auto ok = [](uintptr_t p) { return p >= 0x10000 && !(p & 3) && mem_readable((void *)p, 0x1000); };
+        for (uintptr_t o = 0; obj && o < 0x7000 && hits < 40 && mem_readable((void *)(obj + o), 4); o += 4) {
+            if (game::at<uint32_t>(obj, o) == v && ++hits)
+                logf("bridge: uscan %s +0x%X (%p)", who, unsigned(o), (void *)(obj + o));
+            uintptr_t p = game::at<uintptr_t>(obj, o);
+            if (!ok(p))
+                continue;
+            for (uintptr_t q = 0; q < 0x1000 && hits < 40; q += 4) {
+                if (game::at<uint32_t>(p, q) == v && ++hits)
+                    logf("bridge: uscan %s [+0x%X]+0x%X (%p)", who, unsigned(o), unsigned(q), (void *)(p + q));
+                uintptr_t r = game::at<uintptr_t>(p, q);
+                if (r == obj || !ok(r))
+                    continue;
+                for (uintptr_t w = 0; w < 0x1000 && hits < 40; w += 4)
+                    if (game::at<uint32_t>(r, w) == v && ++hits)
+                        logf("bridge: uscan %s [[+0x%X]+0x%X]+0x%X (%p)", who, unsigned(o), unsigned(q), unsigned(w),
+                             (void *)(r + w));
+            }
+        }
+        _snprintf(g_current, sizeof g_current, "uscan %s (%d hits)", who, hits);
+    } else if (strncmp(line, "watchpa ", 8) == 0) { // watchpa <arisen|pawn> <pointer offset> <field offset> <count>: every change
+        char who[16] = {};
+        unsigned poff = 0, off = 0, count = 20;
+        if (sscanf(line + 8, "%15s %x %x %u", who, &poff, &off, &count) >= 3) {
+            uintptr_t ch = strcmp(who, "pawn") == 0 ? possess_main_pawn() : possess_arisen();
+            uintptr_t p = ch ? game::at<uintptr_t>(ch, poff) : 0;
+            logf("bridge: watchpa %s [+%X] = %p, field +%X = %u", who, poff, (void *)p, off, p ? game::at<uint32_t>(p, off) : 0);
+            if (p)
+                watch_start(p + off, long(count), 0);
+        }
+        _snprintf(g_current, sizeof g_current, "watchpa %s +%X +%X", who, poff, off);
+    } else if (strncmp(line, "watcha ", 7) == 0) { // watcha <address hex> <count>: every change there
+        unsigned addr = 0, count = 20;
+        if (sscanf(line + 7, "%x %u", &addr, &count) >= 1 && mem_readable((void *)uintptr_t(addr), 4)) {
+            logf("bridge: watcha %08X = %u", addr, game::at<uint32_t>(addr, 0));
+            watch_start(addr, long(count), 0);
+        }
+        _snprintf(g_current, sizeof g_current, "watcha %08X", addr);
     } else if (strncmp(line, "camscan", 7) == 0) { // where does the camera point at the Arisen?
         uintptr_t holder = game::at<uintptr_t>(0, 0x018D0B6C), ar = possess_arisen();
         uintptr_t cam = holder ? game::at<uintptr_t>(holder, 0x34) : 0;

@@ -29,6 +29,13 @@
 //  - host -> guest, every 500 ms until acked: PROGRESS = what that guest's character gained in the
 //    host's world (progress.cpp: exp, discipline, items, per load), in 1 KB pieces with a CRC32;
 //    guest -> host: PROGRESS_ACK = the CRC it got (it keeps the gains in coop_progress\pending.txt).
+// Shared world (coop.ini shared_world=1): every player plays its own character in its own copy of
+// the host's world (a guest loads the host's save with its own character as the Arisen, roam.cpp).
+//  - guest -> host, ~60 Hz: PSTATE = its Arisen's state and its area;
+//  - the host puts each guest's state on the pawn holding that guest's character, and its SNAP
+//    relays every player's state with the area each one is in (stage_of); each game moves the pawn
+//    that shows another player like a puppet (commands, position, facing, HP) while that player is
+//    in the same area, and runs its own AI pawns. Enemies of the host's area stay the host's.
 //  - host -> guest, ~30 pages/s: ENEMIES = every live enemy (enemies.cpp) as class name hash, spawn
 //    point (where the host first saw it), position, quaternion, facing and HP ([[em+0x1D18]]+8/+0xC),
 //    up to 20 per page. The guest pairs each of its own enemies with the host's one of the same class
@@ -52,7 +59,7 @@ void guest_talk_mirror(DWORD now); // below: the guest mirrors the host's pad du
 namespace {
 
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
-                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8 };
+                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9 };
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 // A big correction must move every copy the movement code keeps, or the next collision pass pulls
@@ -112,6 +119,15 @@ struct SnapMsg {
     StageState stage;
     int8_t my_pawn;       // the pawn (mCmcId) this guest drives, -1 = none yet
     uint32_t char_crc;    // CRC32 of this guest's character the host has complete (0 = none)
+    int32_t stage_of[kParty]; // shared world: the area each entry's player is in (the host's layout)
+    int64_t exp_total[4];     // shared world: exp each player's world gave (0 = host, 1 + guest place)
+    int8_t my_slot;           // this guest's place in exp_total
+};
+struct PStateMsg { // shared world, guest -> host: its own Arisen
+    Header h;
+    CharState me;
+    int32_t stage;
+    int64_t exp_total; // exp_sync.cpp
 };
 struct EnemyState {
     uint8_t slot;     // the host's enemy table slot (enemies.cpp)
@@ -191,9 +207,21 @@ struct Peer {
     // host: the progress record this guest acknowledged, and when to send the latest again
     uint32_t prog_acked;
     DWORD prog_next;
+    // host, shared world: this guest's latest own state and area, and its exp total
+    CharState pstate;
+    int32_t pstage;
+    DWORD pstate_tick;
+    int64_t exp_total;
 };
 Peer g_peers[kMaxPeers] = {};
 int g_pawn_order[kPawns] = {1, 2, 0};
+
+// Shared world: the other players' characters, by LOCAL party index (0 = Arisen, 1 + mCmcId), the
+// press/release bits not applied yet and when each was set (g_cap_lock; game threads read them).
+bool g_shared = false;
+CharState g_rp[kParty] = {};
+uint32_t g_rp_press[kParty] = {}, g_rp_release[kParty] = {};
+DWORD g_rp_tick[kParty] = {};
 
 // host: presses/releases seen since the last send, per party member
 volatile LONG g_acc_press[kParty] = {}, g_acc_release[kParty] = {};
@@ -214,6 +242,146 @@ const char *peer_name(const Peer &p, char *buf, size_t cap)
         _snprintf(buf, cap, "%s:%u", ip, ntohs(p.addr.sin_port));
     }
     return buf;
+}
+
+// Host: each party member's state, copied on the game thread (net_capture) right before its own
+// update: the net thread never reads a character the game may be freeing (a reload freed one under
+// it on 2026-10-27: crash in enemies_hp).
+CRITICAL_SECTION g_cap_lock;
+CharState g_cap[kParty] = {};
+DWORD g_cap_tick[kParty] = {};
+
+// ---- shared world ----
+
+} // namespace
+void guest_world(uintptr_t gm, const StageState &h); // below
+namespace {
+
+// This game's current area (stage number), -1 outside a stage.
+int32_t my_stage()
+{
+    uintptr_t gm = game::at<uintptr_t>(game::kGameMain, 0);
+    return gm && current_stage_area() ? game::at<int32_t>(gm, 0x34) : -1;
+}
+
+// Another player's state for local party index i (shown when that player is in this area).
+void shared_take(int i, const CharState &c, bool here)
+{
+    if (i < 1 || i >= kParty)
+        return;
+    uint32_t p, r;
+    memcpy(&p, c.cmd + (0x2C - kCmdCopyFrom), 4);
+    memcpy(&r, c.cmd + (0x34 - kCmdCopyFrom), 4);
+    EnterCriticalSection(&g_cap_lock);
+    g_rp[i] = c;
+    g_rp[i].valid = c.valid && here;
+    if (g_rp[i].valid) {
+        g_rp_press[i] |= p;
+        g_rp_release[i] |= r;
+        g_rp_tick[i] = GetTickCount() | 1;
+    }
+    LeaveCriticalSection(&g_cap_lock);
+}
+
+// Guest: the host's SNAP in this guest's layout. Its own character is the local Arisen, the host's
+// Arisen is on the pawn the host gave this guest, the other guests on their own pawns.
+void shared_from_snap(const SnapMsg &m)
+{
+    int me = m.my_pawn;
+    int32_t here = my_stage();
+    if (me < 0 || me >= kPawns)
+        return;
+    for (int i = 0; i < kParty; ++i) {
+        if (i == 1 + me)
+            continue; // this guest itself
+        int local = i == 0 ? 1 + me : i;
+        if (m.ch[i].valid)
+            shared_take(local, m.ch[i], here >= 0 && m.stage_of[i] == here);
+    }
+}
+
+} // namespace
+bool net_shared_in_host_area();
+namespace {
+bool shared_in_host_area() { return net_shared_in_host_area(); }
+} // namespace
+bool net_shared_in_host_area()
+{
+    if (!g_have_snap)
+        return false;
+    EnterCriticalSection(&g_snap_lock);
+    int32_t hs = g_snap.stage.stage;
+    LeaveCriticalSection(&g_snap_lock);
+    return hs >= 0 && hs == my_stage();
+}
+namespace {
+
+// Game thread, after UpdateCommands of a pawn showing another player: that player's commands.
+void shared_apply_commands(uintptr_t ch, int i)
+{
+    if (!net_puppet(i))
+        return;
+    EnterCriticalSection(&g_cap_lock);
+    CharState s = g_rp[i];
+    uint32_t press = g_rp_press[i], release = g_rp_release[i];
+    g_rp_press[i] = g_rp_release[i] = 0;
+    LeaveCriticalSection(&g_cap_lock);
+    uintptr_t cmd = ch + game::kCmd;
+    memcpy(reinterpret_cast<void *>(cmd + kCmdCopyFrom), s.cmd, kCmdCopyLen);
+    memcpy(reinterpret_cast<void *>(cmd + kCmdExtraFrom), s.cmd_extra, kCmdExtraLen);
+    game::at<uint32_t>(cmd, 0x2C) = press;
+    game::at<uint32_t>(cmd, 0x34) = release;
+}
+
+// Game thread, after the transform finalize of such a pawn: that player's place, facing and HP.
+// The guest's own Arisen: the host's time of day (one world clock).
+void shared_apply_transform(uintptr_t ch, int i)
+{
+    if (i == 0) { // its own character: where it is, every 5 s (tests)
+        static DWORD next_where = 0;
+        if (!next_where || int(GetTickCount() - next_where) >= 0) {
+            next_where = (GetTickCount() + 5000) | 1;
+            logf("net: shared: me at (%.0f, %.0f), stage %d", game::at<float>(ch, 0x40), game::at<float>(ch, 0x48), my_stage());
+        }
+    }
+    if (i == 0 && g_role == NET_GUEST && g_have_snap) {
+        uintptr_t gm = game::at<uintptr_t>(game::kGameMain, 0);
+        EnterCriticalSection(&g_snap_lock);
+        StageState h = g_snap.stage;
+        LeaveCriticalSection(&g_snap_lock);
+        if (gm && current_stage_area())
+            guest_world(gm, h);
+        return;
+    }
+    if (!net_puppet(i))
+        return;
+    EnterCriticalSection(&g_cap_lock);
+    CharState s = g_rp[i];
+    LeaveCriticalSection(&g_cap_lock);
+    float *pos = reinterpret_cast<float *>(ch + 0x40);
+    float dx = s.pos[0] - pos[0], dy = s.pos[1] - pos[1], dz = s.pos[2] - pos[2];
+    float err = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (err > 50.f) {
+        memcpy(pos, s.pos, sizeof s.pos);
+        for (uintptr_t off : kPosCopies)
+            memcpy(reinterpret_cast<void *>(ch + off), s.pos, 12);
+    } else {
+        pos[0] += dx * 0.2f;
+        pos[1] += dy * 0.2f;
+        pos[2] += dz * 0.2f;
+    }
+    game::at<float>(ch, kYawA) = s.yaw;
+    game::at<float>(ch, kYawB) = s.yaw;
+    game::at<float>(ch, kYawC) = s.yaw;
+    memcpy(reinterpret_cast<void *>(ch + 0x50), s.rot, sizeof s.rot);
+    if (s.hp_max > 0.f)
+        if (float *hp = enemies_hp(ch))
+            hp[0] = s.hp;
+    static DWORD next_log[kParty] = {};
+    if (!next_log[i] || int(GetTickCount() - next_log[i]) >= 0) {
+        next_log[i] = GetTickCount() + 1000;
+        logf("net: shared: party %d shows another player, error %.1f u before correction, HP %.1f", i, err, s.hp);
+    }
 }
 
 // The host's save for the guest (milestone 6). Net thread only.
@@ -270,12 +438,6 @@ uint32_t class_hash(const char *name)
     return h;
 }
 
-// Host: each party member's state, copied on the game thread (net_capture) right before its own
-// update: the net thread never reads a character the game may be freeing (a reload freed one under
-// it on 2026-10-27: crash in enemies_hp).
-CRITICAL_SECTION g_cap_lock;
-CharState g_cap[kParty] = {};
-DWORD g_cap_tick[kParty] = {};
 
 void capture_state(uintptr_t ch, CharState &s)
 {
@@ -490,7 +652,8 @@ void receive_all()
             char name[64];
             logf("net: guest connected from %s (guest %d, pad slot %d, pawn %d%s)", peer_name(p, name, sizeof name), k + 1,
                  k + 1, pawn, pawn == 0 ? ", the main pawn" : "");
-            possess_pawn(pawn, true, k + 1, k);
+            if (!g_shared)
+                possess_pawn(pawn, true, k + 1, k);
         }
         if (k < 0)
             continue;
@@ -502,6 +665,8 @@ void receive_all()
         ++g_rx;
         peer.last_rx = GetTickCount() | 1;
         if (g_role == NET_HOST && h->type == MSG_INPUT && n == sizeof(InputMsg)) {
+            if (g_shared)
+                continue; // each guest moves its own character (PSTATE)
             auto m = reinterpret_cast<const InputMsg *>(buf);
             // The right stick and R3 drive the guest's own camera on the guest PC; on the host they
             // would turn the host's camera (camera code reads every pad), so they are dropped here,
@@ -551,6 +716,16 @@ void receive_all()
                 if (peer.pawn >= 0)
                     storage_set_party_character(peer.pawn, peer.char_data);
             }
+        } else if (g_role == NET_HOST && h->type == MSG_PSTATE && n == int(sizeof(PStateMsg))) {
+            auto m = reinterpret_cast<const PStateMsg *>(buf);
+            peer.pstate = m->me;
+            peer.pstage = m->stage;
+            peer.pstate_tick = GetTickCount() | 1;
+            peer.exp_total = m->exp_total;
+            if (g_shared)
+                exp_sync_seen(1 + k, m->exp_total);
+            if (g_shared && peer.pawn >= 0)
+                shared_take(1 + peer.pawn, m->me, m->stage == my_stage());
         } else if (g_role == NET_HOST && h->type == MSG_PROGRESS_ACK && n == int(sizeof(ProgressAckMsg))) {
             peer.prog_acked = reinterpret_cast<const ProgressAckMsg *>(buf)->crc;
         } else if (g_role == NET_GUEST && h->type == MSG_PROGRESS && n >= int(sizeof(Header) + 12)) {
@@ -637,6 +812,12 @@ void receive_all()
             LeaveCriticalSection(&g_enemy_lock);
         } else if (g_role == NET_GUEST && h->type == MSG_SNAP && n == sizeof(SnapMsg)) {
             auto m = reinterpret_cast<const SnapMsg *>(buf);
+            if (g_shared) {
+                shared_from_snap(*m);
+                for (int s = 0; s < 4; ++s)
+                    if (s != m->my_slot)
+                        exp_sync_seen(s, m->exp_total[s]);
+            }
             EnterCriticalSection(&g_snap_lock);
             g_snap = *m;
             g_have_snap = true;
@@ -889,11 +1070,21 @@ DWORD WINAPI net_thread(LPVOID)
                 next_send = now + 16;
                 guest_save_need(now);
                 guest_char_send(now);
-                roam_tick(); // free roam: leave the host's party and come back (roam.cpp)
-                bool roam = net_guest_roaming() || roam_busy();
+                if (g_shared) { // its own character, for the host and the other players
+                    PStateMsg ps = {};
+                    ps.h = {kMagic, MSG_PSTATE, ++g_seq};
+                    read_state(0, ps.me);
+                    ps.stage = my_stage();
+                    ps.exp_total = exp_sync_total();
+                    send_raw(&ps, sizeof ps);
+                } else {
+                    roam_tick(); // free roam: leave the host's party and come back (roam.cpp)
+                }
+                bool roam = net_guest_roaming() || roam_busy() || g_shared;
                 if (!roam)
                     guest_talk_mirror(now);
-                if (g_have_snap && !roam) {
+                if (g_have_snap && (!roam || g_shared)) { // shared: a guest still reloads when the host's
+                                                          // world gets new players' characters
                     EnterCriticalSection(&g_snap_lock);
                     uint32_t host_sig = g_snap.stage.party_sig;
                     LeaveCriticalSection(&g_snap_lock);
@@ -905,7 +1096,24 @@ DWORD WINAPI net_thread(LPVOID)
                 for (int i = 0; i < kParty; ++i)
                     read_state(i, m.ch[i]);
                 read_stage(m.stage);
+                for (int i = 0; i < kParty; ++i)
+                    m.stage_of[i] = m.stage.stage;
+                if (g_shared) { // every player's own state; AI pawns: each world runs its own
+                    for (int i = 1; i < kParty; ++i)
+                        m.ch[i].valid = 0;
+                    for (Peer &p : g_peers)
+                        if (p.used && p.pawn >= 0 && p.pstate_tick && now - p.pstate_tick < 500) {
+                            m.ch[1 + p.pawn] = p.pstate;
+                            m.stage_of[1 + p.pawn] = p.pstage;
+                            memset(p.pstate.cmd + (0x2C - kCmdCopyFrom), 0, 4); // a press is relayed once
+                            memset(p.pstate.cmd + (0x34 - kCmdCopyFrom), 0, 4);
+                        }
+                }
+                m.exp_total[0] = exp_sync_total();
+                for (int k = 0; k < kMaxPeers; ++k)
+                    m.exp_total[1 + k] = g_peers[k].used ? g_peers[k].exp_total : 0;
                 for (const Peer &peer : g_peers) { // each guest is told which pawn is its own
+                    m.my_slot = int8_t(1 + (&peer - g_peers));
                     m.my_pawn = int8_t(peer.pawn);
                     m.char_crc = peer.char_crc;
                     send_to(peer, &m, sizeof m);
@@ -951,7 +1159,7 @@ DWORD WINAPI net_thread(LPVOID)
 // Host, game thread (possess_pre, before the character's own update): copy its state for the SNAP.
 void net_capture(uintptr_t ch, int i)
 {
-    if (g_role != NET_HOST || i < 0 || i >= kParty)
+    if (!(g_role == NET_HOST || (g_shared && i == 0)) || i < 0 || i >= kParty)
         return;
     CharState s = {};
     capture_state(ch, s);
@@ -974,6 +1182,9 @@ uintptr_t current_stage_area()
 void net_start(NetRole role, const char *peer, int port)
 {
     InitializeCriticalSection(&g_cap_lock); // before g_role: net_capture runs once the role is set
+    g_shared = early_flag("shared_world");
+    if (g_shared)
+        logf("net: shared world: every player plays its own character in its own copy of the host's world");
     MemoryBarrier();
     g_role = role;
     for (Peer &p : g_peers)
@@ -1041,7 +1252,7 @@ uintptr_t net_host_guest_camera_holder(int k)
 // Host: called after each character's UpdateCommands; remembers presses/releases until sent.
 void net_host_record(uintptr_t ch, int i)
 {
-    if (g_role != NET_HOST || i < 0 || i >= kParty)
+    if (!(g_role == NET_HOST || (g_shared && i == 0)) || i < 0 || i >= kParty)
         return;
     uintptr_t cmd = ch + game::kCmd;
     if (uint32_t p = game::at<uint32_t>(cmd, 0x2C))
@@ -1096,7 +1307,7 @@ bool plain_stage(int32_t n) { return n >= 100 && n < 999; }
 // 10 s anyway, it jumps to the host's stage and entry point.
 void net_guest_stage()
 {
-    if (g_role != NET_GUEST || !g_have_snap || net_guest_roaming() || roam_busy())
+    if (g_role != NET_GUEST || !g_have_snap || net_guest_roaming() || roam_busy() || g_shared)
         return;
     EnterCriticalSection(&g_snap_lock);
     StageState h = g_snap.stage;
@@ -1278,6 +1489,10 @@ const char *party_label(int i, int my_pawn)
 
 void net_apply_snapshot(uintptr_t ch, int i)
 {
+    if (g_shared) {
+        shared_apply_commands(ch, i);
+        return;
+    }
     if (g_role != NET_GUEST || !g_have_snap || i < 0 || i >= kParty || net_guest_roaming())
         return;
     bool is_arisen = i == 0;
@@ -1311,6 +1526,10 @@ void net_apply_snapshot(uintptr_t ch, int i)
 // engine and that function, is what makes the puppet face and stand where the host says.
 void net_apply_transform(uintptr_t ch, int i)
 {
+    if (g_shared) {
+        shared_apply_transform(ch, i);
+        return;
+    }
     if (g_role != NET_GUEST || !g_have_snap || i < 0 || i >= kParty || net_guest_roaming())
         return;
     EnterCriticalSection(&g_snap_lock);
@@ -1359,7 +1578,7 @@ void net_guest_camera()
     static int enabled = -1; // read coop.ini once
     if (enabled < 0)
         enabled = early_flag("guest_cam_pawn") ? 1 : 0;
-    if (g_role != NET_GUEST || !enabled || net_guest_roaming())
+    if (g_role != NET_GUEST || !enabled || net_guest_roaming() || g_shared)
         return;
     static uintptr_t followed = 0; // the pawn the camera was moved to (0 = the Arisen's)
     uintptr_t arisen = possess_arisen(), gm = game::at<uintptr_t>(game::kGameMain, 0);
@@ -1415,6 +1634,8 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     uintptr_t pending_death = 0;
     if (!g_enemy_ready || g_role == NET_OFF || i < 0 || i >= kEnemySlots || net_guest_roaming())
         return 0;
+    if (g_shared && g_role == NET_GUEST && !shared_in_host_area())
+        return 0; // elsewhere: this guest's own enemies
     uintptr_t em = slot.ptr;
     DWORD now = GetTickCount();
     if (!slot.settled) // no spawn point to pair on yet
@@ -1615,9 +1836,9 @@ bool enemy_net_block_damage(uintptr_t ch)
         return false;
     bool block = false;
     EnterCriticalSection(&g_enemy_lock);
-    bool party = ch == possess_arisen();
+    bool party = !g_shared && ch == possess_arisen(); // shared world: its own character takes its hits
     for (int p = 0; p < kPawns; ++p)
-        party |= ch == possess_pawn_ptr(p);
+        party |= ch == possess_pawn_ptr(p) && (!g_shared || net_puppet(1 + p));
     if (party) {
         ++g_enemy_stats.puppet_blocked;
         LeaveCriticalSection(&g_enemy_lock);
@@ -1644,4 +1865,17 @@ int net_guest_my_pawn()
     int p = g_snap.my_pawn;
     LeaveCriticalSection(&g_snap_lock);
     return p;
+}
+
+bool net_shared() { return g_shared; }
+
+// Shared world, game threads: local party index i shows another player in this area now.
+bool net_puppet(int i)
+{
+    if (!g_shared || i < 1 || i >= kParty)
+        return false;
+    EnterCriticalSection(&g_cap_lock);
+    bool on = g_rp[i].valid && g_rp_tick[i] && GetTickCount() - g_rp_tick[i] < 500;
+    LeaveCriticalSection(&g_cap_lock);
+    return on;
 }

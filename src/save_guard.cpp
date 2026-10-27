@@ -43,6 +43,8 @@ uint32_t g_merged_sig = 0, g_loaded_sig = 0;  // host: sig of the merged save / 
 uint32_t g_merged_crc[kPawns] = {}, g_loaded_crc[kPawns] = {}; // the same, per pawn (0 = the host's own)
 std::vector<uint8_t> g_guest_own;  // guest: its own DDDA.sav (its character), read once
 std::vector<uint8_t> g_roam_save;  // guest exploring on its own (roam.cpp): served instead of the host's
+std::vector<uint8_t> g_shared_save; // shared world: the host's save as this guest's own world
+uint32_t g_shared_from = 0;         // 1 + the host save version it was made from (0 = none)
 
 // Host, 2 to 4 players: the guests' characters by pawn, and the merged save built from them.
 std::string g_party_char[kPawns];  // empty = that pawn stays the host's
@@ -216,6 +218,28 @@ bool peer_save(std::vector<uint8_t> &out, uint32_t &version)
     if (cfg_role() != NET_GUEST)
         return false;
     EnterCriticalSection(&g_save_lock);
+    std::vector<uint8_t> raw;
+    uint32_t raw_version = g_peer_version;
+    bool build = net_shared() && !g_peer_save.empty() && g_shared_from != g_peer_version + 1;
+    if (build)
+        raw = g_peer_save;
+    LeaveCriticalSection(&g_save_lock);
+    if (build) { // shared world: this guest's own world from the host's save (once per host save)
+        std::vector<uint8_t> mine;
+        if (roam_world_from_host(raw, mine)) {
+            EnterCriticalSection(&g_save_lock);
+            g_shared_save.swap(mine);
+            g_shared_from = raw_version + 1;
+            LeaveCriticalSection(&g_save_lock);
+        }
+    }
+    EnterCriticalSection(&g_save_lock);
+    if (net_shared() && g_shared_from == g_peer_version + 1 && !g_shared_save.empty()) {
+        out = g_shared_save;
+        version = g_peer_version;
+        LeaveCriticalSection(&g_save_lock);
+        return true;
+    }
     bool roam = !g_roam_save.empty();
     bool have = roam || !g_peer_save.empty();
     if (have) {
