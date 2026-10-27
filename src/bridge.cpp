@@ -184,6 +184,30 @@ void run_line(const char *line)
             }
         }
         _snprintf(g_current, sizeof g_current, "uscan %s (%d hits)", who, hits);
+    } else if (strncmp(line, "iscan ", 6) == 0) {
+        // iscan <num1> <no1> <num2> <no2>: item entries in memory, (s16 num, s16 itemNo) followed by
+        // the next entry 8..64 bytes further; every committed read-write region of the process
+        int n1 = 0, i1 = 0, n2 = 0, i2 = 0, hits = 0;
+        if (sscanf(line + 6, "%d %d %d %d", &n1, &i1, &n2, &i2) == 4) {
+            uint32_t a = uint16_t(n1) | uint32_t(uint16_t(i1)) << 16, b = uint16_t(n2) | uint32_t(uint16_t(i2)) << 16;
+            MEMORY_BASIC_INFORMATION mbi;
+            for (uintptr_t p = 0x10000; p < 0x7FFF0000 && hits < 20 && VirtualQuery((void *)p, &mbi, sizeof mbi);
+                 p = uintptr_t(mbi.BaseAddress) + mbi.RegionSize) {
+                if (mbi.State != MEM_COMMIT || !(mbi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)) || (mbi.Protect & PAGE_GUARD))
+                    continue;
+                const uint8_t *base = (const uint8_t *)mbi.BaseAddress;
+                for (size_t o = 0; o + 68 <= mbi.RegionSize && hits < 20; o += 2) {
+                    if (*(const uint32_t *)(base + o) != a)
+                        continue;
+                    for (int s = 8; s <= 64; s += 2)
+                        if (*(const uint32_t *)(base + o + s) == b) {
+                            logf("bridge: iscan at %p stride %d", (void *)(base + o), s);
+                            ++hits;
+                        }
+                }
+            }
+        }
+        _snprintf(g_current, sizeof g_current, "iscan (%d hits)", hits);
     } else if (strncmp(line, "watchpa ", 8) == 0) { // watchpa <arisen|pawn> <pointer offset> <field offset> <count>: every change
         char who[16] = {};
         unsigned poff = 0, off = 0, count = 20;

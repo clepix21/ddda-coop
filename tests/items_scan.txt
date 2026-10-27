@@ -1,0 +1,6 @@
+# Bag and storage in memory (single copy, cutscene save: storage starts 1 x item 317, 2 x 1846;
+# the Arisen's bag 1 x 152, 1 x 469).
+wait 3000
+iscan 1 317 2 1846
+iscan 1 152 1 469
+wait 2000

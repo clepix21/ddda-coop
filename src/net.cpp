@@ -222,6 +222,10 @@ bool g_shared = false;
 CharState g_rp[kParty] = {};
 uint32_t g_rp_press[kParty] = {}, g_rp_release[kParty] = {};
 DWORD g_rp_tick[kParty] = {};
+// a pawn showing a player who is in another area: kept still out of sight, no AI (owner: "quand une
+// personne part elle n'est pas remplacée"), until that player comes back
+bool g_rp_away[kParty] = {};
+constexpr float kParkDepth = 3000.f; // that far under the local Arisen
 
 // host: presses/releases seen since the last send, per party member
 volatile LONG g_acc_press[kParty] = {}, g_acc_release[kParty] = {};
@@ -275,9 +279,12 @@ void shared_take(int i, const CharState &c, bool here)
     EnterCriticalSection(&g_cap_lock);
     g_rp[i] = c;
     g_rp[i].valid = c.valid && here;
-    if (g_rp[i].valid) {
-        g_rp_press[i] |= p;
-        g_rp_release[i] |= r;
+    g_rp_away[i] = c.valid && !here;
+    if (c.valid) {
+        if (here) {
+            g_rp_press[i] |= p;
+            g_rp_release[i] |= r;
+        }
         g_rp_tick[i] = GetTickCount() | 1;
     }
     LeaveCriticalSection(&g_cap_lock);
@@ -323,10 +330,16 @@ void shared_apply_commands(uintptr_t ch, int i)
         return;
     EnterCriticalSection(&g_cap_lock);
     CharState s = g_rp[i];
+    bool away = g_rp_away[i];
     uint32_t press = g_rp_press[i], release = g_rp_release[i];
     g_rp_press[i] = g_rp_release[i] = 0;
     LeaveCriticalSection(&g_cap_lock);
     uintptr_t cmd = ch + game::kCmd;
+    if (away) { // still: no sticks, no buttons
+        memset(reinterpret_cast<void *>(cmd + kCmdCopyFrom), 0, kCmdCopyLen);
+        memset(reinterpret_cast<void *>(cmd + kCmdExtraFrom), 0, kCmdExtraLen);
+        return;
+    }
     memcpy(reinterpret_cast<void *>(cmd + kCmdCopyFrom), s.cmd, kCmdCopyLen);
     memcpy(reinterpret_cast<void *>(cmd + kCmdExtraFrom), s.cmd_extra, kCmdExtraLen);
     game::at<uint32_t>(cmd, 0x2C) = press;
@@ -357,8 +370,24 @@ void shared_apply_transform(uintptr_t ch, int i)
         return;
     EnterCriticalSection(&g_cap_lock);
     CharState s = g_rp[i];
+    bool away = g_rp_away[i];
     LeaveCriticalSection(&g_cap_lock);
     float *pos = reinterpret_cast<float *>(ch + 0x40);
+    if (away) { // parked under the local Arisen, out of sight
+        uintptr_t me = possess_arisen();
+        if (me) {
+            float park[3] = {game::at<float>(me, 0x40), game::at<float>(me, 0x44) - kParkDepth, game::at<float>(me, 0x48)};
+            memcpy(pos, park, sizeof park);
+            for (uintptr_t off : kPosCopies)
+                memcpy(reinterpret_cast<void *>(ch + off), park, 12);
+        }
+        static DWORD next_park_log[kParty] = {};
+        if (!next_park_log[i] || int(GetTickCount() - next_park_log[i]) >= 0) {
+            next_park_log[i] = GetTickCount() + 5000;
+            logf("net: shared: party %d shows a player in another area: kept out of sight at y %.0f", i, pos[1]);
+        }
+        return;
+    }
     float dx = s.pos[0] - pos[0], dy = s.pos[1] - pos[1], dz = s.pos[2] - pos[2];
     float err = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (err > 50.f) {
@@ -1875,7 +1904,7 @@ bool net_puppet(int i)
     if (!g_shared || i < 1 || i >= kParty)
         return false;
     EnterCriticalSection(&g_cap_lock);
-    bool on = g_rp[i].valid && g_rp_tick[i] && GetTickCount() - g_rp_tick[i] < 500;
+    bool on = (g_rp[i].valid || g_rp_away[i]) && g_rp_tick[i] && GetTickCount() - g_rp_tick[i] < 500;
     LeaveCriticalSection(&g_cap_lock);
     return on;
 }

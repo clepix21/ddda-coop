@@ -1,6 +1,6 @@
 // Shared world: every enemy killed by any player gives the same exp to all players, wherever they are.
 //
-// The game gives a kill's exp to the party with FUN_00443470(sGameSys, exp, factor, fixed) (cdecl;
+// The game gives a kill's exp to the party with FUN_00443470(sGameSys, exp, factor, fixed) (stdcall;
 // the enemy death code FUN_008573e0 calls it with fixed = 0; with fixed != 0 the exp is used as
 // given). It adds it to the Arisen ([sGameSys+0xA76D0], exp at +0x2C4, FUN_00782D10 also adds
 // vocation exp and discipline), to the main pawn (with a catch-up) and gives the hired pawns
@@ -20,7 +20,7 @@
 
 namespace {
 
-using Grant_t = void(__cdecl *)(uintptr_t gs, int exp, float factor, char fixed);
+using Grant_t = void(__stdcall *)(uintptr_t gs, int exp, float factor, char fixed); // RET 0x10 (0x004437BD)
 constexpr uintptr_t kGrant = 0x00443470;
 constexpr uintptr_t kArisenParam = 0xA76D0, kExp = 0x2C4;
 Grant_t g_orig = nullptr;
@@ -30,7 +30,7 @@ volatile LONG64 g_pending = 0; // other players' exp not given yet
 
 int32_t arisen_exp(uintptr_t gs) { return gs ? game::at<int32_t>(gs, kArisenParam + kExp) : 0; }
 
-void __cdecl hk_grant(uintptr_t gs, int exp, float factor, char fixed)
+void __stdcall hk_grant(uintptr_t gs, int exp, float factor, char fixed)
 {
     if (g_applying || !net_shared()) {
         g_orig(gs, exp, factor, fixed);

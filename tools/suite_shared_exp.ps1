@@ -14,6 +14,7 @@ $runs += & (Join-Path $tools "run_pair.ps1") -Seconds 400 -OutDir "$out\host" -S
     -HostBridge $fight -HostIni $hostIni -GuestIni $guestIni 2>$null
 $checks = @(python -I (Join-Path $tools "check_shared_exp.py") $out)
 if (($runs -match "saves and owner config unchanged: True").Count -eq 2) { $checks += "PASS  owner's saves and config unchanged" } else { $checks += "FAIL  owner's saves and config unchanged" }
+if (($runs -match "exited early True").Count -eq 0) { $checks += "PASS  all copies still running at the end of both runs" } else { $checks += "FAIL  all copies still running at the end of both runs" }
 $failed = ($checks | Where-Object { $_ -like "FAIL*" }).Count
 $checks | ForEach-Object { "   $_" }
 "shared exp suite: $($checks.Count - $failed)/$($checks.Count) checks passed, $failed failed ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
