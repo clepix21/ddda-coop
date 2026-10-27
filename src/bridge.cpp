@@ -282,6 +282,49 @@ void run_line(const char *line)
                          unsigned(game::at<uintptr_t>(p, 0)), unsigned(q), game::at<float>(p, q));
         }
         _snprintf(g_current, sizeof g_current, "ptrscan %s (%d hits)", who, hits);
+    } else if (strncmp(line, "vtref ", 6) == 0) {
+        // vtref <vtable hex>: objects with that vtable the Arisen points at (directly or one pointer
+        // away), each with its first 0x200 bytes as pointers, labelled with their class when known
+        unsigned vt = 0;
+        uintptr_t a = possess_arisen();
+        int hits = 0;
+        if (sscanf(line + 6, "%x", &vt) == 1 && a) {
+            auto show = [&](uintptr_t obj, const char *path) {
+                ++hits;
+                logf("bridge: vtref %08X at %p via %s", vt, (void *)obj, path);
+                for (uintptr_t f = 4; f < 0x200; f += 4) {
+                    uintptr_t v = game::at<uintptr_t>(obj, f);
+                    if (v < 0x10000 || (v & 3) || !mem_readable((void *)v, 8))
+                        continue;
+                    uintptr_t fvt = game::at<uintptr_t>(v, 0);
+                    if (fvt >= 0x00401000 && fvt < 0x01700000)
+                        logf("bridge: vtref   +0x%X -> %p %s%s", unsigned(f), (void *)v, enemies_class_of(v),
+                             v == a ? " (the Arisen)" : "");
+                }
+            };
+            char path[32];
+            for (uintptr_t o = 0; o < 0x8000 && hits < 8 && mem_readable((void *)(a + o), 4); o += 4) {
+                uintptr_t p = game::at<uintptr_t>(a, o);
+                if (p < 0x10000 || (p & 3) || !mem_readable((void *)p, 0x200))
+                    continue;
+                if (game::at<uintptr_t>(p, 0) == vt) {
+                    _snprintf(path, sizeof path, "+0x%X", unsigned(o));
+                    show(p, path);
+                    continue;
+                }
+                uintptr_t pvt = game::at<uintptr_t>(p, 0);
+                if (pvt < 0x00401000 || pvt > 0x01700000)
+                    continue;
+                for (uintptr_t q = 0; q < 0x200 && hits < 8; q += 4) {
+                    uintptr_t r = game::at<uintptr_t>(p, q);
+                    if (r >= 0x10000 && !(r & 3) && mem_readable((void *)r, 0x200) && game::at<uintptr_t>(r, 0) == vt) {
+                        _snprintf(path, sizeof path, "[+0x%X]+0x%X", unsigned(o), unsigned(q));
+                        show(r, path);
+                    }
+                }
+            }
+        }
+        _snprintf(g_current, sizeof g_current, "vtref (%d)", hits);
     } else if (strncmp(line, "npcref", 6) == 0) {
         // npcref [tag]: for each NPC within 6 m of the Arisen, where the Arisen holds a pointer to
         // it, directly or one pointer away (the talk target: compare before and during a talk)

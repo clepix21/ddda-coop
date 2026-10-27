@@ -136,6 +136,7 @@ struct EnemySlot {
 };
 bool mem_readable(const void *p, size_t n); // committed, readable memory
 bool stages_install(); // stages.cpp: log every stage load
+bool talk_install();   // talk.cpp: the talk start
 uint32_t stages_other_loads(); // stage loads not made by a jump request (retry, load game)
 DWORD stages_last_load(int32_t *stage); // tick (0 = none) and stage of the last stage load
 bool enemies_install();

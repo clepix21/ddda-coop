@@ -1,0 +1,7 @@
+# Talk action object (vtable 0x015ee38c) on the Arisen during a talk (single copy, inn save).
+wait 4000
+vtref 015ee38c
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+vtref 015ee38c
+wait 3000
