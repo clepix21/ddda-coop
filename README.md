@@ -53,8 +53,8 @@ debug_log=0       # 1 = detailed coop.log
 
 Every player owns the game on Steam, is a Steam friend of the host, and installs the mod. In
 `coop.ini`, the host sets `role=host` and each friend `role=guest` (keep `transport=steam`). Start
-the game on every PC and wait at the title screen; once the friends are connected (a few seconds)
-everyone presses Start and loads ("Charger"). No address or port is needed:
+the game on every PC; a friend presses Start at the title once connected (a few seconds) and loads
+("Charger"). The host may already be playing. No address or port is needed:
 
 - each side sets a Steam rich presence key `ddda_coop` (host or guest), visible to friends;
 - the guest finds a friend in Dragon's Dogma whose key says host, and connects through Steam P2P
@@ -64,7 +64,9 @@ everyone presses Start and loads ("Charger"). No address or port is needed:
   10 s its pawn returns to its AI, and it rejoins on its own.
 - each guest's own character (from its own save) replaces that pawn in the host's save, which the
   host and every guest load; the host's own saves keep its real pawns (they are put back before
-  every write). Friends who connect after the host has loaded only appear after its next load.
+  every write). A friend who connects while the host plays: the host's game saves, loads the
+  merged save and rebuilds its world (about 4 s, like a reload), and friends already in game reload
+  with it. `send_character=0` on a friend's PC: that friend plays the host's pawn as it is.
 
 What is synchronised: the Arisen and the three pawns (position, facing, actions and their
 animations through the command object, HP). Each guest's camera follows its own pawn
@@ -78,6 +80,12 @@ and pawn, whose HP is the host's. An enemy only the guest's game spawned is remo
 spawn them there), enemy actions and animations, other pawns, NPCs, items, quests, time of day.
 
 Time: the guest's clock follows the host's (an inn rest jumps both to 6:00; talks stop both).
+
+Talks: when the host talks to someone, the same talk starts on each guest's game (the host's B
+reaches the guest's copy of the host's Arisen), and the host's controller drives the lines and menus
+there too, so guests read along. A guest that lags a step is brought out after the host's talk ends.
+A guest's choices only change its own copy of the world (it never saves). Each guest's camera frames
+the Arisen during talks and events.
 
 World: the guest's game loads the host's save, sent over the network when the guest connects (and
 again after each host save, autosaves included). On the guest, "Charger" at the title starts the
@@ -146,8 +154,13 @@ over the Steam code path with a test stand-in for Steam (`steam_mock.cpp`):
   copy's own save is in Gran Soren) (7/7 over UDP and over the Steam stand-in);
 - inn (`tools\suite_inn.ps1`, a save in front of the innkeeper): the host talks and rests; the guest's
   clock jumps to the host's 6:00 and stays within 1 game second, its Arisen follows into the room
-  with the host's HP (9/9 over UDP and the Steam stand-in). The guest does not see the host's
-  dialogue lines;
+  with the host's HP; the guest's game goes through the same talk (started 0.03 s after the host's,
+  ended with it or after a 1 s catch-up) (11/11, three runs, over UDP and the Steam stand-in);
+- join during play (`tools\suite_join.ps1`): a friend's game starts 140 s after the host's; its
+  character reaches the host while the host plays; the host saves, loads the merged save and
+  rebuilds its world in about 4 s, after which pawn 1 has the friend's character on both PCs
+  (11/11 over UDP and the Steam stand-in). With three copies (`-Three`), the friend already in game
+  reloads too and all three show both friends' characters (14/14);
 - enemies (`tools\suite_enemies.ps1`): both copies walk to the same underground area, the host's
   party kills 6 small creatures; on the guest all 8 enemies are paired (spawn points 0.0 u apart),
   follow the host, end where the host's lie with the same HP and death, the 6 deaths happen on the
@@ -172,8 +185,12 @@ over the Steam code path with a test stand-in for Steam (`steam_mock.cpp`):
   The removal of guest-only enemies and the pairing on current position were only exercised
   before the last fixes (those runs had no such enemies). Bosses and large monsters are not tested.
 - Not tested: skills (RT/LT combos), grab/climb, items, whether the
-  pawn AI interferes during fights, fast travel, "mode facile" retries, showing the host's dialogue and cutscenes on the guest, cutscenes, the Everfall, long sessions, the leash that may
+  pawn AI interferes during fights, fast travel, "mode facile" retries, cutscenes on the guest, the Everfall, long sessions, the leash that may
   pull a far-away pawn back.
+- Talks: a guest may talk to another NPC than the host's when the NPCs do not stand at the same
+  place on both PCs (seen once at the inn); cutscenes are not tested.
+- Join during play forces a save on the host (the same save the game makes at a gate), then a
+  reload: the host loses nothing, but the world restarts around the party (enemies, NPC places).
 - Player 2's face buttons can still act in menus while player 1 is in a menu.
 - One shared camera that follows the Arisen.
 - Only the main pawn can be possessed.

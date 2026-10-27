@@ -19,7 +19,7 @@ $run = & (Join-Path $tools "run_pair.ps1") -Seconds 350 -OutDir $out -Shots 240,
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "bot_load_game_p2.txt") `
     -HostBridge @($route, (Join-Path $tests "pair_enemy_host.txt")) -GuestBridge @($route, (Join-Path $tests "pair_enemy_guest.txt")) `
     -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "net_late=1") + $hostNet) `
-    -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "net_late=1") + $guestNet) 2>$null
+    -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "net_late=1", "send_character=0") + $guestNet) 2>$null
 $run | ForEach-Object { "   $_" }
 Copy-Item "J:\coop-test\DDDA\dump_end_enemies.txt" (Join-Path $out "host_enemies.txt") -ErrorAction SilentlyContinue
 Copy-Item "J:\coop-test\DDDA2\dump_end_enemies.txt" (Join-Path $out "guest_enemies.txt") -ErrorAction SilentlyContinue

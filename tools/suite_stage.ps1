@@ -22,7 +22,7 @@ $seconds = @{ gate = 290; death = 330; title = 360; lastsave = 360 }[$Scenario]
 $late = if ($LateGuest) { @("bridge=1", "net_late=1") } else { @() }
 # death: the guest keeps its character home, so the host's party is its own (a guest's Arisen-level
 # character as pawn 1 killed every creature before the Arisen at 1 HP was hit, 2026-10-27 03:51, 04:03)
-if ($Scenario -ne "gate") { $late += @("send_character=0") }
+if ($Scenario -ne "gate" -or $LateGuest) { $late += @("send_character=0") }
 $guestBridge = if ($LateGuest) { @((Join-Path $tests "stage_late_guest.txt")) } else { @() }
 if ($Transport -eq "udp") {
     $hostNet = @("transport=udp"); $guestNet = @("transport=udp", "peer=127.0.0.1")
