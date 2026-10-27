@@ -126,6 +126,34 @@ normally, the guest removes `role=guest` first.
 Options: `peer_steamid=<SteamID64>` to pick the other player instead of searching the friends
 list; `transport=udp` with `peer=<address>` and `port=` (default 27101) for a LAN.
 
+### Shared world (`shared_world=1`, work in progress on branch shared-world)
+
+Every player plays its own character in its own copy of the host's world, all the time (no keys):
+
+- a guest's game loads the host's save with the guest's own character as the Arisen (the host's
+  Arisen takes the place of the guest's pawn) and its own bag;
+- players in the same area see each other where they really are: each game moves the pawn showing
+  another player from that player's state (PSTATE guest -> host, relayed in the host's SNAP), and
+  runs its own AI pawns. A player in another area is not replaced: its pawn is kept still, out of
+  sight under the ground, until it comes back. Enemies of the host's area stay the host's;
+- exp: every kill in any world gives the same exp to every player (exp_sync.cpp: the party exp
+  function FUN_00443470 hooked, running totals per player);
+- loot: a pickup by a world's own party (its Arisen or AI pawns) is copied into every other
+  player's storage (loot.cpp: the add-item function FUN_0045E680, numbered pickup lists);
+- quests and world state: the save's flag tables in sGameSys (quest flags, game flags, NPC deaths,
+  and per area: flags, items picked up, objects such as chests) are watched; a change kept 3 s is
+  made in every world (flags.cpp). The cutscene-active word is not sent;
+- revive: a player at 0 HP goes down while another is up; another player holds B next to it for
+  3 s (it gets up with 30 % HP); after 60 s, or with nobody up in its area, it comes back next to a
+  player; when every player is down the game's own death runs (revive.cpp);
+- a guest's own world is never saved: its exp, discipline and items (its pickups and the copies it
+  gets) are kept in `coop_progress\pending.txt` for its own save, as in "Guest progress".
+
+Tested on one PC (suite_shared 8/8, suite_shared_exp 6/6, suite_revive 8/8 over the Steam stand-in; loot and flags single
+runs, see NOTES). Not done: map markers for players in other areas; quest data beyond flags (the
+active quest list lives elsewhere: a quest step was only checked through one game flag); a new
+player joining still reloads everyone at the host's last save.
+
 ### Free roam (a guest explores on its own)
 
 The host's game only runs the area around the host's Arisen, so a guest can leave the party to go
