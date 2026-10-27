@@ -159,6 +159,7 @@ bool unmerge(const void *data, int32_t size, std::vector<uint8_t> &out)
         logf("storage: a merged save written but not readable: written as is");
         return false;
     }
+    progress_host_write(xml); // what the guests' characters gained (progress.cpp)
     int put = 0;
     for (int p = 0; p < kPawns; ++p)
         if (!orig[p].empty() && save_put_character(xml, p, orig[p]))
@@ -173,6 +174,18 @@ bool __attribute__((thiscall)) hk_file_write(void *self, const char *name, const
 {
     if (is_save(name))
         log_callers("FileWrite(DDDA.sav)", __builtin_return_address(0), __builtin_frame_address(0));
+    char dump[8] = "";
+    if (is_save(name) && g_block && cfg_str("dump_writes", dump, sizeof dump) && dump[0] == '1') {
+        // tests: each write as the game made it (before un-merging), in the game folder
+        static int n = 0;
+        char path[32];
+        _snprintf(path, sizeof path, "write_%d.sav", ++n);
+        if (FILE *f = fopen(path, "wb")) {
+            fwrite(data, 1, size_t(size), f);
+            fclose(f);
+            logf("storage: write dumped to %s", path);
+        }
+    }
     std::vector<uint8_t> clean;
     if (is_save(name) && cfg_role() != NET_GUEST && unmerge(data, size, clean)) {
         data = clean.data();
@@ -182,10 +195,15 @@ bool __attribute__((thiscall)) hk_file_write(void *self, const char *name, const
         keep_own(data, size, "a write", true);
     if (!g_block) {
         using F = bool(__attribute__((thiscall)) *)(void *, const char *, const void *, int32_t);
-        return reinterpret_cast<F>(g_orig_slot[FileWrite])(self, name, data, size);
+        bool ok = reinterpret_cast<F>(g_orig_slot[FileWrite])(self, name, data, size);
+        if (ok && is_save(name) && cfg_role() != NET_GUEST)
+            progress_after_write();
+        return ok;
     }
     InterlockedIncrement(&g_blocked);
     logf("save-guard: BLOCKED FileWrite(\"%s\", %d bytes)", name ? name : "?", size);
+    if (is_save(name) && cfg_role() != NET_GUEST)
+        progress_after_write(); // tests: the game believes it saved
     return true; // pretend success
 }
 
@@ -291,14 +309,21 @@ int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, voi
         int32_t n = g_merged.empty() ? -1 : (int32_t(g_merged.size()) < cap ? int32_t(g_merged.size()) : cap);
         if (n >= 0)
             memcpy(data, g_merged.data(), size_t(n));
+        std::vector<uint8_t> loaded;
         if (loading()) {
             g_loaded_sig = n >= 0 ? g_merged_sig : 0; // the host's own save otherwise (below)
             for (int p = 0; p < kPawns; ++p) {
                 g_loaded_orig[p] = n >= 0 ? g_orig_char[p] : std::string();
                 g_loaded_crc[p] = n >= 0 ? g_merged_crc[p] : 0;
             }
+            if (n >= 0)
+                loaded = g_merged;
         }
+        uint32_t crcs[kPawns];
+        memcpy(crcs, g_loaded_crc, sizeof crcs);
         LeaveCriticalSection(&g_save_lock);
+        if (!loaded.empty())
+            progress_host_loaded(loaded, crcs); // the guests' progress counts from here
         if (n >= 0) {
             logf("storage: FileRead(\"%s\", cap %d) = %d: the merged save (guests' characters as pawns)", name, cap, n);
             return n;
@@ -319,6 +344,8 @@ int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, voi
     }
     std::vector<uint8_t> test;
     if (is_save(name) && test_save(test)) {
+        if (cfg_role() != NET_GUEST)
+            progress_patch(test, loading()); // keep_progress=1: a guest's earlier gains (progress.cpp)
         int32_t n = int32_t(test.size()) < cap ? int32_t(test.size()) : cap;
         memcpy(data, test.data(), size_t(n));
         logf("storage: FileRead(\"%s\", cap %d) = %d: test_save", name, cap, n);
@@ -328,6 +355,13 @@ int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, voi
     }
     using F = int32_t(__attribute__((thiscall)) *)(void *, const char *, void *, int32_t);
     int32_t n = reinterpret_cast<F>(g_orig_slot[FileRead])(self, name, data, cap);
+    if (is_save(name) && n > 0 && cfg_role() != NET_GUEST) {
+        std::vector<uint8_t> v(static_cast<uint8_t *>(data), static_cast<uint8_t *>(data) + n);
+        if (progress_patch(v, loading()) && int32_t(v.size()) <= cap) { // keep_progress=1 (progress.cpp)
+            memcpy(data, v.data(), v.size());
+            n = int32_t(v.size());
+        }
+    }
     logf("storage: FileRead(\"%s\", cap %d) = %d%s", name ? name : "?", cap, n,
          is_save(name) && cfg_role() == NET_GUEST ? ": the guest's own save (the host's has not arrived)" : "");
     if (is_save(name) && n > 0 && cfg_role() != NET_GUEST)

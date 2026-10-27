@@ -1,0 +1,138 @@
+# Guest progress test, host: after the route to the underground (its gate autosave = write 1), fight
+# the small creatures with the guest's character as hired pawn 1 (the party shares the experience;
+# 6 kills in ~10 s on 2026-10-27 11:38), then a save request mode 7 (a fresh snapshot; mode 2 rewrites the last checkpoint, write 2).
+wait 2000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+wait 10000
+savereq 7 0
+wait 15000

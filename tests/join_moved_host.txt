@@ -1,0 +1,43 @@
+# Join during play after the host moved: the host walks from the Rift stone toward the back tunnel
+# (~1700 u), then stands; the friend's game starts at 140 s. The host's Arisen must stay where it
+# walked to through the save and reload that bring the friend's character in (not go back to where
+# the save was loaded).
+wait 3000
+where
+goto -2350 -4550 60 8000
+goto -2235 -3940 60 9000
+goto -2015 -3546 60 8000
+goto -1669 -2891 60 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where
+wait 10000
+where

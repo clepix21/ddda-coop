@@ -1,0 +1,15 @@
+# Which save requests take a fresh snapshot of the world? (single copy, guild save, writes dumped)
+# Walk, save (2,3); walk, save (7,0); walk, save (F,0). A stale snapshot repeats the previous bytes.
+wait 3000
+pad 0 0 0 32000 0 0 0 0 3000
+wait 2000
+savereq 2 3
+wait 8000
+pad 0 0 0 -32000 0 0 0 0 3000
+wait 2000
+savereq 7 0
+wait 8000
+pad 0 0 0 32000 0 0 0 0 3000
+wait 2000
+savereq f 0
+wait 10000

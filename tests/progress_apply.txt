@@ -1,0 +1,5 @@
+# Guest progress, applied (single copy in the guest's folder, keep_progress=1, not a guest): the game
+# loads its save with the pending gains added; a fresh save (mode 7) then holds them.
+wait 5000
+savereq 7 0
+wait 10000

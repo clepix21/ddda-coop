@@ -14,7 +14,7 @@ Pour jouer
 2. Choisis ton rôle :
    - l'hôte : il charge sa partie, les autres le rejoignent ;
    - un invité : tu rejoins l'hôte avec ton propre perso, qui remplace un de ses pions.
-3. Clique sur « Lancer le jeu en co-op ». La fenêtre copie d'abord tes sauvegardes dans
+3. Clique sur « Lancer le jeu ». La fenêtre copie d'abord tes sauvegardes dans
    Documents\DDDA Coop\Sauvegardes, installe le mod et lance le jeu par Steam.
 4. Invité : reste sur l'écran titre jusqu'à ce que la fenêtre affiche « Connecté ! », puis appuie
    sur Start et choisis « Charger ». Tu arrives dans le monde de l'hôte.
@@ -23,8 +23,13 @@ Pour jouer
 
 Après la partie
 ---------------
-- Invité : clique sur « Retirer le mod » avant de rejouer à ta propre partie. En mode invité, ton
-  jeu ne charge ni ne sauvegarde ta partie.
+- Invité : en mode invité, ton jeu ne charge ni ne sauvegarde ta partie. Ce que ton perso gagne
+  chez l'hôte (l'expérience et les points de discipline du groupe, les objets que son pion ramasse)
+  est gardé à part, dans le dossier du jeu (coop_progress).
+- Pour rejouer à ta propre partie avec ces gains : choisis « Seul » puis « Lancer le jeu », charge
+  ta partie et sauvegarde. Ta sauvegarde est d'abord copiée dans coop_progress\backups. Les niveaux
+  montent au premier ennemi tué. Les objets arrivent dans ton coffre.
+- « Retirer le mod » remet le jeu d'origine. Les gains pas encore ajoutés restent en attente.
 - En cas de problème : « Exporter le journal » copie le journal dans Documents\DDDA Coop\Journaux.
   Envoie-le à l'hôte.
 

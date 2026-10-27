@@ -26,6 +26,9 @@
 //    Arisen's mEdit and mParam from its own save, ~17 KB) in 1 KB pieces with a CRC32. The host
 //    merges it over the pawn that guest drives (save_guard.cpp); each SNAP tells the guest the CRC
 //    of the character the host has for it.
+//  - host -> guest, every 500 ms until acked: PROGRESS = what that guest's character gained in the
+//    host's world (progress.cpp: exp, discipline, items, per load), in 1 KB pieces with a CRC32;
+//    guest -> host: PROGRESS_ACK = the CRC it got (it keeps the gains in coop_progress\pending.txt).
 //  - host -> guest, ~30 pages/s: ENEMIES = every live enemy (enemies.cpp) as class name hash, spawn
 //    point (where the host first saw it), position, quaternion, facing and HP ([[em+0x1D18]]+8/+0xC),
 //    up to 20 per page. The guest pairs each of its own enemies with the host's one of the same class
@@ -48,7 +51,8 @@ void guest_talk_mirror(DWORD now); // below: the guest mirrors the host's pad du
 
 namespace {
 
-enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6 };
+enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
+                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8 };
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 // A big correction must move every copy the movement code keeps, or the next collision pass pulls
@@ -139,6 +143,10 @@ struct CharChunkMsg {
     uint8_t data[1024];
 };
 constexpr int kSaveNeedMax = 200;
+struct ProgressAckMsg {
+    Header h;
+    uint32_t crc;
+};
 struct SaveNeedMsg {
     Header h;
     uint32_t have;      // version the guest has complete (0 = none)
@@ -179,6 +187,9 @@ struct Peer {
     std::string char_data;
     std::vector<uint8_t> char_got;
     uint32_t char_crc_want, char_crc;
+    // host: the progress record this guest acknowledged, and when to send the latest again
+    uint32_t prog_acked;
+    DWORD prog_next;
 };
 Peer g_peers[kMaxPeers] = {};
 int g_pawn_order[kPawns] = {1, 2, 0};
@@ -533,6 +544,36 @@ void receive_all()
                 if (peer.pawn >= 0)
                     storage_set_party_character(peer.pawn, peer.char_data);
             }
+        } else if (g_role == NET_HOST && h->type == MSG_PROGRESS_ACK && n == int(sizeof(ProgressAckMsg))) {
+            peer.prog_acked = reinterpret_cast<const ProgressAckMsg *>(buf)->crc;
+        } else if (g_role == NET_GUEST && h->type == MSG_PROGRESS && n >= int(sizeof(Header) + 12)) {
+            auto m = reinterpret_cast<const CharChunkMsg *>(buf);
+            static std::string data;
+            static std::vector<uint8_t> got;
+            static uint32_t want = 0, done = 0;
+            if (m->total == 0 || m->total > 256u * 1024 || m->len > sizeof m->data)
+                continue;
+            if (m->crc != done) {
+                if (want != m->crc || data.size() != m->total) {
+                    want = m->crc;
+                    data.assign(m->total, '\0');
+                    got.assign((m->total + sizeof m->data - 1) / sizeof m->data, 0);
+                }
+                size_t off = size_t(m->index) * sizeof m->data;
+                if (m->index < got.size() && off + m->len <= m->total) {
+                    memcpy(&data[off], m->data, m->len);
+                    got[m->index] = 1;
+                }
+                bool complete = true;
+                for (uint8_t b : got)
+                    complete &= b != 0;
+                if (!complete || crc32(reinterpret_cast<const uint8_t *>(data.data()), data.size()) != m->crc)
+                    continue;
+                done = m->crc;
+                progress_guest_received(data); // logs; false = not for this character (acked anyway)
+            }
+            ProgressAckMsg a = {{kMagic, MSG_PROGRESS_ACK, ++g_seq}, done};
+            send_raw(&a, sizeof a);
         } else if (g_role == NET_HOST && h->type == MSG_SAVE_NEED && n >= int(sizeof(Header) + 10)) {
             auto m = reinterpret_cast<const SaveNeedMsg *>(buf);
             peer.save_have = m->have;
@@ -705,6 +746,32 @@ void host_save_pieces(Peer &peer)
     }
 }
 
+// Host, every 500 ms per guest until acked: what its character gained (progress.cpp), in pieces.
+void host_progress_send(DWORD now)
+{
+    for (Peer &peer : g_peers) {
+        if (!peer.used || peer.pawn < 0 || (peer.prog_next && int(now - peer.prog_next) < 0))
+            continue;
+        peer.prog_next = (now + 500) | 1;
+        std::string rec;
+        if (!progress_host_record(peer.pawn, rec))
+            continue;
+        uint32_t crc = crc32(reinterpret_cast<const uint8_t *>(rec.data()), rec.size());
+        if (crc == peer.prog_acked)
+            continue;
+        for (size_t off = 0, i = 0; off < rec.size(); off += sizeof(CharChunkMsg::data), ++i) {
+            CharChunkMsg m = {};
+            m.h = {kMagic, MSG_PROGRESS, ++g_seq};
+            m.total = uint32_t(rec.size());
+            m.crc = crc;
+            m.index = uint16_t(i);
+            m.len = uint16_t(std::min<size_t>(sizeof m.data, rec.size() - off));
+            memcpy(m.data, rec.data() + off, m.len);
+            send_to(peer, &m, int(sizeof(Header) + 12 + m.len));
+        }
+    }
+}
+
 // Guest, every 500 ms until the host's SNAP says it has it: its own character, in pieces.
 void guest_char_send(DWORD now)
 {
@@ -837,6 +904,7 @@ DWORD WINAPI net_thread(LPVOID)
                 storage_merge_tick(); // the guests' characters into the save, when something changed
                 rejoin_tick(NET_HOST, 0); // and the host's world reloaded with them, during play
                 host_save_send(now);
+                host_progress_send(now);
             }
         }
         if (int(now - next_log) >= 0) {

@@ -32,12 +32,15 @@ how-to). Unzip it anywhere and open `DDDA-Coop.exe`, a small window that:
   through Steam;
 - shows the co-op state from `coop.log` in French (connected to Steam, host found, "Connecté !
   Appuie sur Start", friends connected and dropped, connection lost);
-- "Retirer le mod" deletes `dinput8.dll` and `coop.ini`; "Exporter le journal" copies `coop.log`
-  to `Documents\DDDA Coop\Journaux`.
+- "Seul" installs the mod without a role, so the game plays the player's own save and adds the
+  progress kept from co-op (see "Guest progress"); "Garder la progression" writes `keep_progress=1`
+  (on by default);
+- "Retirer le mod" deletes `dinput8.dll` and `coop.ini` (it asks first while co-op progress is still
+  waiting to be added); "Exporter le journal" copies `coop.log` to `Documents\DDDA Coop\Journaux`.
 
-Tested on a test folder with a fake Steam folder (18/18 checks: install, `coop.ini` for both roles,
-save copy byte for byte, states from log lines, log export, removal, a foreign `dinput8.dll` left
-alone); not yet used with the game started from it.
+Tested on a test folder with a fake Steam folder (24/24 checks: install, `coop.ini` for the three
+roles, save copy byte for byte, states and progress events from log lines, log export, removal and
+its warning, a foreign `dinput8.dll` left alone); not yet used with the game started from it.
 
 ## Install by hand
 
@@ -123,6 +126,27 @@ normally, the guest removes `role=guest` first.
 Options: `peer_steamid=<SteamID64>` to pick the other player instead of searching the friends
 list; `transport=udp` with `peer=<address>` and `port=` (default 27101) for a LAN.
 
+### Guest progress (`keep_progress=1`)
+
+Hired pawns earn no experience in Dragon's Dogma (in a test fight the Arisen and the main pawn got
++96 exp and +36 discipline, the hired pawns nothing), and a guest's character usually plays a hired
+pawn. So a guest's character gets the party's gains instead:
+
+- the host's game, at each save it writes while guests' characters are in its world, counts what
+  its Arisen gained since the save was loaded (exp, counted across level-ups, and discipline) and
+  the items each guest's pawn holds more of, and sends that to the guest;
+- the guest's game keeps it in `<game dir>\coop_progress\pending.txt` (its save is not touched
+  while `role=guest`);
+- when that PC later plays its own save with the mod and `keep_progress=1` (no role: "Seul" in the
+  launcher; or as a host), the save the game reads is first copied to
+  `coop_progress\backups\DDDA.sav.<time>`, then gets the gains: exp and discipline on the Arisen
+  (the game levels it up at the next kill, with its own stat growth), the items in its storage
+  (stacked onto the same item, or new entries). Once the game saves, `pending.txt` becomes
+  `coop_progress\applied_<time>.txt`.
+
+Not handled: equipment the host changes on the guest's pawn; items the host takes from that pawn
+(only items gained count); a session lost before the host's next save.
+
 ## How it works
 
 Every human in the game (`uPlayerBase`: the Arisen `uPlayer`, pawns `uCmc`, NPCs) has a command
@@ -190,12 +214,17 @@ over the Steam code path with a test stand-in for Steam (`steam_mock.cpp`):
   the same cutscene by itself (its Arisen follows the host's onto the trigger), starting 0.02 to
   0.05 s and ending 0.2 s after the host's, with no reload, and its Arisen follows the host's
   afterwards (8/8 over UDP and over the Steam stand-in).
+- guest progress (`tools\suite_progress.ps1`): the guest's character (level 44) plays hired pawn
+  1, the host's party kills 6 small creatures, the host saves: the guest keeps +96 exp and +36
+  discipline (the host Arisen's gains); the guest's copy alone with `keep_progress=1` gets them at its
+  save read (backup byte-identical to the save) and its next save holds them (exp 17125 -> 17221)
+  (8/8 over UDP). Items into storage were checked with a hand-written pending file (stacked and new).
 
 ## Known issues / not tested
 
 - Host saves with `block_saves=0` (normal play) go through the mod's storage hook to Steam Cloud as
   before; that path has not been tested (tests never let a save reach the owner's Steam Cloud).
-- Each player's character: its progress as a pawn (exp, items) is not saved anywhere; vocations
+- Each player's character: its progress comes from the party's gains (see "Guest progress"); vocations
   only the Arisen can have (e.g. Mystic Knight) are not checked on a pawn; the save owner check is
   patched on guests (the host's save belongs to another account), untested with two accounts; the
   tests used the same character for both guests.

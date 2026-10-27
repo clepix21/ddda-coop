@@ -1,0 +1,137 @@
+# Level-up check (single copy, guest_lv44_exp.sav: a level-44 Arisen given 200000 exp in the save):
+# fight the small creatures in the underground, then a fresh save (mode 7) to see level and stats.
+wait 2000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+enear 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+wait 10000
+savereq 7 0
+wait 15000

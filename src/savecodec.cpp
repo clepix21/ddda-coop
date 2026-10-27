@@ -124,6 +124,7 @@ size_t owner_block(const std::string &x, int pawn)
 } // namespace
 
 uint32_t save_crc(const void *p, size_t n) { return crc32_raw(static_cast<const uint8_t *>(p), n); }
+size_t save_block_end(const std::string &xml, size_t pos) { return block_end(xml, pos); }
 
 bool save_unpack(const std::vector<uint8_t> &file, std::string &xml, uint32_t head[8])
 {

@@ -104,6 +104,33 @@ void run_line(const char *line)
                 logf("bridge: egoto #%u %s at (%.0f, %.0f)", slot, list[k].name, x, z);
             }
         _snprintf(g_current, sizeof g_current, "egoto #%u", slot);
+    } else if (sscanf(line, "enear %f %u", &r, &timeout) == 2) {
+        // enear <r> <ms> [max]: walk to the nearest living enemy within max u (default 1000; a far
+        // one led the Arisen off a ledge, 2026-10-27 11:46) (tests that need kills)
+        float max_d = 1000;
+        sscanf(line, "enear %*f %*u %f", &max_d);
+        EnemySlot list[128];
+        int n = enemies_snapshot(list, 128), best = -1;
+        uintptr_t me = possess_arisen();
+        float bd = max_d * max_d;
+        for (int k = 0; me && k < n; ++k) {
+            float *hp = list[k].died ? nullptr : enemies_hp(list[k].ptr);
+            if (!hp || hp[0] <= 0)
+                continue;
+            float dx = game::at<float>(list[k].ptr, 0x40) - game::at<float>(me, 0x40);
+            float dz = game::at<float>(list[k].ptr, 0x48) - game::at<float>(me, 0x48);
+            if (dx * dx + dz * dz < bd) {
+                bd = dx * dx + dz * dz;
+                best = k;
+            }
+        }
+        if (best >= 0) {
+            x = game::at<float>(list[best].ptr, 0x40);
+            z = game::at<float>(list[best].ptr, 0x48);
+            g_goto = {true, x, z, r, GetTickCount() + timeout, 0, 0, GetTickCount() + 600, 0, 0, 0};
+            logf("bridge: enear #%d %s at (%.0f, %.0f)", list[best].index, list[best].name, x, z);
+        }
+        _snprintf(g_current, sizeof g_current, "enear");
     } else if (strncmp(line, "watch ", 6) == 0) { // watch <arisen|pawn> <offset hex> <count>
         char who[16] = {};
         unsigned off = 0, count = 20;
@@ -455,6 +482,10 @@ void run_line(const char *line)
                 fclose(f);
             }
         strcpy(g_current, "codectest");
+    } else if (strncmp(line, "where", 5) == 0) { // where: the Arisen's position
+        if (uintptr_t a = possess_arisen())
+            logf("bridge: where %.0f %.0f %.0f", game::at<float>(a, 0x40), game::at<float>(a, 0x44), game::at<float>(a, 0x48));
+        _snprintf(g_current, sizeof g_current, "where");
     } else if (strncmp(line, "partyhp", 7) == 0) { // HP of the Arisen and the three pawns
         const float *a = enemies_hp(possess_arisen());
         logf("bridge: partyhp arisen %.1f/%.1f", a ? a[0] : -1.f, a ? a[1] : -1.f);

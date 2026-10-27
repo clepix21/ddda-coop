@@ -27,10 +27,10 @@ const char kOurMarker[] = "ddda-pawn-coop loaded"; // a string only our dinput8.
 
 enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
-    ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_TIMER
+    ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER
 };
 
-HWND g_wnd, g_game_edit, g_version, g_host, g_guest, g_own_char, g_debug, g_launch, g_state, g_events;
+HWND g_wnd, g_game_edit, g_version, g_host, g_guest, g_solo, g_own_char, g_keep, g_debug, g_launch, g_state, g_events;
 HFONT g_font, g_bold;
 std::wstring g_exe_dir, g_game_dir, g_steam_dir, g_docs_dir;
 bool g_no_launch = false;
@@ -217,7 +217,11 @@ void save_settings()
 {
     auto p = settings_path();
     WritePrivateProfileStringW(L"launcher", L"game", g_game_dir.c_str(), p.c_str());
-    WritePrivateProfileStringW(L"launcher", L"role", SendMessageW(g_guest, BM_GETCHECK, 0, 0) ? L"guest" : L"host", p.c_str());
+    WritePrivateProfileStringW(L"launcher", L"role", SendMessageW(g_guest, BM_GETCHECK, 0, 0)  ? L"guest"
+                                                     : SendMessageW(g_solo, BM_GETCHECK, 0, 0) ? L"solo"
+                                                                                               : L"host",
+                               p.c_str());
+    WritePrivateProfileStringW(L"launcher", L"keep_progress", SendMessageW(g_keep, BM_GETCHECK, 0, 0) ? L"1" : L"0", p.c_str());
     WritePrivateProfileStringW(L"launcher", L"own_character", SendMessageW(g_own_char, BM_GETCHECK, 0, 0) ? L"1" : L"0", p.c_str());
     WritePrivateProfileStringW(L"launcher", L"debug_log", SendMessageW(g_debug, BM_GETCHECK, 0, 0) ? L"1" : L"0", p.c_str());
 }
@@ -242,6 +246,7 @@ void add_event(const std::wstring &text)
 }
 
 bool guest_role() { return SendMessageW(g_guest, BM_GETCHECK, 0, 0) == BST_CHECKED; }
+bool solo_role() { return SendMessageW(g_solo, BM_GETCHECK, 0, 0) == BST_CHECKED; }
 
 void update_controls()
 {
@@ -346,7 +351,7 @@ bool write_coop_ini()
     std::string base;
     if (!read_file(g_game_dir + L"\\coop.ini", base) && !read_file(g_exe_dir + L"\\coop.ini", base))
         base = "p2_pad=1\nidle_pad=3\nauto_possess=0\nblock_saves=0\nguest_cam_pawn=1\n";
-    const char *ours[] = {"role=", "#role=", "transport=", "debug_log=", "send_character=",
+    const char *ours[] = {"role=", "#role=", "transport=", "debug_log=", "send_character=", "keep_progress=",
                           "# Lines below are set by DDDA-Coop.exe"};
     std::string out, line;
     for (size_t i = 0; i <= base.size(); ++i) {
@@ -365,8 +370,11 @@ bool write_coop_ini()
     }
     bool guest = guest_role();
     out += "# Lines below are set by DDDA-Coop.exe\n";
-    out += guest ? "role=guest\n" : "role=host\n";
-    out += "transport=steam\n";
+    if (!solo_role()) { // solo: the mod only adds the co-op progress kept for this PC's character
+        out += guest ? "role=guest\n" : "role=host\n";
+        out += "transport=steam\n";
+    }
+    out += SendMessageW(g_keep, BM_GETCHECK, 0, 0) ? "keep_progress=1\n" : "keep_progress=0\n";
     out += SendMessageW(g_debug, BM_GETCHECK, 0, 0) ? "debug_log=1\n" : "debug_log=0\n";
     if (guest && !SendMessageW(g_own_char, BM_GETCHECK, 0, 0))
         out += "send_character=0\n";
@@ -418,7 +426,9 @@ void on_launch()
     }
     save_settings();
     bool guest = guest_role();
-    add_event(guest ? L"Mod installé en invité." : L"Mod installé en hôte.");
+    add_event(guest ? L"Mod installé en invité." : solo_role() ? L"Mod installé pour jouer seul." : L"Mod installé en hôte.");
+    if (solo_role() && exists(g_game_dir + L"\\coop_progress\\pending.txt"))
+        add_event(L"Ta progression co-op sera ajoutée à ta partie quand tu la chargeras.");
 
     GetSystemTimeAsFileTime(&g_launch_time);
     g_log_pos = 0;
@@ -447,6 +457,12 @@ void on_remove()
         ask(L"Le dinput8.dll du dossier du jeu n'est pas celui de DDDA Coop : je n'y touche pas.", MB_ICONWARNING);
         return;
     }
+    if (exists(g_game_dir + L"\\coop_progress\\pending.txt") &&
+        ask(L"Ta progression gagnée en co-op n'est pas encore dans ta partie.\n\n"
+            L"Pour l'ajouter : choisis « Seul », lance le jeu, charge ta partie puis sauvegarde. "
+            L"Si tu retires le mod maintenant, elle reste en attente pour plus tard.\n\nRetirer le mod quand même ?",
+            MB_ICONQUESTION | MB_YESNO) != IDYES)
+        return;
     bool ok = (!exists(dll) || DeleteFileW(dll.c_str())) && (!exists(ini) || DeleteFileW(ini.c_str()));
     g_watching = false;
     add_event(ok ? L"Mod retiré : le jeu redémarre en solo normal." : L"Impossible de supprimer dinput8.dll ou coop.ini.");
@@ -562,6 +578,20 @@ void on_log_line(const std::string &l)
         add_event(L"Changement de zone avec l'hôte.");
     } else if (has("net: send_character=0")) {
         add_event(L"Tu joues le pion de l'hôte tel quel (sans ton propre perso).");
+    } else if (has("progress: from the host:")) {
+        long long exp = 0, jp = 0;
+        int kinds = 0;
+        size_t at = l.find("pending in total +");
+        if (at != std::string::npos)
+            sscanf(l.c_str() + at, "pending in total +%lld exp, +%lld discipline, %d item", &exp, &jp, &kinds);
+        add_event(L"Progression gardée pour ton perso : +" + std::to_wstring(exp) + L" exp, +" + std::to_wstring(jp) +
+                  L" discipline, " + std::to_wstring(kinds) + L" sorte(s) d'objets.");
+    } else if (has("progress: added to ")) {
+        add_event(L"Progression co-op ajoutée à ta partie (copie de secours dans coop_progress\\backups).");
+    } else if (has("progress: the game saved with the gains")) {
+        add_event(L"Progression co-op enregistrée dans ta sauvegarde.");
+    } else if (has("progress: pending gains are for")) {
+        add_event(L"Progression co-op en attente : elle appartient à un autre perso, rien n'a été ajouté.");
     }
 }
 
@@ -624,10 +654,16 @@ void build_window()
     g_own_char = make(L"BUTTON", L"Jouer avec mon propre perso (sinon, je joue le pion de l'hôte)", BS_AUTOCHECKBOX,
                       L + 20, y, W - 20, 22, ID_OWN_CHAR);
     y += 24;
+    g_solo = make(L"BUTTON", L"Seul : je joue ma partie (ma progression gagnée en co-op y est ajoutée)",
+                  BS_AUTORADIOBUTTON, L, y, W, 22, ID_SOLO);
+    y += 30;
+    g_keep = make(L"BUTTON", L"Garder la progression de mon perso gagnée chez un ami (exp, discipline, objets)",
+                  BS_AUTOCHECKBOX, L, y, W, 22, ID_KEEP);
+    y += 24;
     g_debug = make(L"BUTTON", L"Journal détaillé (utile pour signaler un problème)", BS_AUTOCHECKBOX, L, y, W, 22, ID_DEBUG);
     y += 34;
 
-    g_launch = make(L"BUTTON", L"Lancer le jeu en co-op", BS_DEFPUSHBUTTON, L, y, 250, 36, ID_LAUNCH, g_bold);
+    g_launch = make(L"BUTTON", L"Lancer le jeu", BS_DEFPUSHBUTTON, L, y, 250, 36, ID_LAUNCH, g_bold);
     make(L"BUTTON", L"Retirer le mod", BS_PUSHBUTTON, L + 262, y, 120, 36, ID_REMOVE);
     y += 50;
 
@@ -641,12 +677,13 @@ void build_window()
     make(L"BUTTON", L"Exporter le journal", BS_PUSHBUTTON, L + 190, y, 160, 28, ID_EXPORT);
     y += 40;
     make(L"STATIC",
-         L"Invité : attends « Connecté ! » avant d'appuyer sur Start à l'écran titre. Avant de rejouer à ta propre "
-         L"partie, clique sur « Retirer le mod ».",
+         L"Invité : attends « Connecté ! » avant d'appuyer sur Start à l'écran titre. Pour rejouer à ta propre "
+         L"partie : « Seul » (ta progression co-op y est ajoutée) ou « Retirer le mod ».",
          0, L, y, W, 36, 0);
 
-    bool guest = setting(L"role", L"host") == L"guest";
-    SendMessageW(guest ? g_guest : g_host, BM_SETCHECK, BST_CHECKED, 0);
+    std::wstring role = setting(L"role", L"host");
+    SendMessageW(role == L"guest" ? g_guest : role == L"solo" ? g_solo : g_host, BM_SETCHECK, BST_CHECKED, 0);
+    SendMessageW(g_keep, BM_SETCHECK, setting(L"keep_progress", L"1") == L"1" ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(g_own_char, BM_SETCHECK, setting(L"own_character", L"1") == L"1" ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(g_debug, BM_SETCHECK, setting(L"debug_log", L"1") == L"1" ? BST_CHECKED : BST_UNCHECKED, 0);
 }
@@ -664,6 +701,8 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_BROWSE: on_browse(); break;
         case ID_HOST:
         case ID_GUEST:
+        case ID_SOLO:
+        case ID_KEEP:
         case ID_OWN_CHAR:
         case ID_DEBUG: update_controls(); save_settings(); break;
         case ID_LAUNCH: on_launch(); break;
@@ -743,7 +782,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
     wc.lpszClassName = L"DDDACoopLauncher";
     RegisterClassW(&wc);
-    RECT r = {0, 0, 552, 610};
+    RECT r = {0, 0, 552, 664};
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
     AdjustWindowRect(&r, style, FALSE);
     HWND h = CreateWindowW(wc.lpszClassName, kTitle, style, CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left,

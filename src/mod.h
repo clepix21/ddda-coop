@@ -42,6 +42,14 @@ uint32_t rejoin_loaded_sig(); // host: the signature of the characters its game 
 void storage_set_party_character(int pawn, const std::string &character); // host; empty = the host's own pawn
 void storage_merge_tick();                                                 // host, net thread
 bool storage_guest_character(std::string &out);                            // guest: its own Arisen
+// progress.cpp: guest progress (a guest's character played as a hired pawn gets the party's exp,
+// discipline and the items its pawn picked up, added to the guest's own save later)
+void progress_host_loaded(const std::vector<uint8_t> &file, const uint32_t crc[]); // host: a load with guests' characters
+void progress_host_write(const std::string &xml);         // host, a write with guests' characters (before un-merging)
+bool progress_host_record(int pawn, std::string &out);   // host, net thread: the record for that pawn's guest
+bool progress_guest_received(const std::string &rec);    // guest, net thread: keep it in coop_progress\pending.txt
+bool progress_patch(std::vector<uint8_t> &bytes, bool load); // not a guest, keep_progress=1: add the pending gains
+void progress_after_write();                              // not a guest: the game wrote its save
 void save_guard_poll();
 bool save_guard_active();
 long save_guard_blocked();
