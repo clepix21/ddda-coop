@@ -42,6 +42,7 @@ bool g_peer_read_any = false;
 uint32_t g_merged_sig = 0, g_loaded_sig = 0;  // host: sig of the merged save / of the save the game read
 uint32_t g_merged_crc[kPawns] = {}, g_loaded_crc[kPawns] = {}; // the same, per pawn (0 = the host's own)
 std::vector<uint8_t> g_guest_own;  // guest: its own DDDA.sav (its character), read once
+std::vector<uint8_t> g_roam_save;  // guest exploring on its own (roam.cpp): served instead of the host's
 
 // Host, 2 to 4 players: the guests' characters by pawn, and the merged save built from them.
 std::string g_party_char[kPawns];  // empty = that pawn stays the host's
@@ -207,16 +208,19 @@ bool __attribute__((thiscall)) hk_file_write(void *self, const char *name, const
     return true; // pretend success
 }
 
+constexpr uint32_t kRoamVersion = 0xFFFFFFFFu; // peer_save's version for the free roam save
+
 // Guest with the host's save: the bytes the game gets for DDDA.sav (false = use the real file)
 bool peer_save(std::vector<uint8_t> &out, uint32_t &version)
 {
     if (cfg_role() != NET_GUEST)
         return false;
     EnterCriticalSection(&g_save_lock);
-    bool have = !g_peer_save.empty();
+    bool roam = !g_roam_save.empty();
+    bool have = roam || !g_peer_save.empty();
     if (have) {
-        out = g_peer_save;
-        version = g_peer_version;
+        out = roam ? g_roam_save : g_peer_save;
+        version = roam ? kRoamVersion : g_peer_version;
     }
     LeaveCriticalSection(&g_save_lock);
     return have;
@@ -290,9 +294,25 @@ int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, voi
             logf("storage: the guest's own save read (%d bytes): its character goes to the host", n);
         }
     }
+    if (is_save(name) && cfg_role() == NET_GUEST && saving()) {
+        // a guest's own save request (free roam, roam.cpp): the check read gets what it just wrote
+        EnterCriticalSection(&g_save_lock);
+        int32_t n = g_own_written ? (int32_t(g_own_save.size()) < cap ? int32_t(g_own_save.size()) : cap) : -1;
+        if (n >= 0)
+            memcpy(data, g_own_save.data(), size_t(n));
+        LeaveCriticalSection(&g_save_lock);
+        if (n >= 0) {
+            logf("storage: FileRead(\"%s\", cap %d) = %d: the guest's last blocked write", name, cap, n);
+            return n;
+        }
+    }
     if (is_save(name) && peer_save(host, version)) {
         int32_t n = int32_t(host.size()) < cap ? int32_t(host.size()) : cap;
         memcpy(data, host.data(), size_t(n));
+        if (version == kRoamVersion) {
+            logf("storage: FileRead(\"%s\", cap %d) = %d: the free roam save", name, cap, n);
+            return n;
+        }
         if (loading()) {
             EnterCriticalSection(&g_save_lock);
             g_peer_read_sig = g_peer_sig;
@@ -703,4 +723,21 @@ bool storage_guest_patch()
     FlushInstructionCache(GetCurrentProcess(), at, 2);
     logf("storage: save owner check patched (a guest loads the host's save, owned by another account)");
     return true;
+}
+
+// Guest, free roam (roam.cpp): the save its game loads instead of the host's (empty = the host's).
+void storage_set_roam_save(const std::vector<uint8_t> &file)
+{
+    EnterCriticalSection(&g_save_lock);
+    g_roam_save = file;
+    LeaveCriticalSection(&g_save_lock);
+}
+
+// Guest: its own DDDA.sav as read at boot (empty until then).
+bool storage_guest_own_save(std::vector<uint8_t> &out)
+{
+    EnterCriticalSection(&g_save_lock);
+    out = g_guest_own;
+    LeaveCriticalSection(&g_save_lock);
+    return !out.empty();
 }

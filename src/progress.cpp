@@ -615,3 +615,55 @@ void progress_after_write()
     if (MoveFileExA(kPending, to.c_str(), MOVEFILE_REPLACE_EXISTING))
         logf("progress: the game saved with the gains: %s is now %s", kPending, to.c_str());
 }
+
+// ---- free roam (roam.cpp): what the guest's own character gains while exploring on its own ----
+
+namespace {
+Point g_roam_point;
+Bag g_roam_bag;
+bool g_roam_started = false;
+} // namespace
+
+// Guest, the save it loads to roam (its character as the Arisen): the starting point.
+void progress_roam_begin(const std::string &xml)
+{
+    lock();
+    g_roam_point = arisen_point(xml);
+    g_roam_started = bag_of(xml, 0, g_roam_bag) && g_roam_point.ok;
+    unlock();
+}
+
+// Guest, a save written at the end of the roam: the Arisen's gains since the start, kept like the
+// host's records (a segment of their own in pending.txt).
+void progress_roam_end(const std::string &xml)
+{
+    lock();
+    bool started = g_roam_started;
+    Point a = g_roam_point;
+    Bag base = g_roam_bag;
+    g_roam_started = false;
+    unlock();
+    if (!started)
+        return;
+    Point b = arisen_point(xml);
+    Bag now;
+    bag_of(xml, 0, now);
+    long long exp = exp_gained(a, b), jp = b.ok && b.jp > a.jp ? b.jp - a.jp : 0;
+    Pending p;
+    read_pending(p);
+    std::string own;
+    if (storage_guest_character(own))
+        p.name = save_character_name(own);
+    Pending::Seg &seg = p.segs["roam-" + stamp()];
+    seg.exp = exp;
+    seg.jp = jp;
+    for (auto &[it, n] : now) {
+        auto f = base.find(it);
+        long long more = n - (f == base.end() ? 0 : f->second);
+        if (more > 0)
+            seg.items[it] = more;
+    }
+    bool ok = write_pending(p);
+    logf("progress: free roam: +%lld exp, +%lld discipline, %d new item kind(s)%s", exp, jp, int(seg.items.size()),
+         ok ? "" : " (pending.txt NOT written)");
+}

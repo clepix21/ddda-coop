@@ -228,7 +228,9 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
             game::at<uint8_t>(ch + game::kCmd, game::kCmdMode) = 0;
             c.forced = 0;
         }
-    bool guest = net_role() == NET_GUEST; // set by net_start (late with net_late=1: walks first)
+    // set by net_start (late with net_late=1: walks first); a guest exploring on its own (roam.cpp)
+    // plays its own Arisen with its own controller
+    bool guest = net_role() == NET_GUEST && !net_guest_roaming();
     int who = 0;
     if (vt == game::kVtPlayer)
         who = ARISEN; // other players never drive the Arisen, possessed or not

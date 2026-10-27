@@ -22,6 +22,11 @@ bool save_unpack(const std::vector<uint8_t> &file, std::string &xml, uint32_t he
 bool save_pack(const std::string &xml, const uint32_t base_head[8], std::vector<uint8_t> &file);
 bool save_character(const std::string &xml, int pawn, std::string &out);
 bool save_put_character(std::string &xml, int pawn, const std::string &character);
+bool save_put_character_at(std::string &xml, int pawn, const std::string &character, size_t from);
+bool save_swap_arisen_pawn(std::string &xml, int pawn);                       // in every player data copy
+bool save_put_arisen_everywhere(std::string &xml, const std::string &character);
+bool save_bag(const std::string &xml, int who, std::string &out);             // 0 = Arisen, 1 + mCmcId
+bool save_put_bag_everywhere(std::string &xml, int who, const std::string &bag);
 std::string save_character_name(const std::string &character); // guest: accept a save owned by another Steam account (the host's)
 bool storage_own_save(std::vector<uint8_t> &out, uint32_t &version, uint32_t *sig = nullptr);
 void storage_set_peer_save(const uint8_t *data, size_t size, uint32_t version, uint32_t sig);
@@ -50,6 +55,11 @@ bool progress_host_record(int pawn, std::string &out);   // host, net thread: th
 bool progress_guest_received(const std::string &rec);    // guest, net thread: keep it in coop_progress\pending.txt
 bool progress_patch(std::vector<uint8_t> &bytes, bool load); // not a guest, keep_progress=1: add the pending gains
 void progress_after_write();                              // not a guest: the game wrote its save
+// roam.cpp: free roam, a guest explores on its own in its copy of the host's world, then comes back
+void roam_tick();          // guest, net thread
+bool roam_busy();          // leaving or coming back
+bool net_guest_roaming();  // the guest plays its own Arisen, no host sync
+int net_guest_my_pawn();   // net.cpp: the pawn the host gave this guest, -1 = none
 void save_guard_poll();
 bool save_guard_active();
 long save_guard_blocked();

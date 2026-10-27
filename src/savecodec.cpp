@@ -104,10 +104,11 @@ size_t child(const std::string &x, size_t pos, const char *name)
     return std::string::npos;
 }
 
-// The owner block (mPl, or mCmc[pawn]) inside mPlayerDataManual's mPlCmcEditAndParam.
-size_t owner_block(const std::string &x, int pawn)
+// The owner block (mPl, or mCmc[pawn]) inside the first mPlCmcEditAndParam from `from`
+// (mPlayerDataManual's from 0).
+size_t owner_block(const std::string &x, int pawn, size_t from = 0)
 {
-    size_t top = x.find("<class name=\"mPlCmcEditAndParam\"");
+    size_t top = x.find("<class name=\"mPlCmcEditAndParam\"", from);
     if (top == std::string::npos)
         return top;
     if (pawn < 0)
@@ -194,12 +195,18 @@ bool save_character(const std::string &xml, int pawn, std::string &out)
 // Writes a character (from save_character) over pawn `pawn`'s mEdit and mParam.
 bool save_put_character(std::string &xml, int pawn, const std::string &character)
 {
+    return save_put_character_at(xml, pawn, character, 0);
+}
+
+// The same in the copy of the player data that starts at or after `from`.
+bool save_put_character_at(std::string &xml, int pawn, const std::string &character, size_t from)
+{
     size_t split = character.find("<class name=\"mParam\"");
     if (split == std::string::npos || character.compare(0, 19, "<class name=\"mEdit\"") != 0)
         return false;
     std::string edit = character.substr(0, character.find_last_not_of('\n', split - 1) + 1);
     std::string param = character.substr(split);
-    size_t o = owner_block(xml, pawn);
+    size_t o = owner_block(xml, pawn, from);
     if (o == std::string::npos)
         return false;
     size_t p = child(xml, o, "mParam");
@@ -211,6 +218,100 @@ bool save_put_character(std::string &xml, int pawn, const std::string &character
         return false;
     xml.replace(e, block_end(xml, e) - e, edit);
     return true;
+}
+
+// Starts of the player data copies (mPlayerDataManual, mPlayerDataBase): the game reads the
+// Arisen's look from one and its parameters from the other (2026-10-27 12:22), so a change to a
+// character goes to both.
+std::vector<size_t> player_data_starts(const std::string &x)
+{
+    std::vector<size_t> out;
+    for (const char *name : {"<class name=\"mPlayerDataManual\"", "<class name=\"mPlayerDataBase\""}) {
+        size_t at = x.find(name);
+        if (at != std::string::npos)
+            out.push_back(at);
+    }
+    return out;
+}
+
+// Every copy: the Arisen gets pawn `pawn`'s character and that pawn the Arisen's.
+bool save_swap_arisen_pawn(std::string &xml, int pawn)
+{
+    int done = 0;
+    for (size_t i = 0;; ++i) {
+        std::vector<size_t> starts = player_data_starts(xml); // offsets move with each replace
+        if (i >= starts.size())
+            break;
+        std::string arisen, other;
+        size_t a = owner_block(xml, -1, starts[i]), b = owner_block(xml, pawn, starts[i]);
+        if (a == std::string::npos || b == std::string::npos)
+            return false;
+        auto take = [&](size_t o, std::string &out) {
+            size_t e = child(xml, o, "mEdit"), p = child(xml, o, "mParam");
+            if (e == std::string::npos || p == std::string::npos)
+                return false;
+            out = xml.substr(e, block_end(xml, e) - e) + "\n" + xml.substr(p, block_end(xml, p) - p);
+            return true;
+        };
+        if (!take(a, arisen) || !take(b, other) || !save_put_character_at(xml, -1, other, starts[i]) ||
+            !save_put_character_at(xml, pawn, arisen, player_data_starts(xml)[i]))
+            return false;
+        ++done;
+    }
+    return done > 0;
+}
+
+// Every copy: the Arisen gets `character` (its own character on this PC).
+bool save_put_arisen_everywhere(std::string &xml, const std::string &character)
+{
+    int done = 0;
+    for (size_t i = 0;; ++i) {
+        std::vector<size_t> starts = player_data_starts(xml);
+        if (i >= starts.size())
+            break;
+        if (!save_put_character_at(xml, -1, character, starts[i]))
+            return false;
+        ++done;
+    }
+    return done > 0;
+}
+
+// The bag of party member `who` (0 = Arisen, 1 + mCmcId) in copy `copy`: its cSAVE_DATA_ITEM block.
+size_t bag_block(const std::string &x, int copy, int who)
+{
+    std::vector<size_t> starts = player_data_starts(x);
+    if (copy < 0 || size_t(copy) >= starts.size())
+        return std::string::npos;
+    size_t arr = x.find("<array name=\"mItem\" type=\"class\" count=\"4\">", starts[copy]);
+    if (arr == std::string::npos || arr > block_end(x, starts[copy]))
+        return std::string::npos;
+    size_t at = arr;
+    for (int i = 0; i <= who && at != std::string::npos; ++i)
+        at = x.find("<class type=\"cSAVE_DATA_ITEM\">", at + 1);
+    return at;
+}
+
+bool save_bag(const std::string &xml, int who, std::string &out)
+{
+    size_t b = bag_block(xml, 0, who);
+    if (b == std::string::npos)
+        return false;
+    out = xml.substr(b, block_end(xml, b) - b);
+    return true;
+}
+
+// Every copy: party member `who`'s bag becomes `bag` (from save_bag).
+bool save_put_bag_everywhere(std::string &xml, int who, const std::string &bag)
+{
+    int done = 0;
+    for (int copy = 0; copy < 2; ++copy) {
+        size_t b = bag_block(xml, copy, who);
+        if (b == std::string::npos)
+            break;
+        xml.replace(b, block_end(xml, b) - b, bag);
+        ++done;
+    }
+    return done > 0;
 }
 
 // The character's name (mEdit's mNameStr), for logs.

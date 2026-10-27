@@ -78,6 +78,7 @@ struct InputMsg {
     XINPUT_GAMEPAD pad;
     uint8_t has_camera;
     float eye[3], target[3]; // the guest's camera, so the host turns the guest's stick the guest's way
+    uint8_t away;            // the guest explores on its own (roam.cpp): its pawn goes back to its AI
 };
 struct CharState {
     uint8_t valid;
@@ -505,6 +506,12 @@ void receive_all()
             // The right stick and R3 drive the guest's own camera on the guest PC; on the host they
             // would turn the host's camera (camera code reads every pad), so they are dropped here,
             // and Back / Start too (a guest must not pause the host's game).
+            if (m->away != (possess_pawn_on(peer.pawn) ? 0 : 1) && peer.pawn >= 0) {
+                possess_pawn(peer.pawn, !m->away, k + 1, k);
+                logf("net: guest %d %s", k + 1, m->away ? "explores on its own: its pawn goes back to its AI" : "is back: it drives its pawn again");
+            }
+            if (m->away)
+                continue;
             XINPUT_GAMEPAD pad = m->pad;
             pad.sThumbRX = pad.sThumbRY = 0;
             pad.wButtons &= WORD(~(XINPUT_GAMEPAD_RIGHT_THUMB | XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START));
@@ -868,11 +875,12 @@ DWORD WINAPI net_thread(LPVOID)
                 m.h = {kMagic, MSG_INPUT, ++g_seq};
                 XINPUT_STATE s = {};
                 // Only in game: in the guest's own menus its pad must not press the host's menus.
-                if (possess_arisen() && pads_read_raw(0, &s) == ERROR_SUCCESS)
+                m.away = net_guest_roaming() ? 1 : 0;
+                if (!m.away && possess_arisen() && pads_read_raw(0, &s) == ERROR_SUCCESS)
                     m.pad = s.Gamepad;
                 uintptr_t holder = game::at<uintptr_t>(0, 0x018D0B6C);
                 uintptr_t cam = holder ? game::at<uintptr_t>(holder, 0x34) : 0;
-                if (cam) {
+                if (cam && !m.away) {
                     memcpy(m.eye, reinterpret_cast<void *>(cam + 0x40), sizeof m.eye);
                     memcpy(m.target, reinterpret_cast<void *>(cam + 0x60), sizeof m.target);
                     m.has_camera = 1;
@@ -881,8 +889,11 @@ DWORD WINAPI net_thread(LPVOID)
                 next_send = now + 16;
                 guest_save_need(now);
                 guest_char_send(now);
-                guest_talk_mirror(now);
-                if (g_have_snap) {
+                roam_tick(); // free roam: leave the host's party and come back (roam.cpp)
+                bool roam = net_guest_roaming() || roam_busy();
+                if (!roam)
+                    guest_talk_mirror(now);
+                if (g_have_snap && !roam) {
                     EnterCriticalSection(&g_snap_lock);
                     uint32_t host_sig = g_snap.stage.party_sig;
                     LeaveCriticalSection(&g_snap_lock);
@@ -913,6 +924,21 @@ DWORD WINAPI net_thread(LPVOID)
                 if (p.used && p.last_rx && (!last || int(p.last_rx - last) > 0))
                     last = p.last_rx;
             logf("net: tx %ld rx %ld, last rx %ld ms ago", g_tx, g_rx, last ? long(now - last) : -1L);
+            if (g_role == NET_HOST) { // how far each pawn is from the Arisen (free roam tests)
+                CharState c[kParty] = {};
+                EnterCriticalSection(&g_cap_lock);
+                memcpy(c, g_cap, sizeof c);
+                LeaveCriticalSection(&g_cap_lock);
+                char line[160];
+                int len = 0;
+                for (int i = 1; i < kParty; ++i)
+                    if (c[0].valid && c[i].valid)
+                        len += _snprintf(line + len, sizeof line - len, " pawn %d %.0f u;", i - 1,
+                                         std::sqrt((c[i].pos[0] - c[0].pos[0]) * (c[i].pos[0] - c[0].pos[0]) +
+                                                   (c[i].pos[2] - c[0].pos[2]) * (c[i].pos[2] - c[0].pos[2])));
+                if (len)
+                    logf("net: spread from the Arisen at (%.0f, %.0f):%s", c[0].pos[0], c[0].pos[2], line);
+            }
             log_enemy_stats(now);
             next_log = now + 5000;
         }
@@ -1070,7 +1096,7 @@ bool plain_stage(int32_t n) { return n >= 100 && n < 999; }
 // 10 s anyway, it jumps to the host's stage and entry point.
 void net_guest_stage()
 {
-    if (g_role != NET_GUEST || !g_have_snap)
+    if (g_role != NET_GUEST || !g_have_snap || net_guest_roaming() || roam_busy())
         return;
     EnterCriticalSection(&g_snap_lock);
     StageState h = g_snap.stage;
@@ -1252,7 +1278,7 @@ const char *party_label(int i, int my_pawn)
 
 void net_apply_snapshot(uintptr_t ch, int i)
 {
-    if (g_role != NET_GUEST || !g_have_snap || i < 0 || i >= kParty)
+    if (g_role != NET_GUEST || !g_have_snap || i < 0 || i >= kParty || net_guest_roaming())
         return;
     bool is_arisen = i == 0;
     EnterCriticalSection(&g_snap_lock);
@@ -1285,7 +1311,7 @@ void net_apply_snapshot(uintptr_t ch, int i)
 // engine and that function, is what makes the puppet face and stand where the host says.
 void net_apply_transform(uintptr_t ch, int i)
 {
-    if (g_role != NET_GUEST || !g_have_snap || i < 0 || i >= kParty)
+    if (g_role != NET_GUEST || !g_have_snap || i < 0 || i >= kParty || net_guest_roaming())
         return;
     EnterCriticalSection(&g_snap_lock);
     CharState s = g_snap.ch[i];
@@ -1333,7 +1359,7 @@ void net_guest_camera()
     static int enabled = -1; // read coop.ini once
     if (enabled < 0)
         enabled = early_flag("guest_cam_pawn") ? 1 : 0;
-    if (g_role != NET_GUEST || !enabled)
+    if (g_role != NET_GUEST || !enabled || net_guest_roaming())
         return;
     static uintptr_t followed = 0; // the pawn the camera was moved to (0 = the Arisen's)
     uintptr_t arisen = possess_arisen(), gm = game::at<uintptr_t>(game::kGameMain, 0);
@@ -1387,7 +1413,7 @@ int camera_follow(uintptr_t from, uintptr_t to)
 uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
 {
     uintptr_t pending_death = 0;
-    if (!g_enemy_ready || g_role == NET_OFF || i < 0 || i >= kEnemySlots)
+    if (!g_enemy_ready || g_role == NET_OFF || i < 0 || i >= kEnemySlots || net_guest_roaming())
         return 0;
     uintptr_t em = slot.ptr;
     DWORD now = GetTickCount();
@@ -1585,7 +1611,7 @@ int enemy_net_follow(int local_slot)
 // Hits on the guest's puppets (the Arisen and the main pawn) are dropped too: their HP is the host's.
 bool enemy_net_block_damage(uintptr_t ch)
 {
-    if (g_role != NET_GUEST || !g_enemy_ready)
+    if (g_role != NET_GUEST || !g_enemy_ready || net_guest_roaming())
         return false;
     bool block = false;
     EnterCriticalSection(&g_enemy_lock);
@@ -1607,4 +1633,15 @@ bool enemy_net_block_damage(uintptr_t ch)
     }
     LeaveCriticalSection(&g_enemy_lock);
     return block;
+}
+
+// Guest: the pawn (mCmcId) the host gave it, -1 = none yet (roam.cpp).
+int net_guest_my_pawn()
+{
+    if (g_role != NET_GUEST || !g_have_snap)
+        return -1;
+    EnterCriticalSection(&g_snap_lock);
+    int p = g_snap.my_pawn;
+    LeaveCriticalSection(&g_snap_lock);
+    return p;
 }

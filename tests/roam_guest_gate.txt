@@ -1,0 +1,15 @@
+# Free roam, guest: load (pad 1); at 110 s hold LB + RB + Y (leave), walk 30 s in Gran Soren with its
+# own Arisen while the host goes to the underground, at 200 s hold the keys again (back with the host).
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+110000 0 8300
+112500 0 0
+130000 0 0 0 30000
+160000 0 0 0 0
+200000 0 8300
+202500 0 0

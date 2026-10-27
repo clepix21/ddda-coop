@@ -1,0 +1,15 @@
+# Free roam, guest: boot and load (pad 1); at 170 s hold LB + RB + Y (leave the host's party),
+# walk forward 20 s with its own Arisen, at 235 s hold the keys again (back with the host).
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+170000 0 8300
+172500 0 0
+195000 0 0 0 30000
+215000 0 0 0 0
+235000 0 8300
+237500 0 0

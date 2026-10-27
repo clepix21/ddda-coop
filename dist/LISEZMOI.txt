@@ -21,6 +21,14 @@ Pour jouer
    L'hôte peut déjà être en train de jouer : son jeu sauvegarde et recharge quelques secondes
    pour faire entrer l'invité.
 
+Explorer seul
+-------------
+Un invité peut quitter le groupe pour aller où il veut : maintenir LB + RB + Y (1,5 s) ou F7.
+Son jeu recharge quelques secondes, puis il joue son propre perso (avec son sac) dans sa copie du
+monde de l'hôte ; chez l'hôte, son pion repasse à l'IA. Ce qu'il fait alors ne compte que chez lui
+(quêtes, coffres, ennemis), sauf l'expérience, la discipline et les objets gagnés par son perso,
+gardés pour sa partie. Les mêmes touches le ramènent à côté de l'hôte.
+
 Après la partie
 ---------------
 - Invité : en mode invité, ton jeu ne charge ni ne sauvegarde ta partie. Ce que ton perso gagne

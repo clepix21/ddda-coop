@@ -126,6 +126,19 @@ normally, the guest removes `role=guest` first.
 Options: `peer_steamid=<SteamID64>` to pick the other player instead of searching the friends
 list; `transport=udp` with `peer=<address>` and `port=` (default 27101) for a LAN.
 
+### Free roam (a guest explores on its own)
+
+The host's game only runs the area around the host's Arisen, so a guest can leave the party to go
+elsewhere: it holds **LB + RB + Y** for 1.5 s (or presses **F7**). Its game saves a fresh snapshot
+(blocked, kept in memory), makes the guest's own character the Arisen in it (the host's Arisen takes
+the place of the guest's pawn) with the guest's own bag, and reloads around it. The guest then plays
+alone in its copy of the host's world: no snapshots, no area, time or talk following, local enemies.
+On the host its pawn goes back to its AI. The same keys bring it back: a snapshot (its character's
+gains since leaving go to `coop_progress\pending.txt`), then a load of the host's latest save; the
+usual corrections bring it to the host's area and place. What the guest does while away (quests,
+chests, kills) stays in its copy of the world; only its character's exp, discipline and new items
+count.
+
 ### Guest progress (`keep_progress=1`)
 
 Hired pawns earn no experience in Dragon's Dogma (in a test fight the Arisen and the main pawn got
@@ -214,6 +227,10 @@ over the Steam code path with a test stand-in for Steam (`steam_mock.cpp`):
   the same cutscene by itself (its Arisen follows the host's onto the trigger), starting 0.02 to
   0.05 s and ending 0.2 s after the host's, with no reload, and its Arisen follows the host's
   afterwards (8/8 over UDP and over the Steam stand-in).
+- free roam (`tools\suite_roam.ps1`): the guest leaves at 110 s, its own character (level 44)
+  becomes its Arisen and it walks 2030 u in Gran Soren while the host goes through the iron gate to
+  the underground (the guest stays in its own area, no following); back at 200 s, it is in the
+  underground 2.8 s later and its Arisen follows the host's (median error 0.0 u) (13/13 over UDP).
 - guest progress (`tools\suite_progress.ps1`): the guest's character (level 44) plays hired pawn
   1, the host's party kills 6 small creatures, the host saves: the guest keeps +96 exp and +36
   discipline (the host Arisen's gains); the guest's copy alone with `keep_progress=1` gets them at its

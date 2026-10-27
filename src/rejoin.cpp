@@ -165,3 +165,13 @@ void rejoin_tick(int role, uint32_t host_loaded_sig)
     }
     }
 }
+
+// Shared with roam.cpp (free roam): the save/load machine and the quiet-world test.
+bool save_machine_request(uint8_t mode, uint8_t slot) { return machine_request(mode, slot); }
+bool save_machine_idle() { return machine_idle(); }
+bool rejoin_world_quiet() { return world_quiet(); }
+void rejoin_reload_world()
+{
+    if (uintptr_t gs = game::at<uintptr_t>(game::kGameMain, 0))
+        InterlockedOr(reinterpret_cast<volatile LONG *>(gs + 0xB8840), LONG(kReloadBit));
+}

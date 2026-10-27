@@ -595,6 +595,26 @@ void on_log_line(const std::string &l)
             MultiByteToWideChar(CP_UTF8, 0, fr.c_str(), -1, &w[0], n);
         add_event(fr.empty() ? L"Aucun ami Steam dans Dragon's Dogma pour l'instant."
                              : L"Amis Steam dans le jeu (fin de leur identifiant) : " + w);
+    } else if (has("roam: exploring alone")) {
+        add_event(L"Tu explores seul, avec ton perso et ton sac. LB + RB + Y (ou F7) pour revenir chez l'hôte.");
+        set_state(L"Exploration libre : ce que tu fais ne compte que chez toi (sauf ta progression).", RGB(20, 100, 160));
+    } else if (has("roam: back with the host")) {
+        add_event(L"De retour avec l'hôte.");
+        set_state(L"Connecté : tu joues avec l'hôte.", RGB(20, 140, 40));
+    } else if (has("roam: not now")) {
+        add_event(L"Exploration : pas maintenant (dialogue, chargement ou changement de zone en cours).");
+    } else if (has("explores on its own")) {
+        add_event(L"Ami " + std::to_wstring(number_after(l, "net: guest ")) + L" explore seul : son pion repasse à l'IA.");
+    } else if (has("is back: it drives its pawn again")) {
+        add_event(L"Ami " + std::to_wstring(number_after(l, "net: guest ")) + L" est revenu : il reprend son pion.");
+    } else if (has("progress: free roam:")) {
+        long long exp = 0, jp = 0;
+        int kinds = 0;
+        size_t at = l.find("free roam: +");
+        if (at != std::string::npos)
+            sscanf(l.c_str() + at, "free roam: +%lld exp, +%lld discipline, %d new item", &exp, &jp, &kinds);
+        add_event(L"Gagné en exploration : +" + std::to_wstring(exp) + L" exp, +" + std::to_wstring(jp) +
+                  L" discipline, " + std::to_wstring(kinds) + L" sorte(s) d'objets (gardé pour ta partie).");
     } else if (has("progress: from the host:")) {
         long long exp = 0, jp = 0;
         int kinds = 0;
@@ -694,8 +714,8 @@ void build_window()
     make(L"BUTTON", L"Exporter le journal", BS_PUSHBUTTON, L + 190, y, 160, 28, ID_EXPORT);
     y += 40;
     make(L"STATIC",
-         L"Invité : attends « Connecté ! » avant d'appuyer sur Start à l'écran titre. Pour rejouer à ta propre "
-         L"partie : « Seul » (ta progression co-op y est ajoutée) ou « Retirer le mod ».",
+         L"Invité : attends « Connecté ! » avant Start. LB + RB + Y (1,5 s) ou F7 : explorer seul / revenir. "
+         L"Pour ta propre partie : « Seul » (ta progression co-op y est ajoutée) ou « Retirer le mod ».",
          0, L, y, W, 36, 0);
 
     std::wstring role = setting(L"role", L"host");

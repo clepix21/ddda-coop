@@ -26,6 +26,8 @@ Lancement (dans cet ordre)
 - Marcher ensemble, combattre, passer un portail ou une porte.
 - L'hôte parle à un PNJ (les amis voient le dialogue), dort à l'auberge.
 - Un ami quitte le jeu puis revient.
+- Un ami explore seul (LB + RB + Y pendant 1,5 s, ou F7), va ailleurs, puis revient avec les mêmes
+  touches (pas pendant un dialogue ou un changement de zone).
 - Éviter la Faille (Rift) et les fonctions en ligne du jeu.
 
 Si ça coince
