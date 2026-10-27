@@ -184,6 +184,128 @@ void run_line(const char *line)
             }
         }
         _snprintf(g_current, sizeof g_current, "uscan %s (%d hits)", who, hits);
+    } else if (strncmp(line, "dumpa ", 6) == 0) { // dumpa <address hex> <size hex> <name>: raw bytes there
+        unsigned addr = 0, size = 0;
+        char name[32] = {};
+        if (sscanf(line + 6, "%x %x %31s", &addr, &size, name) == 3 && size <= 0x400000) {
+            std::vector<uint8_t> data(size);
+            SIZE_T got = 0;
+            if (ReadProcessMemory(GetCurrentProcess(), (void *)uintptr_t(addr), data.data(), size, &got) && got == size) {
+                char path[64];
+                _snprintf(path, sizeof path, "dumpa_%s.bin", name);
+                if (FILE *f = fopen(path, "wb")) {
+                    fwrite(data.data(), 1, size, f);
+                    fclose(f);
+                }
+                logf("bridge: dumpa %08X %X bytes as %s", addr, size, path);
+            }
+        }
+        _snprintf(g_current, sizeof g_current, "dumpa");
+    } else if (strncmp(line, "vmark ", 6) == 0 || strncmp(line, "vnew ", 5) == 0) {
+        // vmark <u32>: remember every place holding the value; vnew <u32> <near u32>: the places that
+        // hold it now and did not before, each with the nearest place within 8 KB holding <near>
+        static std::vector<uintptr_t> marked;
+        bool mark = line[1] == 'm';
+        unsigned v = 0, near_v = 0;
+        int args = sscanf(line + (mark ? 6 : 5), "%u %u", &v, &near_v);
+        std::vector<uintptr_t> now;
+        static std::vector<uint8_t> page(0x1000);
+        MEMORY_BASIC_INFORMATION mbi;
+        for (uintptr_t p = 0x10000; args >= 1 && p < 0x7FFF0000 && now.size() < 20000 && VirtualQuery((void *)p, &mbi, sizeof mbi);
+             p = uintptr_t(mbi.BaseAddress) + mbi.RegionSize) {
+            if (mbi.State != MEM_COMMIT || !(mbi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)) || (mbi.Protect & PAGE_GUARD))
+                continue;
+            for (uintptr_t q = uintptr_t(mbi.BaseAddress); q < uintptr_t(mbi.BaseAddress) + mbi.RegionSize; q += 0x1000) {
+                SIZE_T got = 0;
+                if (!ReadProcessMemory(GetCurrentProcess(), (void *)q, page.data(), 0x1000, &got) || got != 0x1000)
+                    continue;
+                for (int o = 0; o < 0x1000; o += 4)
+                    if (*(const uint32_t *)(page.data() + o) == v)
+                        now.push_back(q + o);
+            }
+        }
+        if (mark) {
+            marked = now;
+            logf("bridge: vmark %u: %u places", v, unsigned(now.size()));
+        } else {
+            int shown = 0;
+            for (uintptr_t a : now) {
+                if (std::find(marked.begin(), marked.end(), a) != marked.end() || shown >= 25)
+                    continue;
+                ++shown;
+                long best = 0x7FFFFFFF;
+                std::vector<uint8_t> around(0x4000);
+                SIZE_T got = 0;
+                uintptr_t from = (a - 0x2000) & ~uintptr_t(3);
+                if (args == 2 && ReadProcessMemory(GetCurrentProcess(), (void *)from, around.data(), around.size(), &got) && got == around.size())
+                    for (size_t o = 0; o < around.size(); o += 4)
+                        if (*(const uint32_t *)(around.data() + o) == near_v && std::labs(long(from + o) - long(a)) < std::labs(best))
+                            best = long(from + o) - long(a);
+                logf("bridge: vnew %u at %08X%s", v, unsigned(a),
+                     best != 0x7FFFFFFF ? (std::string(", ") + std::to_string(near_v) + " at " + std::to_string(best)).c_str() : "");
+            }
+            logf("bridge: vnew %u: %u now, %u new shown", v, unsigned(now.size()), unsigned(shown));
+        }
+        _snprintf(g_current, sizeof g_current, "vmark/vnew");
+    } else if (strncmp(line, "vfind ", 6) == 0) {
+        // vfind <u32>: every 4-byte aligned place holding this value in committed read-write memory,
+        // read region by region with ReadProcessMemory (page by page when a region read fails)
+        unsigned v = 0;
+        int hits = 0;
+        size_t regions = 0, mb = 0;
+        if (sscanf(line + 6, "%u", &v) == 1) {
+            static std::vector<uint8_t> page(0x1000);
+            MEMORY_BASIC_INFORMATION mbi;
+            for (uintptr_t p = 0x10000; p < 0x7FFF0000 && hits < 30 && VirtualQuery((void *)p, &mbi, sizeof mbi);
+                 p = uintptr_t(mbi.BaseAddress) + mbi.RegionSize) {
+                if (mbi.State != MEM_COMMIT || !(mbi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)) || (mbi.Protect & PAGE_GUARD))
+                    continue;
+                ++regions;
+                mb += mbi.RegionSize;
+                for (uintptr_t q = uintptr_t(mbi.BaseAddress); q < uintptr_t(mbi.BaseAddress) + mbi.RegionSize && hits < 30; q += 0x1000) {
+                    SIZE_T got = 0;
+                    if (!ReadProcessMemory(GetCurrentProcess(), (void *)q, page.data(), 0x1000, &got) || got != 0x1000)
+                        continue;
+                    for (int o = 0; o < 0x1000 && hits < 30; o += 4)
+                        if (*(const uint32_t *)(page.data() + o) == v) {
+                            logf("bridge: vfind %u at %08X", v, unsigned(q + o));
+                            ++hits;
+                        }
+                }
+            }
+        }
+        logf("bridge: vfind %u: %d hits in %u regions, %u MB", v, hits, unsigned(regions), unsigned(mb >> 20));
+        _snprintf(g_current, sizeof g_current, "vfind (%d hits)", hits);
+    } else if (strncmp(line, "gscan ", 6) == 0) {
+        // gscan <u32 a> <u32 b>: in the objects the exe's globals 0x018FA400..0x018FA600 point at (read
+        // page by page with ReadProcessMemory, up to 2 MB each), value a followed 4..4096 bytes later
+        // by value b (two quest ids of a list): global, offset and gap
+        unsigned a = 0, b = 0;
+        int hits = 0;
+        if (sscanf(line + 6, "%u %u", &a, &b) == 2) {
+            static std::vector<uint8_t> obj(0x200000);
+            for (uintptr_t g = 0x018FA400; g < 0x018FA600 && hits < 20; g += 4) {
+                uintptr_t base = 0;
+                SIZE_T got = 0;
+                if (!ReadProcessMemory(GetCurrentProcess(), (void *)g, &base, 4, &got) || base < 0x10000 || (base & 3))
+                    continue;
+                size_t len = 0;
+                for (; len < obj.size(); len += 0x1000)
+                    if (!ReadProcessMemory(GetCurrentProcess(), (void *)(base + len), obj.data() + len, 0x1000, &got) || got != 0x1000)
+                        break;
+                for (size_t o = 0; o + 4 <= len && hits < 20; o += 4) {
+                    if (*(const uint32_t *)(obj.data() + o) != a)
+                        continue;
+                    for (size_t d = 4; d <= 4096 && o + d + 4 <= len; d += 4)
+                        if (*(const uint32_t *)(obj.data() + o + d) == b) {
+                            logf("bridge: gscan [%08X] = %08X: +0x%X, then +0x%X", unsigned(g), unsigned(base), unsigned(o), unsigned(d));
+                            ++hits;
+                            break;
+                        }
+                }
+            }
+        }
+        _snprintf(g_current, sizeof g_current, "gscan (%d hits)", hits);
     } else if (strncmp(line, "iscan ", 6) == 0) {
         // iscan <num1> <no1> <num2> <no2>: item entries in memory, (s16 num, s16 itemNo) followed by
         // the next entry 8..64 bytes further, in every committed read-write region (copied with

@@ -44,6 +44,7 @@ uint32_t g_merged_crc[kPawns] = {}, g_loaded_crc[kPawns] = {}; // the same, per 
 std::vector<uint8_t> g_guest_own;  // guest: its own DDDA.sav (its character), read once
 std::vector<uint8_t> g_roam_save;  // guest exploring on its own (roam.cpp): served instead of the host's
 std::vector<uint8_t> g_shared_save; // shared world: the host's save as this guest's own world
+std::vector<uint8_t> g_override_save; // shared world, quest_sync.cpp: served to the next load, any role
 uint32_t g_shared_from = 0;         // 1 + the host save version it was made from (0 = none)
 
 // Host, 2 to 4 players: the guests' characters by pawn, and the merged save built from them.
@@ -304,6 +305,17 @@ int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, voi
         log_callers("FileRead(DDDA.sav)", __builtin_return_address(0), __builtin_frame_address(0));
     std::vector<uint8_t> host;
     uint32_t version = 0;
+    if (is_save(name) && !saving()) { // quest_sync.cpp: this world's snapshot with another's quest state
+        EnterCriticalSection(&g_save_lock);
+        int32_t n = g_override_save.empty() ? -1 : (int32_t(g_override_save.size()) < cap ? int32_t(g_override_save.size()) : cap);
+        if (n >= 0)
+            memcpy(data, g_override_save.data(), size_t(n));
+        LeaveCriticalSection(&g_save_lock);
+        if (n >= 0) {
+            logf("storage: FileRead(\"%s\", cap %d) = %d: this world with another player's quest state", name, cap, n);
+            return n;
+        }
+    }
     if (is_save(name) && cfg_role() == NET_GUEST && g_guest_own.empty()) {
         // the guest's own save, once: its character goes to the host (test_save in tests)
         std::vector<uint8_t> own(size_t(cap > 0 ? cap : 0));
@@ -762,6 +774,24 @@ bool storage_guest_own_save(std::vector<uint8_t> &out)
 {
     EnterCriticalSection(&g_save_lock);
     out = g_guest_own;
+    LeaveCriticalSection(&g_save_lock);
+    return !out.empty();
+}
+
+// Shared world (quest_sync.cpp): the save the next load reads, whatever the role (empty = as usual).
+void storage_set_override_save(const std::vector<uint8_t> &file)
+{
+    EnterCriticalSection(&g_save_lock);
+    g_override_save = file;
+    LeaveCriticalSection(&g_save_lock);
+}
+
+// This game's own latest save (its last write, blocked or not), never the merged one.
+bool storage_own_raw(std::vector<uint8_t> &out, uint32_t &version)
+{
+    EnterCriticalSection(&g_save_lock);
+    out = g_own_save;
+    version = g_own_version;
     LeaveCriticalSection(&g_save_lock);
     return !out.empty();
 }

@@ -27,6 +27,10 @@ bool save_swap_arisen_pawn(std::string &xml, int pawn);                       //
 bool save_put_arisen_everywhere(std::string &xml, const std::string &character);
 bool save_bag(const std::string &xml, int who, std::string &out);             // 0 = Arisen, 1 + mCmcId
 bool save_put_bag_everywhere(std::string &xml, int who, const std::string &bag);
+bool save_quest_state(const std::string &xml, std::string &out);        // shared world: quests, NPCs, talks
+bool save_put_quest_state(std::string &xml, const std::string &state);
+bool save_deflate(const std::string &in, std::vector<uint8_t> &out);    // the game's zlib, length first
+bool save_inflate(const std::vector<uint8_t> &in, std::string &out);
 std::string save_character_name(const std::string &character); // guest: accept a save owned by another Steam account (the host's)
 bool storage_own_save(std::vector<uint8_t> &out, uint32_t &version, uint32_t *sig = nullptr);
 void storage_set_peer_save(const uint8_t *data, size_t size, uint32_t version, uint32_t sig);
@@ -101,6 +105,13 @@ bool revive_on_damage(uintptr_t ch, float *dmg);  // game thread, the damage hoo
 void revive_tick();                               // net thread
 void revive_helped();                             // net thread
 void revive_game_tick(uintptr_t arisen);          // game thread
+// quest_sync.cpp: shared world, the quest list in every world (a short reload)
+void quest_sync_init();
+void quest_sync_local_change();                   // flags.cpp: a quest flag changed in this world
+void quest_sync_received(const std::string &state, uint32_t crc); // net thread
+void quest_sync_tick();                           // net thread
+bool quest_sync_busy();
+void net_quest_publish(const std::vector<uint8_t> &blob, uint32_t crc); // net.cpp
 int net_guest_my_pawn();   // net.cpp: the pawn the host gave this guest, -1 = none
 void save_guard_poll();
 bool save_guard_active();

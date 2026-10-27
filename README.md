@@ -143,6 +143,12 @@ Every player plays its own character in its own copy of the host's world, all th
 - quests and world state: the save's flag tables in sGameSys (quest flags, game flags, NPC deaths,
   and per area: flags, items picked up, objects such as chests) are watched; a change kept 3 s is
   made in every world (flags.cpp). The cutscene-active word is not sent;
+- quest list: flags alone do not add a quest to the other worlds' journals (the quest list, NPC
+  states, talk history and quest scripts' state live elsewhere). When a quest flag changes in a
+  world and it is quiet for 5 s, that world saves a snapshot and sends its quest state (mPlGameData's
+  quest keys, deflated with the game's zlib, ~50 KB); every other world puts it in a fresh snapshot
+  of itself and reloads (about 4 s, it stays where it was) (quest_sync.cpp; suite_quest 10/10 with
+  the owner's save before a quest giver, both ways). A live way without the reload is not found yet;
 - revive: a player at 0 HP goes down while another is up; another player holds B next to it for
   3 s (it gets up with 30 % HP); after 60 s, or with nobody up in its area, it comes back next to a
   player; when every player is down the game's own death runs (revive.cpp);
@@ -150,9 +156,8 @@ Every player plays its own character in its own copy of the host's world, all th
   gets) are kept in `coop_progress\pending.txt` for its own save, as in "Guest progress".
 
 Tested on one PC (suite_shared 8/8, suite_shared_exp 6/6, suite_revive 8/8 over the Steam stand-in; loot and flags single
-runs, see NOTES). Not done: map markers for players in other areas; quest data beyond flags (the
-active quest list lives elsewhere: a quest step was only checked through one game flag); a new
-player joining still reloads everyone at the host's last save.
+runs, see NOTES). Not done: map markers for players in other areas; the quest list without a reload;
+a new player joining still reloads everyone at the host's last save.
 
 ### Free roam (a guest explores on its own)
 

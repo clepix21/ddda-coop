@@ -1,0 +1,28 @@
+# Owner's quest save (quest.sav, Cassardis, a quest giver in front; the HUD says "B Parler"): the
+# host waits for the guest, talks (B), goes through the lines and choices with A, then a fresh save
+# (mode 7, dumped in tests) to see the quest list.
+wait 20000
+pad 0 2000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 12000
+savereq 7 0
+wait 10000

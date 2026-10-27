@@ -1,0 +1,4 @@
+# Where is the quest list? quest.sav's active quests start 0x1F0000 (2031616), 0x400000 (4194304).
+wait 3000
+gscan 2031616 4194304
+wait 2000

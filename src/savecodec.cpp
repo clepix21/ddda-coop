@@ -331,3 +331,120 @@ std::string save_character_name(const std::string &character)
     }
     return name;
 }
+
+// ---- quest state (shared world, quest_sync.cpp) ----
+
+namespace {
+// mPlGameData children that make the quest state: active quest and branch, scenario, talk history,
+// quest lists, NPC states, quest scripts' saved state and scene flags (2026-10-27, guild.sav layout)
+const char *const kQuestKeys[] = {"mScenarioNo", "mActiveQuest", "mActiveBranch", "mSpeakerHistory", "mTalkHistory",
+                                  "mQuestData", "mQuestSubData", "mQuestNum", "mQuestFinishData", "mQuestFinishNum",
+                                  "mNpcData", "mSaveFsmFix", "mSaveFsmFixNum", "mSceSaveFlag", "mSceDone"};
+
+// [begin, end) of child `key` (a class, an array or a single value) of the block opening at `top`.
+bool quest_child(const std::string &x, size_t top, const char *key, size_t &b, size_t &e)
+{
+    size_t end = block_end(x, top);
+    std::string pat = std::string("name=\"") + key + "\"";
+    for (size_t at = x.find(pat, top); at != std::string::npos && at < end; at = x.find(pat, at + 1)) {
+        size_t lt = x.rfind('<', at);
+        // a direct child only: the line starts at a newline
+        if (lt == std::string::npos || (lt > 0 && x[lt - 1] != '\n'))
+            continue;
+        b = lt;
+        bool container = x.compare(lt + 1, 5, "class") == 0 || x.compare(lt + 1, 5, "array") == 0;
+        size_t gt = x.find('>', lt);
+        e = container && x[gt - 1] != '/' ? block_end(x, lt) : gt + 1;
+        return e != std::string::npos;
+    }
+    return false;
+}
+
+std::vector<size_t> game_data_tops(const std::string &x)
+{
+    std::vector<size_t> out;
+    for (size_t at = x.find("<class name=\"mPlGameData\""); at != std::string::npos; at = x.find("<class name=\"mPlGameData\"", at + 1))
+        out.push_back(at);
+    return out;
+}
+} // namespace
+
+// The quest state of a save as text: for each player data copy, each key's block, separated by \x01.
+bool save_quest_state(const std::string &xml, std::string &out)
+{
+    out.clear();
+    std::vector<size_t> tops = game_data_tops(xml);
+    if (tops.empty())
+        return false;
+    for (size_t top : tops)
+        for (const char *k : kQuestKeys) {
+            size_t b, e;
+            if (!quest_child(xml, top, k, b, e))
+                return false;
+            out += xml.substr(b, e - b);
+            out += '\x01';
+        }
+    return true;
+}
+
+// Puts a quest state (from save_quest_state) in place of this save's.
+bool save_put_quest_state(std::string &xml, const std::string &state)
+{
+    std::vector<std::string> parts;
+    for (size_t at = 0, nx; (nx = state.find('\x01', at)) != std::string::npos; at = nx + 1)
+        parts.push_back(state.substr(at, nx - at));
+    size_t per = sizeof kQuestKeys / sizeof kQuestKeys[0];
+    std::vector<size_t> tops = game_data_tops(xml);
+    if (tops.empty() || parts.size() != tops.size() * per)
+        return false;
+    for (size_t c = tops.size(); c-- > 0;) // from the end: earlier offsets stay valid
+        for (size_t k = per; k-- > 0;) {
+            size_t b, e;
+            if (!quest_child(xml, game_data_tops(xml)[c], kQuestKeys[k], b, e))
+                return false;
+            xml.replace(b, e - b, parts[c * per + k]);
+        }
+    return true;
+}
+
+// zlib with the game's own functions: a 4-byte length, then the deflated bytes.
+bool save_deflate(const std::string &in, std::vector<uint8_t> &out)
+{
+    out.assign(8 + in.size() + in.size() / 100 + 64, 0);
+    uint32_t n = uint32_t(in.size());
+    memcpy(out.data(), &n, 4);
+    ZStream z = {};
+    if (z_deflateInit(&z, 9, "1.2.1", int(sizeof z)) != 0)
+        return false;
+    z.next_in = reinterpret_cast<const uint8_t *>(in.data());
+    z.avail_in = n;
+    z.next_out = out.data() + 4;
+    z.avail_out = uint32_t(out.size() - 4);
+    int r = z_deflate(&z, Z_FINISH);
+    uint32_t got = z.total_out;
+    z_deflateEnd(&z);
+    if (r != Z_STREAM_END)
+        return false;
+    out.resize(4 + got);
+    return true;
+}
+
+bool save_inflate(const std::vector<uint8_t> &in, std::string &out)
+{
+    if (in.size() < 4)
+        return false;
+    uint32_t n = 0;
+    memcpy(&n, in.data(), 4);
+    if (n > (64u << 20))
+        return false;
+    out.assign(n, '\0');
+    ZStream z = {};
+    if (z_inflateInit(&z, "1.2.1", int(sizeof z)) != 0)
+        return false;
+    z.next_in = in.data() + 4;
+    z.avail_in = uint32_t(in.size() - 4);
+    z.next_out = reinterpret_cast<uint8_t *>(&out[0]);
+    z.avail_out = n;
+    int r = z_inflate(&z, Z_FINISH);
+    return r == Z_STREAM_END && z.total_out == n;
+}

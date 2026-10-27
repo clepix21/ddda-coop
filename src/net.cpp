@@ -59,7 +59,7 @@ void guest_talk_mirror(DWORD now); // below: the guest mirrors the host's pad du
 namespace {
 
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
-                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11, MSG_REVIVE = 12 };
+                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11, MSG_REVIVE = 12, MSG_QUEST = 13 };
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 // A big correction must move every copy the movement code keeps, or the next collision pass pulls
@@ -126,6 +126,13 @@ struct SnapMsg {
     uint32_t flags_got;       // and its world flag changes (flags.cpp)
     uint8_t down[4];          // shared world: player down, by place (revive.cpp)
     int8_t pawn_of[4];        // the pawn showing each guest (by place), -1 = none
+};
+struct QuestChunkMsg { // shared world: the quest state of the player at `origin`, deflated, in pieces
+    Header h;
+    uint8_t origin;
+    uint32_t crc, total; // crc of the inflated state (quest_sync.cpp), deflated size
+    uint16_t index, len;
+    uint8_t data[1024];
 };
 struct ReviveMsg { // shared world: the player at `target` was helped up
     Header h;
@@ -267,6 +274,17 @@ uint32_t g_loot_my_session = 0;
 std::vector<FlagEv> g_flags_log[4];
 uint32_t g_flags_session[4] = {};
 uint32_t g_flags_applied[4] = {}, g_flags_known[4] = {};
+// shared world quests: the latest quest state of each place (this player's own, and on the host the
+// ones it passes on), sent again every 3 s for 30 s; and the pieces arriving from each place
+struct QuestBlob {
+    std::vector<uint8_t> data;
+    uint32_t crc = 0;
+    DWORD since = 0, next = 0;
+    std::vector<uint8_t> got;
+    std::vector<uint8_t> in;
+    uint32_t in_crc = 0;
+} g_qb[4];
+CRITICAL_SECTION g_qb_lock;
 constexpr float kParkDepth = 3000.f; // that far under the local Arisen
 
 // host: presses/releases seen since the last send, per party member
@@ -806,6 +824,50 @@ void receive_all()
                 exp_sync_seen(1 + k, m->exp_total);
             if (g_shared && peer.pawn >= 0)
                 shared_take(1 + peer.pawn, m->me, m->stage == my_stage());
+        } else if (h->type == MSG_QUEST && n >= int(sizeof(Header) + 15)) {
+            auto m = reinterpret_cast<const QuestChunkMsg *>(buf);
+            int o = m->origin;
+            if (o >= 4 || m->total == 0 || m->total > (4u << 20) || m->len > sizeof m->data)
+                continue;
+            if (g_role == NET_HOST)
+                o = 1 + k; // a guest speaks for itself only
+            QuestBlob &q = g_qb[o];
+            EnterCriticalSection(&g_qb_lock);
+            bool done_already = q.crc == m->crc;
+            if (!done_already && (q.in_crc != m->crc || q.in.size() != m->total)) {
+                q.in_crc = m->crc;
+                q.in.assign(m->total, 0);
+                q.got.assign((m->total + sizeof m->data - 1) / sizeof m->data, 0);
+            }
+            bool complete = false;
+            if (!done_already) {
+                size_t off = size_t(m->index) * sizeof m->data;
+                if (m->index < q.got.size() && off + m->len <= m->total) {
+                    memcpy(q.in.data() + off, m->data, m->len);
+                    q.got[m->index] = 1;
+                }
+                complete = true;
+                for (uint8_t b : q.got)
+                    complete &= b != 0;
+            }
+            std::vector<uint8_t> blob;
+            if (complete) {
+                blob.swap(q.in);
+                q.got.clear();
+            }
+            LeaveCriticalSection(&g_qb_lock);
+            std::string state;
+            if (complete && save_inflate(blob, state) && (save_crc(state.data(), state.size()) | 1) == m->crc) {
+                EnterCriticalSection(&g_qb_lock);
+                q.crc = m->crc;
+                if (g_role == NET_HOST) { // passed on to the other guests
+                    q.data = blob;
+                    q.since = GetTickCount() | 1;
+                    q.next = 0;
+                }
+                LeaveCriticalSection(&g_qb_lock);
+                quest_sync_received(state, m->crc);
+            }
         } else if (h->type == MSG_REVIVE && n == int(sizeof(ReviveMsg))) {
             int t = reinterpret_cast<const ReviveMsg *>(buf)->target;
             if (g_role == NET_GUEST || t == 0)
@@ -1074,6 +1136,44 @@ void host_save_pieces(Peer &peer)
     }
 }
 
+// Shared world: each place's latest quest state, every 3 s for 30 s after it changed (the guest
+// sends its own to the host; the host sends its own and the guests' to every other guest).
+void quest_send(DWORD now)
+{
+    int me = g_role == NET_HOST ? 0 : (g_have_snap ? g_snap.my_slot : -1);
+    for (int o = 0; o < 4; ++o) {
+        if (g_role == NET_GUEST && o != me)
+            continue;
+        EnterCriticalSection(&g_qb_lock);
+        QuestBlob &q = g_qb[o];
+        bool due = !q.data.empty() && q.since && int(now - q.since) < 30000 && (!q.next || int(now - q.next) >= 0);
+        std::vector<uint8_t> data = due ? q.data : std::vector<uint8_t>();
+        uint32_t crc = q.crc;
+        if (due)
+            q.next = (now + 3000) | 1;
+        LeaveCriticalSection(&g_qb_lock);
+        if (data.empty())
+            continue;
+        for (size_t off = 0, i = 0; off < data.size(); off += sizeof(QuestChunkMsg::data), ++i) {
+            QuestChunkMsg m = {};
+            m.h = {kMagic, MSG_QUEST, ++g_seq};
+            m.origin = uint8_t(o);
+            m.crc = crc;
+            m.total = uint32_t(data.size());
+            m.index = uint16_t(i);
+            m.len = uint16_t(std::min<size_t>(sizeof m.data, data.size() - off));
+            memcpy(m.data, data.data() + off, m.len);
+            if (g_role == NET_GUEST) {
+                send_raw(&m, int(sizeof(Header) + 15 + m.len));
+            } else {
+                for (int k = 0; k < kMaxPeers; ++k)
+                    if (g_peers[k].used && 1 + k != o)
+                        send_to(g_peers[k], &m, int(sizeof(Header) + 15 + m.len));
+            }
+        }
+    }
+}
+
 // Host, shared world, every 250 ms per guest: the other players' pickups it has not applied yet.
 void host_loot_send(DWORD now)
 {
@@ -1268,8 +1368,11 @@ DWORD WINAPI net_thread(LPVOID)
                 next_send = now + 16;
                 guest_save_need(now);
                 guest_char_send(now);
-                if (g_shared)
+                if (g_shared) {
                     revive_tick();
+                    quest_sync_tick();
+                    quest_send(now);
+                }
                 static DWORD flags_next = 0; // shared world: quest and world flags (flags.cpp)
                 if (g_shared && (!flags_next || int(now - flags_next) >= 0)) {
                     flags_next = (now + 250) | 1;
@@ -1373,8 +1476,11 @@ DWORD WINAPI net_thread(LPVOID)
                 rejoin_tick(NET_HOST, 0); // and the host's world reloaded with them, during play
                 host_save_send(now);
                 host_progress_send(now);
-                if (g_shared)
+                if (g_shared) {
                     revive_tick();
+                    quest_sync_tick();
+                    quest_send(now);
+                }
                 static DWORD flags_next = 0;
                 if (g_shared && (!flags_next || int(now - flags_next) >= 0)) {
                     flags_next = (now + 250) | 1;
@@ -1441,6 +1547,7 @@ void net_start(NetRole role, const char *peer, int port)
 {
     InitializeCriticalSection(&g_cap_lock); // before g_role: net_capture runs once the role is set
     g_shared = early_flag("shared_world");
+    InitializeCriticalSection(&g_qb_lock);
     g_loot_my_session = (GetTickCount() ^ (GetCurrentProcessId() << 16)) | 1;
     if (g_shared)
         logf("net: shared world: every player plays its own character in its own copy of the host's world");
@@ -2235,4 +2342,18 @@ bool net_stage_jump(int32_t to, int32_t point)
     game::at<int32_t>(st, 4) = 0x13;
     logf("net: stage: jump to %d (point %d) to come back next to a player", to, point);
     return true;
+}
+
+// Shared world (quest_sync.cpp): this world's new quest state, for the other players.
+void net_quest_publish(const std::vector<uint8_t> &blob, uint32_t crc)
+{
+    int me = g_role == NET_HOST ? 0 : net_my_slot();
+    if (me < 0 || me >= 4)
+        return;
+    EnterCriticalSection(&g_qb_lock);
+    g_qb[me].data = blob;
+    g_qb[me].crc = crc;
+    g_qb[me].since = GetTickCount() | 1;
+    g_qb[me].next = 0;
+    LeaveCriticalSection(&g_qb_lock);
 }

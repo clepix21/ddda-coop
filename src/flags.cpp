@@ -131,6 +131,8 @@ void flags_scan()
         LeaveCriticalSection(&g_lock);
         uint32_t sub = 0;
         const char *t = where(uint32_t(i), sub);
+        if (t[0] == 'q') // a quest flag: this world's quest list may have changed (quest_sync.cpp)
+            quest_sync_local_change();
         if (logged++ < 20)
             logf("flags: %s word %u: %08X -> %08X (set %08X, cleared %08X), sent to the other players", t, sub, b, v,
                  e.set, e.clr);

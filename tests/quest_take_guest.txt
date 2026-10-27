@@ -1,0 +1,4 @@
+# Quest test, guest: stays; after the host took the quest, a fresh save (mode 7, dumped) of its world.
+wait 110000
+savereq 7 0
+wait 10000

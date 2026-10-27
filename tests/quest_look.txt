@@ -1,0 +1,21 @@
+# Owner's quest save (quest.sav, 2026-10-27 21:15, Cassardis): an NPC with a quest in front; the owner
+# says A is enough. Look, then A a few times with screenshots between.
+wait 4000
+nlist
+wait 4000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 5000

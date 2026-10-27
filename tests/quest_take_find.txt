@@ -1,0 +1,36 @@
+# (with sGameSys dumps before/after) Owner's quest save (quest.sav, Cassardis, a quest giver in front; the HUD says "B Parler"): the
+# host waits for the guest, talks (B), goes through the lines and choices with A, then a fresh save
+# (mode 7, dumped in tests) to see the quest list.
+wait 20000
+vmark 3473408
+dumpg 018fa4bc be470 q0
+dumpg 018fa4b4 20000 m0
+dumpg 018fa520 20000 n0
+pad 0 2000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 12000
+vnew 3473408 2031616
+dumpg 018fa4bc be470 q1
+dumpg 018fa4b4 20000 m1
+dumpg 018fa520 20000 n1
+savereq 7 0
+wait 10000

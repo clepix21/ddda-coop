@@ -56,6 +56,7 @@ static DWORD WINAPI pad_thread(LPVOID)
     exp_sync_install();
     loot_install();
     flags_install();
+    quest_sync_init();
     enemies_install();
     stages_install();
     talk_install();
