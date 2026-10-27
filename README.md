@@ -20,7 +20,26 @@ Only this build is supported; the mod disables itself on any other `DDDA.exe`:
 | `DDDA.exe` SHA-256 | `19FACC2642F79A09D14CE55EACE5F228161F2F8BAB60EC67EB3C6196CC6277B8` |
 | PE TimeDateStamp | `0x5A314C31` (checked at startup) |
 
-## Install
+## Install with the launcher (easiest)
+
+`build\DDDA-Coop.zip` holds `DDDA-Coop.exe`, `dinput8.dll`, `coop.ini` and `LISEZMOI.txt` (French
+how-to). Unzip it anywhere and open `DDDA-Coop.exe`, a small window that:
+
+- finds the game through Steam's library folders (or "Changer…") and checks the `DDDA.exe` build;
+- for the chosen role (host, or guest with or without its own character), copies every Steam
+  account's DDDA saves to `Documents\DDDA Coop\Sauvegardes\<date>`, copies `dinput8.dll` next to
+  `DDDA.exe` (never over another mod's `dinput8.dll`), writes `coop.ini` and starts the game
+  through Steam;
+- shows the co-op state from `coop.log` in French (connected to Steam, host found, "Connecté !
+  Appuie sur Start", friends connected and dropped, connection lost);
+- "Retirer le mod" deletes `dinput8.dll` and `coop.ini`; "Exporter le journal" copies `coop.log`
+  to `Documents\DDDA Coop\Journaux`.
+
+Tested on a test folder with a fake Steam folder (18/18 checks: install, `coop.ini` for both roles,
+save copy byte for byte, states from log lines, log export, removal, a foreign `dinput8.dll` left
+alone); not yet used with the game started from it.
+
+## Install by hand
 
 1. Back up your saves (`%ProgramFiles(x86)%\Steam\userdata\<id>\367500\remote`).
 2. Copy `dinput8.dll` and `coop.ini` next to `DDDA.exe`. Another mod that also uses
