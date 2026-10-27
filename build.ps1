@@ -43,7 +43,8 @@ if ($LASTEXITCODE) { throw "launcher link failed" }
 $pkg = Join-Path $out "DDDA-Coop"
 New-Item -ItemType Directory -Force $pkg | Out-Null
 Copy-Item (Join-Path $out "DDDA-Coop.exe"), (Join-Path $out "dinput8.dll"), `
-    (Join-Path $PSScriptRoot "dist\coop.ini"), (Join-Path $PSScriptRoot "dist\LISEZMOI.txt") $pkg
+    (Join-Path $PSScriptRoot "dist\coop.ini"), (Join-Path $PSScriptRoot "dist\LISEZMOI.txt"), `
+    (Join-Path $PSScriptRoot "dist\TEST-A-PLUSIEURS.txt") $pkg
 Compress-Archive -Path (Join-Path $pkg "*") -DestinationPath (Join-Path $out "DDDA-Coop.zip") -Force
 Get-Item (Join-Path $out "dinput8.dll"), (Join-Path $out "DDDA-Coop.exe"), (Join-Path $out "DDDA-Coop.zip") |
     Select-Object Name, Length

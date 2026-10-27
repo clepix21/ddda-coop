@@ -629,6 +629,26 @@ bool storage_guest_character(std::string &out)
 // Guest: the host's DDDA.sav arrived complete (checked); used for every later read of DDDA.sav.
 void storage_set_peer_save(const uint8_t *data, size_t size, uint32_t version, uint32_t sig)
 {
+    // tests: test_owner=<SteamID64> makes the host's save belong to another account, as between two
+    // real accounts (the two test copies share one)
+    char owner[32] = "";
+    std::vector<uint8_t> foreign;
+    if (cfg_str("test_owner", owner, sizeof owner) && owner[0]) {
+        std::vector<uint8_t> in(data, data + size), out;
+        std::string xml;
+        uint32_t head[8];
+        size_t at = std::string::npos;
+        if (save_unpack(in, xml, head) && (at = xml.rfind("<u64 name=\"mSteamID\" value=\"")) != std::string::npos) {
+            size_t a = at + 28, b = xml.find('"', a);
+            logf("storage: test_owner: the host's save owner %s -> %s", xml.substr(a, b - a).c_str(), owner);
+            xml.replace(a, b - a, owner);
+            if (save_pack(xml, head, out)) {
+                foreign.swap(out);
+                data = foreign.data();
+                size = foreign.size();
+            }
+        }
+    }
     EnterCriticalSection(&g_save_lock);
     g_peer_save.assign(data, data + size);
     g_peer_version = version;

@@ -578,6 +578,23 @@ void on_log_line(const std::string &l)
         add_event(L"Changement de zone avec l'hôte.");
     } else if (has("net: send_character=0")) {
         add_event(L"Tu joues le pion de l'hôte tel quel (sans ton propre perso).");
+    } else if (has("steam: friends in Dragon's Dogma:")) {
+        // " ...1234 (host) ...5678 (guest) ...9012 (no mod)" or " none"
+        std::string list = l.substr(l.find("Dragon's Dogma:") + 15), fr;
+        size_t at = 0;
+        while ((at = list.find("...", at)) != std::string::npos) {
+            std::string id = list.substr(at, 7), role = list.substr(list.find('(', at) + 1);
+            role = role.substr(0, role.find(')'));
+            fr += (fr.empty() ? "" : ", ") + id + " (" +
+                  (role == "host" ? "hôte" : role == "guest" ? "invité" : "sans le mod") + ")";
+            at += 3;
+        }
+        int n = MultiByteToWideChar(CP_UTF8, 0, fr.c_str(), -1, nullptr, 0);
+        std::wstring w(n > 0 ? n - 1 : 0, L'\0');
+        if (n > 1)
+            MultiByteToWideChar(CP_UTF8, 0, fr.c_str(), -1, &w[0], n);
+        add_event(fr.empty() ? L"Aucun ami Steam dans Dragon's Dogma pour l'instant."
+                             : L"Amis Steam dans le jeu (fin de leur identifiant) : " + w);
     } else if (has("progress: from the host:")) {
         long long exp = 0, jp = 0;
         int kinds = 0;

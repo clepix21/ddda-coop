@@ -48,7 +48,7 @@ static DWORD WINAPI pad_thread(LPVOID)
         keep_active_install();
     input_redirect_install();
     save_guard_install(cfg_block_saves()); // storage hooks always; writes blocked only when asked
-    if (cfg_role() == NET_GUEST)
+    if (cfg_role() == NET_GUEST && !early_flag("test_no_owner_patch")) // tests: show what the patch avoids
         storage_guest_patch();
     if (!cfg_block_saves())
         logf("save-guard: off (saves work normally)");

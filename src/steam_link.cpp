@@ -9,8 +9,11 @@
 //  - the guest looks for a friend in game 367500 whose ddda_coop is "host" (or peer_steamid=);
 //  - the host accepts a P2P session from every friend in game 367500 (or only peer_steamid=)
 //    and talks to each of them (up to 3 guests, net.cpp keeps the list).
-// Accepting before the session request arrives is enough with this API: no callback object is
-// registered with the game's callback dispatcher.
+// No callback object is registered with the game's callback dispatcher, so sessions are opened by
+// sending: Steam accepts a session with a user one has sent to. The guest sends first (its INPUT);
+// the host also sends a 9-byte hello every 2 s to each friend whose ddda_coop says guest (only the
+// one-PC stand-in had tested the accept-before-request way, 2026-10-27). Friends' rich presence is
+// requested every 10 s, and the friends seen in the game are logged when that list changes.
 //
 // Only the net thread calls into this file.
 #include <windows.h>
@@ -18,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "mod.h"
 #include "steam_link.h"
@@ -68,6 +72,8 @@ bool fill_real()
               resolve(m, "SteamAPI_ISteamFriends_SetRichPresence", g_f.SetRichPresence);
     if (!ok)
         return false;
+    g_f.RequestFriendRichPresence = reinterpret_cast<decltype(g_f.RequestFriendRichPresence)>(
+        reinterpret_cast<void *>(GetProcAddress(m, "SteamAPI_ISteamFriends_RequestFriendRichPresence")));
     g_f.net = net();
     g_f.user = user();
     g_f.friends = friends();
@@ -129,8 +135,34 @@ void link_steam_tick()
     if (!g_ready)
         return;
     g_f.SetRichPresence(g_f.friends, "ddda_coop", g_role == NET_HOST ? "host" : "guest");
+    static DWORD next_request = 0;
+    static std::string seen;
+    DWORD now = GetTickCount();
+    if (!next_request || int(now - next_request) >= 0) { // ask Steam for the friends' presence, list them
+        next_request = (now + 10000) | 1;
+        std::string list;
+        for_each_candidate([&list](uint64_t id) {
+            if (g_f.RequestFriendRichPresence)
+                g_f.RequestFriendRichPresence(g_f.friends, id);
+            const char *rp = g_f.GetFriendRichPresence(g_f.friends, id, "ddda_coop");
+            char item[48];
+            _snprintf(item, sizeof item, " ...%04u (%s)", short_id(id), rp && *rp ? rp : "no mod");
+            list += item;
+        });
+        if (list != seen) {
+            seen = list;
+            logf("steam: friends in Dragon's Dogma:%s", list.empty() ? " none" : list.c_str());
+        }
+    }
     if (g_role == NET_HOST) {
-        for_each_candidate([](uint64_t id) { g_f.AcceptP2PSessionWithUser(g_f.net, id); });
+        for_each_candidate([](uint64_t id) {
+            g_f.AcceptP2PSessionWithUser(g_f.net, id);
+            const char *rp = g_f.GetFriendRichPresence(g_f.friends, id, "ddda_coop");
+            if (g_fixed_peer || (rp && strcmp(rp, "guest") == 0)) {
+                const uint8_t hello[9] = {0x44, 0x44, 0x43, 0x4F, 0, 0, 0, 0, 0}; // net.cpp Header: 'DDCO', type 0
+                g_f.SendP2PPacket(g_f.net, id, hello, sizeof hello, kSendUnreliable, kChannel);
+            }
+        });
         return;
     }
     if (g_peer)

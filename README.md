@@ -229,7 +229,14 @@ over the Steam code path with a test stand-in for Steam (`steam_mock.cpp`):
   patched on guests (the host's save belongs to another account), untested with two accounts; the
   tests used the same character for both guests.
 - The real Steam path has only been checked to start (Steam interfaces found, logged on); no
-  packet has gone between two real Steam accounts.
+  packet has gone between two real Steam accounts. The host now also sends a small hello to friends
+  whose `ddda_coop` says guest (Steam opens a session with a user one has sent to; the old
+  accept-in-advance way was only tested with the one-PC stand-in), asks Steam for the friends' rich
+  presence every 10 s, and logs the friends seen in the game (`steam: friends in Dragon's Dogma`).
+- Loading a save owned by another account (the host's, on a guest): the two test copies share one
+  account, so `test_owner=` rewrites the owner of the save the guest receives. Without the owner
+  check patch the guest's game went back to the title; with it the guest reached the host's area
+  (`tools\suite_owner.ps1`, 4/4 over UDP stand-in and Steam stand-in).
 
 - Enemies: each game still loads and unloads its own. Seen once: the guest's game unloaded 2 far
   zombies the host kept (they stay missing on the guest) and loaded 3 creatures the host did not

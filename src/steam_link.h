@@ -27,6 +27,7 @@ struct SteamFns {
     bool (*GetFriendGamePlayed)(void *friends, uint64_t user, FriendGameInfo *info) = nullptr;
     const char *(*GetFriendRichPresence)(void *friends, uint64_t user, const char *key) = nullptr;
     bool (*SetRichPresence)(void *friends, const char *key, const char *value) = nullptr;
+    void (*RequestFriendRichPresence)(void *friends, uint64_t user) = nullptr; // optional (may be missing)
 };
 
 // steam_mock.cpp: tests only. Two copies on one PC with fake accounts, packets over localhost UDP.
