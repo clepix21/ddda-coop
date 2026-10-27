@@ -59,7 +59,7 @@ void guest_talk_mirror(DWORD now); // below: the guest mirrors the host's pad du
 namespace {
 
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
-                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9 };
+                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10 };
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 // A big correction must move every copy the movement code keeps, or the next collision pass pulls
@@ -122,12 +122,23 @@ struct SnapMsg {
     int32_t stage_of[kParty]; // shared world: the area each entry's player is in (the host's layout)
     int64_t exp_total[4];     // shared world: exp each player's world gave (0 = host, 1 + guest place)
     int8_t my_slot;           // this guest's place in exp_total
+    uint32_t loot_got;        // shared world: this guest's pickups the host has (loot.cpp)
 };
 struct PStateMsg { // shared world, guest -> host: its own Arisen
     Header h;
     CharState me;
     int32_t stage;
     int64_t exp_total; // exp_sync.cpp
+    uint32_t loot_session;     // this game run (pickups restart at 1 with a new one)
+    uint32_t loot_applied[4];  // the other players' pickups this guest applied, by place
+};
+constexpr int kLootPage = 24;
+struct LootMsg { // shared world: pickups of the player at `slot`, numbered from `first`
+    Header h;
+    uint8_t slot;
+    uint32_t session, first;
+    uint8_t n;
+    LootEv ev[kLootPage];
 };
 struct EnemyState {
     uint8_t slot;     // the host's enemy table slot (enemies.cpp)
@@ -212,6 +223,9 @@ struct Peer {
     int32_t pstage;
     DWORD pstate_tick;
     int64_t exp_total;
+    // host, shared world loot: what this guest applied of each place's pickups, where it started
+    uint32_t loot_applied[4], loot_joined[4];
+    DWORD loot_next;
 };
 Peer g_peers[kMaxPeers] = {};
 int g_pawn_order[kPawns] = {1, 2, 0};
@@ -225,6 +239,12 @@ DWORD g_rp_tick[kParty] = {};
 // a pawn showing a player who is in another area: kept still out of sight, no AI (owner: "quand une
 // personne part elle n'est pas remplacée"), until that player comes back
 bool g_rp_away[kParty] = {};
+// shared world loot (loot.cpp): host, the guests' pickups by place (1 + guest index) and their run;
+// guest, what it applied of each place's pickups and from which run
+std::vector<LootEv> g_loot_log[4];
+uint32_t g_loot_session[4] = {};
+uint32_t g_loot_applied[4] = {}, g_loot_known[4] = {};
+uint32_t g_loot_my_session = 0;
 constexpr float kParkDepth = 3000.f; // that far under the local Arisen
 
 // host: presses/releases seen since the last send, per party member
@@ -678,6 +698,8 @@ void receive_all()
             p.addr = from;
             p.steam = from_steam;
             p.pawn = pawn;
+            for (int s = 0; s < 4; ++s) // pickups made before this guest came are not its
+                p.loot_joined[s] = s == 0 ? loot_mine_count() : uint32_t(g_loot_log[s].size());
             char name[64];
             logf("net: guest connected from %s (guest %d, pad slot %d, pawn %d%s)", peer_name(p, name, sizeof name), k + 1,
                  k + 1, pawn, pawn == 0 ? ", the main pawn" : "");
@@ -751,10 +773,38 @@ void receive_all()
             peer.pstage = m->stage;
             peer.pstate_tick = GetTickCount() | 1;
             peer.exp_total = m->exp_total;
+            memcpy(peer.loot_applied, m->loot_applied, sizeof peer.loot_applied);
             if (g_shared)
                 exp_sync_seen(1 + k, m->exp_total);
             if (g_shared && peer.pawn >= 0)
                 shared_take(1 + peer.pawn, m->me, m->stage == my_stage());
+        } else if (h->type == MSG_LOOT && n >= int(sizeof(Header) + 10)) {
+            auto m = reinterpret_cast<const LootMsg *>(buf);
+            if (m->n > kLootPage || m->slot >= 4 || n < int(sizeof(Header) + 10 + m->n * sizeof(LootEv)))
+                continue;
+            if (g_role == NET_HOST) { // a guest's own pickups
+                int s = 1 + k;
+                if (g_loot_session[s] != m->session) {
+                    g_loot_session[s] = m->session;
+                    g_loot_log[s].clear();
+                }
+                for (int e = 0; e < m->n; ++e)
+                    if (m->first + e == g_loot_log[s].size() + 1) {
+                        g_loot_log[s].push_back(m->ev[e]);
+                        loot_net_apply(m->ev[e]);
+                    }
+            } else { // another player's pickups, through the host
+                int s = m->slot;
+                if (g_loot_known[s] != m->session) {
+                    g_loot_known[s] = m->session;
+                    g_loot_applied[s] = m->first - 1; // a new run of that player: from what the host sends
+                }
+                for (int e = 0; e < m->n; ++e)
+                    if (m->first + e == g_loot_applied[s] + 1) {
+                        loot_net_apply(m->ev[e]);
+                        ++g_loot_applied[s];
+                    }
+            }
         } else if (g_role == NET_HOST && h->type == MSG_PROGRESS_ACK && n == int(sizeof(ProgressAckMsg))) {
             peer.prog_acked = reinterpret_cast<const ProgressAckMsg *>(buf)->crc;
         } else if (g_role == NET_GUEST && h->type == MSG_PROGRESS && n >= int(sizeof(Header) + 12)) {
@@ -963,6 +1013,41 @@ void host_save_pieces(Peer &peer)
     }
 }
 
+// Host, shared world, every 250 ms per guest: the other players' pickups it has not applied yet.
+void host_loot_send(DWORD now)
+{
+    g_loot_session[0] = g_loot_my_session;
+    for (int k = 0; k < kMaxPeers; ++k) {
+        Peer &peer = g_peers[k];
+        if (!peer.used || (peer.loot_next && int(now - peer.loot_next) < 0))
+            continue;
+        peer.loot_next = (now + 250) | 1;
+        for (int s = 0; s < 4; ++s) {
+            if (s == 1 + k)
+                continue;
+            uint32_t size = s == 0 ? loot_mine_count() : uint32_t(g_loot_log[s].size());
+            uint32_t from = std::max(peer.loot_applied[s], peer.loot_joined[s]) + 1;
+            if (from > size)
+                continue;
+            std::vector<LootEv> evs;
+            if (s == 0) {
+                loot_net_mine(evs, from, kLootPage);
+            } else {
+                for (uint32_t q = from; q <= size && int(evs.size()) < kLootPage; ++q)
+                    evs.push_back(g_loot_log[s][q - 1]);
+            }
+            LootMsg lm = {};
+            lm.h = {kMagic, MSG_LOOT, ++g_seq};
+            lm.slot = uint8_t(s);
+            lm.session = g_loot_session[s];
+            lm.first = from;
+            lm.n = uint8_t(evs.size());
+            memcpy(lm.ev, evs.data(), evs.size() * sizeof(LootEv));
+            send_to(peer, &lm, int(sizeof(Header) + 10 + evs.size() * sizeof(LootEv)));
+        }
+    }
+}
+
 // Host, every 500 ms per guest until acked: what its character gained (progress.cpp), in pieces.
 void host_progress_send(DWORD now)
 {
@@ -1105,7 +1190,29 @@ DWORD WINAPI net_thread(LPVOID)
                     read_state(0, ps.me);
                     ps.stage = my_stage();
                     ps.exp_total = exp_sync_total();
+                    ps.loot_session = g_loot_my_session;
+                    memcpy(ps.loot_applied, g_loot_applied, sizeof ps.loot_applied);
                     send_raw(&ps, sizeof ps);
+                    static DWORD loot_next = 0;
+                    if (g_have_snap && (!loot_next || int(now - loot_next) >= 0)) { // its pickups the host lacks
+                        loot_next = (now + 250) | 1;
+                        EnterCriticalSection(&g_snap_lock);
+                        uint32_t got = g_snap.loot_got;
+                        int8_t slot = g_snap.my_slot;
+                        LeaveCriticalSection(&g_snap_lock);
+                        std::vector<LootEv> evs;
+                        loot_net_mine(evs, got + 1, kLootPage);
+                        if (!evs.empty()) {
+                            LootMsg lm = {};
+                            lm.h = {kMagic, MSG_LOOT, ++g_seq};
+                            lm.slot = uint8_t(slot);
+                            lm.session = g_loot_my_session;
+                            lm.first = got + 1;
+                            lm.n = uint8_t(evs.size());
+                            memcpy(lm.ev, evs.data(), evs.size() * sizeof(LootEv));
+                            send_raw(&lm, int(sizeof(Header) + 10 + evs.size() * sizeof(LootEv)));
+                        }
+                    }
                 } else {
                     roam_tick(); // free roam: leave the host's party and come back (roam.cpp)
                 }
@@ -1143,6 +1250,7 @@ DWORD WINAPI net_thread(LPVOID)
                     m.exp_total[1 + k] = g_peers[k].used ? g_peers[k].exp_total : 0;
                 for (const Peer &peer : g_peers) { // each guest is told which pawn is its own
                     m.my_slot = int8_t(1 + (&peer - g_peers));
+                    m.loot_got = uint32_t(g_loot_log[m.my_slot].size());
                     m.my_pawn = int8_t(peer.pawn);
                     m.char_crc = peer.char_crc;
                     send_to(peer, &m, sizeof m);
@@ -1153,6 +1261,8 @@ DWORD WINAPI net_thread(LPVOID)
                 rejoin_tick(NET_HOST, 0); // and the host's world reloaded with them, during play
                 host_save_send(now);
                 host_progress_send(now);
+                if (g_shared)
+                    host_loot_send(now);
             }
         }
         if (int(now - next_log) >= 0) {
@@ -1212,6 +1322,7 @@ void net_start(NetRole role, const char *peer, int port)
 {
     InitializeCriticalSection(&g_cap_lock); // before g_role: net_capture runs once the role is set
     g_shared = early_flag("shared_world");
+    g_loot_my_session = (GetTickCount() ^ (GetCurrentProcessId() << 16)) | 1;
     if (g_shared)
         logf("net: shared world: every player plays its own character in its own copy of the host's world");
     MemoryBarrier();

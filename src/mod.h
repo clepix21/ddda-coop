@@ -68,6 +68,13 @@ bool exp_sync_install();
 long long exp_sync_total();                 // exp this world gave its Arisen
 void exp_sync_seen(int slot, long long total); // another player's total (net thread)
 void exp_sync_apply();                      // game thread: give what the others earned
+bool loot_install();                        // loot.cpp: shared world loot
+void progress_shared_gain(long long exp, long long jp, int item, int count, unsigned flags); // guest: keep for its own save
+struct LootEv { uint16_t item, count; uint32_t flags; };
+void loot_net_mine(std::vector<LootEv> &out, uint32_t from_seq, int max); // this player's pickups from seq
+uint32_t loot_mine_count();
+void loot_net_apply(const LootEv &e);       // net thread: another player's pickup, applied on the game thread
+void loot_apply_queued();                   // game thread
 int net_guest_my_pawn();   // net.cpp: the pawn the host gave this guest, -1 = none
 void save_guard_poll();
 bool save_guard_active();

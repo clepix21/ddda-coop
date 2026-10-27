@@ -437,6 +437,8 @@ void progress_host_loaded(const std::vector<uint8_t> &file, const uint32_t crc[]
 // Host, game thread, a write of a save holding guests' characters (xml before un-merging).
 void progress_host_write(const std::string &xml)
 {
+    if (net_shared())
+        return; // shared world: each guest keeps its own gains as they happen (progress_shared_gain)
     lock();
     Segment &s = g_seg;
     bool any = false;
@@ -666,4 +668,32 @@ void progress_roam_end(const std::string &xml)
     bool ok = write_pending(p);
     logf("progress: free roam: +%lld exp, +%lld discipline, %d new item kind(s)%s", exp, jp, int(seg.items.size()),
          ok ? "" : " (pending.txt NOT written)");
+}
+
+// Shared world, guest: gains of its own character in its copy of the host's world (never saved
+// there) kept for its own save: exp and discipline, and items (picked up or copies of the other
+// players' pickups). One "shared-<session>" segment per game session, added to on each call.
+void progress_shared_gain(long long exp, long long jp, int item, int count, unsigned flags)
+{
+    static std::string seg_id;
+    if (seg_id.empty()) {
+        char s[48];
+        _snprintf(s, sizeof s, "shared-%s-%lu", stamp().c_str(), GetCurrentProcessId());
+        seg_id = s;
+    }
+    lock();
+    Pending p;
+    read_pending(p);
+    std::string own;
+    if (storage_guest_character(own))
+        p.name = save_character_name(own);
+    Pending::Seg &seg = p.segs[seg_id];
+    seg.exp += exp > 0 ? exp : 0;
+    seg.jp += jp > 0 ? jp : 0;
+    if (item >= 0 && count > 0)
+        seg.items[Item{item, flags, 0, 0, 0, 0, 0}] += count;
+    bool ok = write_pending(p);
+    unlock();
+    if (!ok)
+        logf("progress: shared world gains NOT written to pending.txt");
 }

@@ -22,13 +22,21 @@ namespace {
 
 using Grant_t = void(__stdcall *)(uintptr_t gs, int exp, float factor, char fixed); // RET 0x10 (0x004437BD)
 constexpr uintptr_t kGrant = 0x00443470;
-constexpr uintptr_t kArisenParam = 0xA76D0, kExp = 0x2C4;
+constexpr uintptr_t kArisenParam = 0xA76D0, kExp = 0x2C4, kDiscipline = 0x344; // FUN_00782D10: [0xB1], [0xD1]
 Grant_t g_orig = nullptr;
 thread_local bool g_applying = false;
 volatile LONG64 g_total = 0;   // exp this world gave its Arisen (shared world)
 volatile LONG64 g_pending = 0; // other players' exp not given yet
 
 int32_t arisen_exp(uintptr_t gs) { return gs ? game::at<int32_t>(gs, kArisenParam + kExp) : 0; }
+int32_t arisen_jp(uintptr_t gs) { return gs ? game::at<int32_t>(gs, kArisenParam + kDiscipline) : 0; }
+
+// A guest's own world is never saved: what its Arisen gains is kept for its own save.
+void keep_for_guest(int32_t exp, int32_t jp)
+{
+    if (net_role() == NET_GUEST && (exp > 0 || jp > 0))
+        progress_shared_gain(exp, jp, -1, 0, 0);
+}
 
 void __stdcall hk_grant(uintptr_t gs, int exp, float factor, char fixed)
 {
@@ -44,9 +52,10 @@ void __stdcall hk_grant(uintptr_t gs, int exp, float factor, char fixed)
         }
         return;
     }
-    int32_t before = arisen_exp(gs);
+    int32_t before = arisen_exp(gs), jp_before = arisen_jp(gs);
     g_orig(gs, exp, factor, fixed);
     int32_t gained = arisen_exp(gs) - before;
+    keep_for_guest(gained, arisen_jp(gs) - jp_before);
     if (gained > 0) {
         LONG64 total = InterlockedAdd64(&g_total, gained);
         logf("exp: +%d in this world (total %lld), shared with the other players", gained, total);
@@ -99,8 +108,9 @@ void exp_sync_apply()
         return;
     }
     g_applying = true;
-    int32_t before = arisen_exp(gs);
+    int32_t before = arisen_exp(gs), jp_before = arisen_jp(gs);
     g_orig(gs, int(n > 0x7FFFFFFF ? 0x7FFFFFFF : n), 1.0f, 1);
     g_applying = false;
+    keep_for_guest(arisen_exp(gs) - before, arisen_jp(gs) - jp_before);
     logf("exp: +%lld from the other players given to this party (Arisen exp %d -> %d)", n, before, arisen_exp(gs));
 }

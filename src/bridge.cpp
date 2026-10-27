@@ -186,25 +186,54 @@ void run_line(const char *line)
         _snprintf(g_current, sizeof g_current, "uscan %s (%d hits)", who, hits);
     } else if (strncmp(line, "iscan ", 6) == 0) {
         // iscan <num1> <no1> <num2> <no2>: item entries in memory, (s16 num, s16 itemNo) followed by
-        // the next entry 8..64 bytes further; every committed read-write region of the process
+        // the next entry 8..64 bytes further, in every committed read-write region (copied with
+        // ReadProcessMemory: regions can change under the scan); then the exe's globals that point
+        // at most 1 MB before a hit (its owner object)
         int n1 = 0, i1 = 0, n2 = 0, i2 = 0, hits = 0;
         if (sscanf(line + 6, "%d %d %d %d", &n1, &i1, &n2, &i2) == 4) {
             uint32_t a = uint16_t(n1) | uint32_t(uint16_t(i1)) << 16, b = uint16_t(n2) | uint32_t(uint16_t(i2)) << 16;
+            static std::vector<uint8_t> buf(0x100000);
+            uintptr_t found[20];
+            size_t regions = 0, bytes = 0, failed = 0;
             MEMORY_BASIC_INFORMATION mbi;
             for (uintptr_t p = 0x10000; p < 0x7FFF0000 && hits < 20 && VirtualQuery((void *)p, &mbi, sizeof mbi);
                  p = uintptr_t(mbi.BaseAddress) + mbi.RegionSize) {
                 if (mbi.State != MEM_COMMIT || !(mbi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)) || (mbi.Protect & PAGE_GUARD))
                     continue;
                 const uint8_t *base = (const uint8_t *)mbi.BaseAddress;
-                for (size_t o = 0; o + 68 <= mbi.RegionSize && hits < 20; o += 2) {
+                ++regions;
+                bytes += mbi.RegionSize;
+                for (size_t o = 0; o + 80 <= mbi.RegionSize && hits < 20; o += 2) {
                     if (*(const uint32_t *)(base + o) != a)
                         continue;
                     for (int s = 8; s <= 64; s += 2)
-                        if (*(const uint32_t *)(base + o + s) == b) {
-                            logf("bridge: iscan at %p stride %d", (void *)(base + o), s);
-                            ++hits;
+                        if (*(const uint32_t *)(base + o + s) == b && hits < 20) {
+                            found[hits++] = uintptr_t(base + o);
+                            uint8_t row[80];
+                            SIZE_T got = 0;
+                            char hex[200] = "";
+                            int hl = 0;
+                            if (ReadProcessMemory(GetCurrentProcess(), base + o, row, sizeof row, &got) && got == sizeof row)
+                                for (int k = 0; k < 80; ++k)
+                                    hl += _snprintf(hex + hl, sizeof hex - hl, "%02X", row[k]);
+                            logf("bridge: iscan %d %d at %p stride %d: %s", n1, i1, (void *)(base + o), s, hex);
                         }
                 }
+            }
+            logf("bridge: iscan read %u chunks, %u MB, %u failed", unsigned(regions), unsigned(bytes >> 20), unsigned(failed));
+            uint32_t page[1024];
+            int g = 0;
+            for (uintptr_t pg = 0x018C0000; pg < 0x01A00000 && g < 16 && hits; pg += 0x1000) {
+                SIZE_T got = 0;
+                if (!ReadProcessMemory(GetCurrentProcess(), (void *)pg, page, sizeof page, &got) || got != sizeof page)
+                    continue;
+                for (int k = 0; k < 1024 && g < 16; ++k)
+                    for (int h = 0; h < hits; ++h)
+                        if (page[k] <= found[h] && found[h] - page[k] < 0x100000 && page[k] > 0x10000 && !(page[k] & 3)) {
+                            logf("bridge: iscan   [%08X] = %08X, +0x%X before hit %d", unsigned(pg + 4 * k), page[k],
+                                 unsigned(found[h] - page[k]), h);
+                            ++g;
+                        }
             }
         }
         _snprintf(g_current, sizeof g_current, "iscan (%d hits)", hits);
