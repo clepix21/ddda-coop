@@ -1,0 +1,30 @@
+# Inn save: talk to the innkeeper, A through the lines (screenshots 2026-10-26 22:19: "A Continuer"),
+# B to leave the menu that follows; sGameSys dumps before, during and after the talk.
+wait 3000
+dumpg 018fa4bc be470 j0
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+dumpg 018fa4bc be470 j1
+pad 0 1000 0 0 0 0 0 0 150
+wait 2000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2000
+dumpg 018fa4bc be470 j2
+pad 0 2000 0 0 0 0 0 0 150
+wait 2000
+pad 0 2000 0 0 0 0 0 0 150
+wait 3000
+dumpg 018fa4bc be470 j3
+wait 3000

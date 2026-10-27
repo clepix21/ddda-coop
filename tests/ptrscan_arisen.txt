@@ -1,0 +1,3 @@
+# HP search: the Arisen shows 1567 HP on the HUD with the owner's save.
+wait 3000
+ptrscan arisen 1567

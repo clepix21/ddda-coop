@@ -1,0 +1,4 @@
+# Dump the Arisen and main pawn (HP search), then every live enemy.
+wait 3000
+dump hpa
+edump hpa

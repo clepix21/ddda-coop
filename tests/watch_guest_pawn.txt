@@ -1,0 +1,5 @@
+# Who writes the guest pawn position after a late join (pawn stuck ~600 u from the host pawn)?
+wait 20000
+watch pawn 40 30
+wait 3000
+watch pawn 1990 10

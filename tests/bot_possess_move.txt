@@ -1,0 +1,14 @@
+# Boot -> title -> "Menu principal" -> "Charger" (last manual save). Pad 1. A=1000
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+0 1 0              # pad 2 plugged in, idle
+# possession turns on at 125 s (coop.ini auto_possess=125000)
+130000 1 0 0 -30000  # P2 stick back 4 s -> pawn should move
+134000 1 0
+137000 0 0 0 -30000  # P1 stick back 3 s -> Arisen should move
+140000 0 0

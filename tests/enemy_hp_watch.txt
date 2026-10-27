@@ -1,0 +1,85 @@
+# After route_guild_to_underground.txt: write watch on enemy #6's HP (drops only, with stack), then
+# walk up to it and swing (the party usually kills it). Finds the code that damages enemies.
+ewatchhp #6 6
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump hw

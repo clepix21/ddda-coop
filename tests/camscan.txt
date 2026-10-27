@@ -1,0 +1,2 @@
+wait 35000
+camscan

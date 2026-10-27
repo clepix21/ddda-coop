@@ -1,0 +1,11 @@
+# Boot -> title -> "Menu principal" -> "Charger" (last manual save). Pad 1. A=1000
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+# in game: guest pad 1 stick FORWARD 3 s at 160 s -> the pawn should move along the guest camera's forward
+160000 0 0 0 30000
+163000 0 0

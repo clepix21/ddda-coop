@@ -1,0 +1,26 @@
+# After route_guild_to_underground.txt: possession on, 4 s idle, 6 x X, 2 x Y, 2 x RT+X, off.
+wait 1000
+pad 1 0030 0 0 0 0 0 0 250
+wait 4000
+pad 1 4000 0 0 0 0 0 0 150
+wait 500
+pad 1 4000 0 0 0 0 0 0 150
+wait 500
+pad 1 4000 0 0 0 0 0 0 150
+wait 500
+pad 1 4000 0 0 0 0 0 0 150
+wait 500
+pad 1 4000 0 0 0 0 0 0 150
+wait 500
+pad 1 4000 0 0 0 0 0 0 150
+wait 900
+pad 1 8000 0 0 0 0 0 0 150
+wait 900
+pad 1 8000 0 0 0 0 0 0 150
+wait 1500
+pad 1 4000 0 0 0 0 0 255 200
+wait 1500
+pad 1 4000 0 0 0 0 0 255 200
+wait 2000
+pad 1 0030 0 0 0 0 0 0 250
+wait 10000

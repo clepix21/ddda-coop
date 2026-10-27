@@ -1,0 +1,5 @@
+# Inn save (saves/inn.sav, the owner saved in front of the innkeeper on 2026-10-26): look only, no
+# button pressed; list the NPCs and the Arisen position for the talk test.
+wait 3000
+nlist
+wait 8000

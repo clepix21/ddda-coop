@@ -1,0 +1,15 @@
+# Boot -> title -> "Menu principal" -> "Charger" (last manual save). Pad 1. A=1000
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+0 1 0                  # pad 2 plugged in, idle; pad 1 is only used for the menus above
+# possession on at 133 s (coop.ini)
+135000 1 0 30000 0     # P2 stick right 15 s: run the pawn far from the Arisen
+150000 1 0
+155000 1 0030          # P2 Back+Start -> possession OFF
+155300 1 0
+# 155-185 s: nobody touches anything; does the pawn AI walk back to the Arisen?

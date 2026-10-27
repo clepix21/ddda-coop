@@ -1,0 +1,23 @@
+# Talk study, step 2: the same walk, then B where the "Parler" prompt showed (the NPC in green;
+# screenshot 2026-10-26 22:05: a Rift stone far behind, the prompt is "Parler"), then A presses.
+goto -2350 -4550 60 8000
+goto -2235 -3940 60 9000
+goto -1950 -4480 60 10000
+nlist
+ngoto #0 70 8000
+nlist
+wait 1500
+dumpg 018fa4bc be470 t0
+pad 0 2000 0 0 0 0 0 0 150
+wait 1500
+dumpg 018fa4bc be470 t1
+wait 1500
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 6000
+dumpg 018fa4bc be470 t2

@@ -1,0 +1,6 @@
+# Find the area singletons: sArea / sAreaExt, aStage, aGameMain vtables.
+wait 2000
+findvt 155a1e0
+findvt 1429eb8
+findvt 156dfcc
+findvt 155815c

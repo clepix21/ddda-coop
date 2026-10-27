@@ -1,0 +1,9 @@
+# Talk study, step 1 (no button pressed): leave the guild, walk to the NPC listed at (-1900, -4502)
+# in the street, list NPCs again; screenshots show where the bot stands before any B press.
+goto -2350 -4550 60 8000
+goto -2235 -3940 60 9000
+goto -1950 -4480 60 10000
+nlist
+ngoto #0 70 8000
+nlist
+wait 8000

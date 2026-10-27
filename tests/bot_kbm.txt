@@ -1,0 +1,12 @@
+# Boot -> title -> "Menu principal" -> "Charger" (last manual save). Pad 1. A=1000
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+0 1 0                  # pad 2 plugged in, idle
+# possession on at 133 s (coop.ini); keyboard S held 139-142 s by run_test.ps1 -Keys (after the pawn has stopped)
+135000 1 0 30000 0     # P2 stick right 2 s -> pawn moves (regression check)
+137000 1 0

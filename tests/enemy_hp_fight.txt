@@ -1,0 +1,109 @@
+# After route_guild_to_underground.txt: the Arisen swings (X on pad 0) for ~40 s, enemy dumps every 2 s,
+# write watchpoints on the two candidate HP fields of uEm9000 (+0x5900 / +0x58CC), then eset tests.
+ewatch uEm9000 5900 30
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f00
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f01
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f02
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f03
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f04
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f05
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f06
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f07
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f08
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f09
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f10
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f11
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f12
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f13
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f14
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f15
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f16
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f17
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f18
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+pad 0 4000 0 0 0 0 0 0 150
+wait 700
+edump f19
+eset uEm0503 5900 0
+wait 5000
+edump post
+eset uEm9807 58cc 0
+wait 5000
+edump post2

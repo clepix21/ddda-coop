@@ -1,0 +1,26 @@
+# After route_guild_to_underground.txt: the Arisen at 1 HP walks to the small creatures (a hit kills
+# him), then A on the game-over screen; stage loads are logged by stages.cpp.
+# HP set once: re-setting it in the loop revived a dead Arisen once (2026-10-26 19:38)
+php arisen 1
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+wait 8000
+pad 0 1000 0 0 0 0 0 0 150
+wait 4000
+pad 0 1000 0 0 0 0 0 0 150
+wait 4000
+pad 0 1000 0 0 0 0 0 0 150
+wait 4000
+pad 0 1000 0 0 0 0 0 0 150
+wait 4000
+pad 0 1000 0 0 0 0 0 0 150
+wait 4000
+pad 0 1000 0 0 0 0 0 0 150
+wait 4000
+wait 20000

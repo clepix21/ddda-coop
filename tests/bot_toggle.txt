@@ -1,0 +1,17 @@
+# Boot -> title -> "Menu principal" -> "Charger" (last manual save). Pad 1. A=1000
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+0 1 0                  # pad 2 plugged in, idle (no auto possession in this test)
+130000 1 0030          # P2 Back+Start -> possession ON
+130300 1 0
+133000 1 0 30000 0     # P2 stick right 3 s -> pawn moves
+136000 1 0
+140000 1 0030          # P2 Back+Start -> possession OFF
+140300 1 0
+142000 1 0 30000 0     # P2 stick right 3 s -> pawn must NOT follow (AI)
+145000 1 0

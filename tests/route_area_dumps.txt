@@ -1,0 +1,34 @@
+# Area study: route_guild_to_underground.txt with sArea dumps around the iron gate.
+# Bridge route (append to bridge_in.txt once in game): Pawn Guild Rift stone -> back tunnel ->
+# iron gate ("Entrer", area load + autosave, blocked by the save guard) -> underground area.
+# Found interactively on 2026-10-26 with the owner's save (Arisen starts at -2661 -4032).
+goto -2350 -4550 60 8000
+goto -2235 -3940 60 9000
+goto -2015 -3546 60 8000
+goto -1669 -2891 60 10000
+goto -1111 -1884 60 14000
+goto 733 -394 80 20000
+# the gate opens when pressed from (570, -413) while pushing east into it, as in the successful
+# runs (a press right after arriving from the south-east did nothing); press twice
+goto 570 -413 30 8000
+goto 733 -394 20 2500
+dumpg 018d099c 4060 a0
+dumpg 018d099c a70 s0 3834
+pad 0 2000 0 0 0 0 0 0 150
+wait 300
+dumpg 018d099c 4060 a1
+dumpg 018d099c a70 s1 3834
+wait 1200
+pad 0 2000 0 0 0 0 0 0 150
+wait 1000
+dumpg 018d099c 4060 a2
+dumpg 018d099c a70 s2 3834
+wait 3000
+dumpg 018d099c 4060 a3
+dumpg 018d099c a70 s3 3834
+wait 6000
+dumpg 018d099c 4060 a4
+dumpg 018d099c a70 s4 3834
+goto 700 900 80 30000
+dumpg 018d099c 4060 a5
+dumpg 018d099c a70 s5 3834

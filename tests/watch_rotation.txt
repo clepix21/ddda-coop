@@ -1,0 +1,10 @@
+# Find the code that writes the Arisen's rotation while it runs (bridge, pad 1 only).
+wait 35000
+pad 0 0 0 -30000 0 0 0 0 3000
+watch arisen 50 12
+wait 4000
+pad 0 0 30000 0 0 0 0 0 3000
+watch arisen 2578 12
+wait 4000
+pad 0 0 0 30000 0 0 0 0 3000
+watch arisen 40 12

@@ -1,0 +1,5 @@
+# Party test, guest side: the party's HP after loading the host's merged save; camera on pawn N.
+wait 3000
+partyhp
+wait 20000
+partyhp

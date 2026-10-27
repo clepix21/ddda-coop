@@ -1,0 +1,16 @@
+# After route_guild_to_underground.txt: zero candidate HP fields on single enemies, dump, look.
+# #5 +0x5900 (second float of the 4-float block), #6 +0x58D4, #7 +0x5A10, #8 +0x58D0; #4 and #9 untouched.
+edump k0
+eset #5 5900 0
+eset #6 58d4 0
+eset #7 5a10 0
+eset #8 58d0 0
+wait 4000
+edump k1
+pad 0 4000 0 0 0 0 0 0 150
+wait 800
+pad 0 4000 0 0 0 0 0 0 150
+wait 4000
+edump k2
+wait 6000
+edump k3

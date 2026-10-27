@@ -1,0 +1,4 @@
+# Party test, host side: the party's HP after loading the merged save, then through the iron gate
+# (its autosave must be un-merged: the host's own pawns put back).
+wait 3000
+partyhp

@@ -1,0 +1,33 @@
+# After route_guild_to_underground.txt (exploration): the Arisen dies, the bot picks "Retour à l'écran titre"
+# (2 x down, A) on the game-over screen, then then whatever menus follow (A presses).
+# HP set once: re-setting it in the loop revived a dead Arisen once (2026-10-26 19:38)
+php arisen 1
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+egoto #7 60 3000 uEm9000
+wait 9000
+pad 0 0002 0 0 0 0 0 0 150
+wait 700
+pad 0 0002 0 0 0 0 0 0 150
+wait 700
+pad 0 1000 0 0 0 0 0 0 150
+wait 2000
+# the confirmation defaults to "Non": up, then A on "Oui"
+pad 0 0001 0 0 0 0 0 0 150
+wait 700
+pad 0 1000 0 0 0 0 0 0 150
+wait 15000
+pad 0 1000 0 0 0 0 0 0 150
+wait 8000
+pad 0 1000 0 0 0 0 0 0 150
+wait 8000
+pad 0 1000 0 0 0 0 0 0 150
+wait 8000
+pad 0 1000 0 0 0 0 0 0 150
+wait 8000
+wait 20000

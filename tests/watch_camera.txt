@@ -1,0 +1,4 @@
+wait 35000
+watch camera 60 6
+wait 2000
+watch camera 40 6

@@ -1,0 +1,12 @@
+# Exploration: right after loading (Pawn Guild, Gran Soren), look around and press B (talk) a few times.
+wait 3000
+pad 0 2000 0 0 0 0 0 0 150
+wait 4000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 5000

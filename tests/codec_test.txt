@@ -1,0 +1,4 @@
+# Codec test: the kept save (test_save guild.sav) unpacked, the Arisen over pawn 1, packed, checked.
+wait 3000
+codectest
+wait 2000

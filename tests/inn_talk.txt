@@ -1,0 +1,15 @@
+# Inn save: talk to the innkeeper (B where the "Parler" prompt shows at the counter, screenshot
+# 2026-10-26 22:17), no A (nothing chosen), then B twice to leave. sGameSys dumps for the talk state.
+wait 3000
+dumpg 018fa4bc be470 i0
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+dumpg 018fa4bc be470 i1
+wait 4000
+dumpg 018fa4bc be470 i2
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 3000
+dumpg 018fa4bc be470 i3
+wait 4000

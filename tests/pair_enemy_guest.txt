@@ -1,0 +1,6 @@
+# Pair enemy test, guest side (net_late=1): walk to the underground alone, start the network,
+# then stay idle while the host fights; dump every enemy at the end (compare with the host).
+wait 2000
+netstart
+wait 110000
+edump end

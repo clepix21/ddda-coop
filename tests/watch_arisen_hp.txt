@@ -1,0 +1,2 @@
+# Before a route: watch value changes of the Arisen's HP (cPlayerInfo at +0x3DEC, HP at +0x29C).
+watchp arisen 3dec 29c 40

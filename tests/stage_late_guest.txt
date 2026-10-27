@@ -1,0 +1,4 @@
+# Late join (suite_stage.ps1 -LateGuest, net_late=1): connect 120 s after loading, once the host is
+# already in the underground (stage 600); the guest must then go to the host's stage on its own.
+wait 120000
+netstart

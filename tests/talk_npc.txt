@@ -1,0 +1,18 @@
+# Talk study: leave the Pawn Guild first (never press B at the start: the Rift stone), list the NPCs,
+# walk up to the nearest one and press B, then A to go through the lines.
+goto -2350 -4550 60 8000
+goto -2235 -3940 60 9000
+nlist
+ngoto #0 70 10000
+nlist
+wait 1000
+pad 0 2000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 6000

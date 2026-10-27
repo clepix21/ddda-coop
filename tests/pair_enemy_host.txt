@@ -1,0 +1,89 @@
+# Pair enemy test, host side (net_late=1): walk to the underground alone, start the network,
+# then walk up to enemy #6 and swing at it; dump every enemy at the end (compare with the guest).
+wait 2000
+netstart
+wait 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+# stay 60 s more: uEm8100 appear about a minute after the area loads (spawn point moved after creation)
+wait 60000
+edump end

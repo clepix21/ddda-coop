@@ -1,0 +1,11 @@
+# Boot -> title -> "Menu principal" -> "Charger" (last manual save). Pad 1. A=1000
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+# in game: host pad 1 stick back 3 s at 150 s (the guest's copy of the Arisen should follow)
+150000 0 0 0 -30000
+153000 0 0

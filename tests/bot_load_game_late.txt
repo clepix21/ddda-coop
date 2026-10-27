@@ -1,0 +1,11 @@
+# Like bot_load_game_p2.txt, but late: title at 200 s, menu at 215 s, "Charger" at 225 s (instead of
+# 50 / 72 / 82 s). The game reads the save at the title press, and by then the host has been through
+# the gate (save sharing test, suite_save.ps1).
+0 0 0
+200000 0 1000
+200300 0 0
+215000 0 1000
+215300 0 0
+225000 0 1000
+225300 0 0
+0 1 0                  # pad 2 plugged in from the start (the game only registers pads it saw connected)

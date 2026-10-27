@@ -1,0 +1,3 @@
+# After route_guild_to_underground.txt: where else does an enemy keep its max HP value?
+ptrscan #4 600
+ptrscan #0 1300

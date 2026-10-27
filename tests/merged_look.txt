@@ -1,0 +1,8 @@
+# Merged save test (saves/guild_pawn1_is_arisen.sav: hired pawn 1 has the Arisen's look, name,
+# vocation, level and equipment). No button pressed: HP of the party, camera on pawn 1, then 0, 2.
+wait 3000
+partyhp
+camto 1
+wait 6000
+camto 1
+wait 6000

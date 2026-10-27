@@ -1,0 +1,19 @@
+# Arisen standing / running in four directions, dump after each (bridge). Pad 1 only, deliberate.
+wait 2000
+dump idle0
+pad 0 0 0 -30000 0 0 0 0 1200
+dump runback
+wait 1200
+dump standback
+pad 0 0 30000 0 0 0 0 0 1200
+dump runright
+wait 1200
+dump standright
+pad 0 0 0 30000 0 0 0 0 1200
+dump runfwd
+wait 1200
+dump standfwd
+pad 0 0 -30000 0 0 0 0 0 1200
+dump runleft
+wait 1200
+dump standleft

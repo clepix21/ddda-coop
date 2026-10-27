@@ -1,0 +1,6 @@
+# Boot -> title -> save check -> "Menu principal" (pad 1). A=1000 UP=0001 DOWN=0002
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0

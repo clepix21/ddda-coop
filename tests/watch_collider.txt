@@ -1,0 +1,8 @@
+# Find the collision object that rewrites the Arisen's position (FUN_0079E200, write at 0x0079E95B):
+# log ESI at each write and the character fields that point at it. Bridge, pad 1 only.
+wait 35000
+pad 0 0 0 30000 0 0 0 0 4000
+watch arisen 40 40
+wait 5000
+pad 0 0 0 -30000 0 0 0 0 4000
+watch arisen 44 40

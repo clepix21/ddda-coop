@@ -1,0 +1,114 @@
+# After route_guild_to_underground.txt: walk up to enemy #6 (uEm9000) and swing at it, dumping every enemy.
+edump c00
+ederef c00 75c
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 120 8000
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c01
+ederef c01 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c02
+ederef c02 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c03
+ederef c03 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c04
+ederef c04 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c05
+ederef c05 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c06
+ederef c06 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c07
+ederef c07 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c08
+ederef c08 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c09
+ederef c09 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c10
+ederef c10 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c11
+ederef c11 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c12
+ederef c12 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c13
+ederef c13 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c14
+ederef c14 75c
+egoto #6 60 1500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump c15
+ederef c15 75c

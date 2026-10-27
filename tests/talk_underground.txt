@@ -1,0 +1,11 @@
+# After route_guild_to_underground.txt (no Rift there): B where the "Parler" prompt showed (a party
+# pawn), then A to go through the lines. Study of what the guest sees during the host's dialogue.
+wait 2000
+pad 0 2000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 10000

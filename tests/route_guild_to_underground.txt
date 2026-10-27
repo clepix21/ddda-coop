@@ -1,0 +1,22 @@
+# Bridge route (append to bridge_in.txt once in game): Pawn Guild Rift stone -> back tunnel ->
+# iron gate ("Entrer", area load + autosave, blocked by the save guard) -> underground area.
+# Found interactively on 2026-10-26 with the owner's save (Arisen starts at -2661 -4032).
+goto -2350 -4550 60 8000
+goto -2235 -3940 60 9000
+goto -2015 -3546 60 8000
+goto -1669 -2891 60 10000
+goto -1111 -1884 60 14000
+goto 733 -394 80 20000
+# the gate opens when pressed from (570, -413) while pushing east into it, as in the successful
+# runs (a press right after arriving from the south-east did nothing); press twice
+goto 570 -413 30 8000
+goto 733 -394 20 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 1500
+pad 0 2000 0 0 0 0 0 0 150
+wait 10000
+goto 700 900 80 30000
+goto 1500 1700 80 15000
+goto 2745 3500 80 20000
+goto 2310 5780 80 20000
+# here (2310, 5710): small creatures, the party fights (seen 2026-10-26)

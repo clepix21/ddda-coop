@@ -1,0 +1,20 @@
+# Boot -> title -> "Menu principal" -> "Charger" (last manual save). Pad 1. A=1000
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+0 1 0                  # pad 2 plugged in, idle
+# possession on at 133 s (coop.ini)
+135000 1 0 0 30000     # P2 stick forward 4 s (toward the wall, into view)
+139000 1 0
+139500 0 0 0 0 -25000 0  # P1 turns the camera left 0.6 s
+140100 0 0
+141000 1 4000          # P2 X
+141300 1 0
+144000 1 8000          # P2 Y
+144300 1 0
+147000 1 1000          # P2 A
+147300 1 0

@@ -1,0 +1,65 @@
+# After route_guild_to_underground.txt: #6 made invulnerable (HP entry +0x30 bit 0) before the party
+# reaches it; #9 (far) given HP 0 and the dead flag (+0x110 bit 0). The Arisen walks to #7 and
+# swings; dumps every step show whether each flag holds.
+ehp #6 1 0 1
+ehp #9 0 1 0
+edump g00
+egoto #7 120 8000 uEm9000
+egoto #7 120 8000 uEm9000
+egoto #7 120 8000 uEm9000
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g01
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g02
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g03
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g04
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g05
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g06
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g07
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g08
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g09
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g10
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g11
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g12
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g13
+egoto #7 60 1500 uEm9000
+pad 0 4000 0 0 0 0 0 0 150
+wait 500
+edump g14

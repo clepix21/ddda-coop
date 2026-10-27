@@ -1,0 +1,542 @@
+// Steam Cloud storage hooks. Hooks steam_api!SteamRemoteStorage and patches the returned
+// interface's vtable (ISteamRemoteStorage v012, MSVC thiscall).
+//  - Save guard (block_saves=1, and always for role=guest): every write is blocked.
+//  - The host keeps a copy of its latest save, DDDA.sav (the one the game read, then each write,
+//    autosaves included, blocked or not) for the guest (net.cpp sends it).
+//  - Guest: once the host's save has arrived, the game's reads of DDDA.sav get the host's save
+//    instead of the guest's own, so "Charger" loads the host's world (characters, pawns, quests,
+//    items, time). The game reads the whole file with FileExists / GetFileSize / FileRead, at boot
+//    and when the load menu opens (seen 2026-10-26).
+//  - 2 to 4 players: each guest's own character (from its own save, read once at its first read)
+//    replaces the pawn it drives. The host merges those characters into its save (savecodec.cpp);
+//    its game and every guest then load that merged save. Each host write is un-merged first (its
+//    real pawns put back), so the host's save never keeps the guests' characters.
+#include <windows.h>
+
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include "MinHook.h"
+#include "mod.h"
+
+namespace {
+
+// ISteamRemoteStorage v012 slot order (Steamworks SDK isteamremotestorage.h of that version).
+enum Slot { FileWrite = 0, FileRead, FileForget, FileDelete, FileShare, SetSyncPlatforms,
+            FileWriteStreamOpen, FileWriteStreamWriteChunk, FileWriteStreamClose,
+            FileWriteStreamCancel, FileExists, FilePersisted, GetFileSize, GetFileTimestamp,
+            GetSyncPlatforms, GetFileCount, GetFileNameAndSize };
+void *g_orig_slot[GetFileNameAndSize + 1] = {}; // the interface's own functions, before the patch
+bool g_block = false;                            // block writes (save guard)
+CRITICAL_SECTION g_save_lock;
+std::vector<uint8_t> g_own_save;   // host: its latest DDDA.sav
+uint32_t g_own_version = 0;
+bool g_own_written = false;        // g_own_save came from a write (blocked or not)
+std::vector<uint8_t> g_peer_save;  // guest: the host's DDDA.sav, once complete
+uint32_t g_peer_version = 0;
+std::vector<uint8_t> g_guest_own;  // guest: its own DDDA.sav (its character), read once
+
+// Host, 2 to 4 players: the guests' characters by pawn, and the merged save built from them.
+std::string g_party_char[kPawns];  // empty = that pawn stays the host's
+bool g_party_dirty = false;
+std::vector<uint8_t> g_merged;     // empty = no guest character merged
+std::string g_orig_char[kPawns];   // the host's own pawn blocks the merge replaced (for un-merging)
+uint32_t g_merged_from = 0;        // g_own_version the merged save was built from
+uint32_t g_serve_version = 0;      // +1 whenever what the guests should load changes
+
+bool is_save(const char *name) { return name && _stricmp(name, "DDDA.sav") == 0; }
+
+// Tests (writes blocked): coop.ini test_save=<file> makes the game read that file as DDDA.sav, so bot
+// routes start from a known place whatever the owner's own save says. Read once, kept in memory.
+std::vector<uint8_t> g_test_save;
+bool g_test_save_tried = false;
+
+bool test_save(std::vector<uint8_t> &out)
+{
+    if (!g_block)
+        return false;
+    EnterCriticalSection(&g_save_lock);
+    if (!g_test_save_tried) {
+        g_test_save_tried = true;
+        char path[MAX_PATH] = {};
+        if (cfg_str("test_save", path, sizeof path) && path[0]) {
+            if (FILE *f = fopen(path, "rb")) {
+                fseek(f, 0, SEEK_END);
+                long n = ftell(f);
+                fseek(f, 0, SEEK_SET);
+                if (n > 0 && n <= (4 << 20)) {
+                    g_test_save.resize(size_t(n));
+                    if (fread(g_test_save.data(), 1, size_t(n), f) != size_t(n))
+                        g_test_save.clear();
+                }
+                fclose(f);
+            }
+            logf("storage: test_save %s: %d bytes", path, int(g_test_save.size()));
+        }
+    }
+    bool have = !g_test_save.empty();
+    if (have)
+        out = g_test_save;
+    LeaveCriticalSection(&g_save_lock);
+    return have;
+}
+
+void keep_own(const void *data, int32_t size, const char *why, bool written)
+{
+    if (!data || size <= 0)
+        return;
+    EnterCriticalSection(&g_save_lock);
+    g_own_written |= written;
+    bool same = g_own_save.size() == size_t(size) && memcmp(g_own_save.data(), data, size_t(size)) == 0;
+    if (!same) {
+        g_own_save.assign(static_cast<const uint8_t *>(data), static_cast<const uint8_t *>(data) + size);
+        ++g_own_version;
+        ++g_serve_version;
+        logf("storage: kept DDDA.sav from %s (%d bytes, version %u)", why, size, g_own_version);
+    }
+    LeaveCriticalSection(&g_save_lock);
+}
+
+using SteamRemoteStorage_t = void *(__cdecl *)();
+SteamRemoteStorage_t g_orig_get = nullptr;
+volatile LONG g_patched = 0;
+volatile LONG g_blocked = 0;
+
+// A host write of a merged save: the host's own pawns put back (the guests' characters are never
+// kept in the host's save). Returns false when nothing was merged or the save could not be read.
+bool unmerge(const void *data, int32_t size, std::vector<uint8_t> &out)
+{
+    std::string orig[kPawns];
+    EnterCriticalSection(&g_save_lock);
+    bool merged = !g_merged.empty();
+    for (int p = 0; p < kPawns; ++p)
+        orig[p] = g_orig_char[p];
+    LeaveCriticalSection(&g_save_lock);
+    if (!merged)
+        return false;
+    std::vector<uint8_t> file(static_cast<const uint8_t *>(data), static_cast<const uint8_t *>(data) + size);
+    std::string xml;
+    uint32_t head[8];
+    if (!save_unpack(file, xml, head)) {
+        logf("storage: a merged save written but not readable: written as is");
+        return false;
+    }
+    int put = 0;
+    for (int p = 0; p < kPawns; ++p)
+        if (!orig[p].empty() && save_put_character(xml, p, orig[p]))
+            ++put;
+    if (!save_pack(xml, head, out))
+        return false;
+    logf("storage: write un-merged: %d pawn(s) of the host's own put back", put);
+    return true;
+}
+
+bool __attribute__((thiscall)) hk_file_write(void *self, const char *name, const void *data, int32_t size)
+{
+    std::vector<uint8_t> clean;
+    if (is_save(name) && cfg_role() != NET_GUEST && unmerge(data, size, clean)) {
+        data = clean.data();
+        size = int32_t(clean.size());
+    }
+    if (is_save(name))
+        keep_own(data, size, "a write", true);
+    if (!g_block) {
+        using F = bool(__attribute__((thiscall)) *)(void *, const char *, const void *, int32_t);
+        return reinterpret_cast<F>(g_orig_slot[FileWrite])(self, name, data, size);
+    }
+    InterlockedIncrement(&g_blocked);
+    logf("save-guard: BLOCKED FileWrite(\"%s\", %d bytes)", name ? name : "?", size);
+    return true; // pretend success
+}
+
+// Guest with the host's save: the bytes the game gets for DDDA.sav (false = use the real file)
+bool peer_save(std::vector<uint8_t> &out, uint32_t &version)
+{
+    if (cfg_role() != NET_GUEST)
+        return false;
+    EnterCriticalSection(&g_save_lock);
+    bool have = !g_peer_save.empty();
+    if (have) {
+        out = g_peer_save;
+        version = g_peer_version;
+    }
+    LeaveCriticalSection(&g_save_lock);
+    return have;
+}
+
+bool __attribute__((thiscall)) hk_file_forget(void *, const char *name)
+{
+    InterlockedIncrement(&g_blocked);
+    logf("save-guard: BLOCKED FileForget(\"%s\")", name ? name : "?");
+    return true;
+}
+
+bool __attribute__((thiscall)) hk_file_delete(void *, const char *name)
+{
+    InterlockedIncrement(&g_blocked);
+    logf("save-guard: BLOCKED FileDelete(\"%s\")", name ? name : "?");
+    return true;
+}
+
+uint64_t __attribute__((thiscall)) hk_stream_open(void *, const char *name)
+{
+    InterlockedIncrement(&g_blocked);
+    logf("save-guard: BLOCKED FileWriteStreamOpen(\"%s\")", name ? name : "?");
+    return 0xFFFFFFFFFFFFFFFFull; // k_UGCFileStreamHandleInvalid
+}
+
+bool __attribute__((thiscall)) hk_stream_false(void *, uint64_t)
+{
+    logf("save-guard: BLOCKED FileWriteStream call");
+    return false;
+}
+
+// Reads, logged (milestone 6: how the game loads its save)
+int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, void *data, int32_t cap)
+{
+    std::vector<uint8_t> host;
+    uint32_t version = 0;
+    if (is_save(name) && cfg_role() == NET_GUEST && g_guest_own.empty()) {
+        // the guest's own save, once: its character goes to the host (test_save in tests)
+        std::vector<uint8_t> own(size_t(cap > 0 ? cap : 0));
+        int32_t n = test_save(own) ? int32_t(own.size())
+                                   : reinterpret_cast<int32_t(__attribute__((thiscall)) *)(void *, const char *, void *, int32_t)>(
+                                         g_orig_slot[FileRead])(self, name, own.data(), cap);
+        if (n > 0) {
+            own.resize(size_t(n));
+            EnterCriticalSection(&g_save_lock);
+            g_guest_own.swap(own);
+            LeaveCriticalSection(&g_save_lock);
+            logf("storage: the guest's own save read (%d bytes): its character goes to the host", n);
+        }
+    }
+    if (is_save(name) && peer_save(host, version)) {
+        int32_t n = int32_t(host.size()) < cap ? int32_t(host.size()) : cap;
+        memcpy(data, host.data(), size_t(n));
+        logf("storage: FileRead(\"%s\", cap %d) = %d: the host's save (version %u)", name, cap, n, version);
+        return n;
+    }
+    if (is_save(name) && cfg_role() != NET_GUEST) { // host with guests' characters: the merged save
+        EnterCriticalSection(&g_save_lock);
+        int32_t n = g_merged.empty() ? -1 : (int32_t(g_merged.size()) < cap ? int32_t(g_merged.size()) : cap);
+        if (n >= 0)
+            memcpy(data, g_merged.data(), size_t(n));
+        LeaveCriticalSection(&g_save_lock);
+        if (n >= 0) {
+            logf("storage: FileRead(\"%s\", cap %d) = %d: the merged save (guests' characters as pawns)", name, cap, n);
+            return n;
+        }
+    }
+    // writes blocked: the game reads back what it last wrote (it reads the save right after each
+    // autosave; the file on disk is still the old one, which would also become the "latest" save)
+    if (is_save(name) && g_block && cfg_role() != NET_GUEST) {
+        EnterCriticalSection(&g_save_lock);
+        int32_t n = g_own_written ? (int32_t(g_own_save.size()) < cap ? int32_t(g_own_save.size()) : cap) : -1;
+        if (n >= 0)
+            memcpy(data, g_own_save.data(), size_t(n));
+        LeaveCriticalSection(&g_save_lock);
+        if (n >= 0) {
+            logf("storage: FileRead(\"%s\", cap %d) = %d: the last blocked write", name, cap, n);
+            return n;
+        }
+    }
+    std::vector<uint8_t> test;
+    if (is_save(name) && test_save(test)) {
+        int32_t n = int32_t(test.size()) < cap ? int32_t(test.size()) : cap;
+        memcpy(data, test.data(), size_t(n));
+        logf("storage: FileRead(\"%s\", cap %d) = %d: test_save", name, cap, n);
+        if (cfg_role() != NET_GUEST)
+            keep_own(data, n, "the game's read", false);
+        return n;
+    }
+    using F = int32_t(__attribute__((thiscall)) *)(void *, const char *, void *, int32_t);
+    int32_t n = reinterpret_cast<F>(g_orig_slot[FileRead])(self, name, data, cap);
+    logf("storage: FileRead(\"%s\", cap %d) = %d%s", name ? name : "?", cap, n,
+         is_save(name) && cfg_role() == NET_GUEST ? ": the guest's own save (the host's has not arrived)" : "");
+    if (is_save(name) && n > 0 && cfg_role() != NET_GUEST)
+        keep_own(data, n, "the game's read", false);
+    return n;
+}
+
+int32_t __attribute__((thiscall)) hk_get_file_size(void *self, const char *name)
+{
+    std::vector<uint8_t> host;
+    uint32_t version = 0;
+    if (is_save(name) && peer_save(host, version)) {
+        logf("storage: GetFileSize(\"%s\") = %d: the host's save", name, int(host.size()));
+        return int32_t(host.size());
+    }
+    if (is_save(name) && cfg_role() != NET_GUEST) {
+        EnterCriticalSection(&g_save_lock);
+        int32_t n = g_merged.empty() ? -1 : int32_t(g_merged.size());
+        LeaveCriticalSection(&g_save_lock);
+        if (n >= 0)
+            return n;
+    }
+    std::vector<uint8_t> test;
+    if (is_save(name) && test_save(test))
+        return int32_t(test.size());
+    using F = int32_t(__attribute__((thiscall)) *)(void *, const char *);
+    int32_t n = reinterpret_cast<F>(g_orig_slot[GetFileSize])(self, name);
+    logf("storage: GetFileSize(\"%s\") = %d", name ? name : "?", n);
+    return n;
+}
+
+bool __attribute__((thiscall)) hk_file_exists(void *self, const char *name)
+{
+    std::vector<uint8_t> host;
+    uint32_t version = 0;
+    if (is_save(name) && peer_save(host, version)) {
+        logf("storage: FileExists(\"%s\") = 1: the host's save", name);
+        return true;
+    }
+    std::vector<uint8_t> test;
+    if (is_save(name) && test_save(test))
+        return true;
+    using F = bool(__attribute__((thiscall)) *)(void *, const char *);
+    bool r = reinterpret_cast<F>(g_orig_slot[FileExists])(self, name);
+    logf("storage: FileExists(\"%s\") = %d", name ? name : "?", r);
+    return r;
+}
+
+int32_t __attribute__((thiscall)) hk_get_file_count(void *self)
+{
+    using F = int32_t(__attribute__((thiscall)) *)(void *);
+    int32_t n = reinterpret_cast<F>(g_orig_slot[GetFileCount])(self);
+    logf("storage: GetFileCount() = %d", n);
+    return n;
+}
+
+const char *__attribute__((thiscall)) hk_get_file_name_and_size(void *self, int i, int32_t *size)
+{
+    using F = const char *(__attribute__((thiscall)) *)(void *, int, int32_t *);
+    const char *r = reinterpret_cast<F>(g_orig_slot[GetFileNameAndSize])(self, i, size);
+    logf("storage: GetFileNameAndSize(%d) = \"%s\", %d", i, r ? r : "?", size ? *size : -1);
+    return r;
+}
+
+void patch_vtable(void *iface)
+{
+    void **vt = *reinterpret_cast<void ***>(iface);
+    DWORD old;
+    if (!VirtualProtect(vt, sizeof(void *) * (GetFileNameAndSize + 1), PAGE_READWRITE, &old)) {
+        logf("save-guard: VirtualProtect failed (%lu)", GetLastError());
+        return;
+    }
+    for (int i = 0; i <= GetFileNameAndSize; ++i)
+        g_orig_slot[i] = vt[i];
+    vt[FileRead] = reinterpret_cast<void *>(&hk_file_read);
+    vt[GetFileSize] = reinterpret_cast<void *>(&hk_get_file_size);
+    vt[FileExists] = reinterpret_cast<void *>(&hk_file_exists);
+    vt[GetFileCount] = reinterpret_cast<void *>(&hk_get_file_count);
+    vt[GetFileNameAndSize] = reinterpret_cast<void *>(&hk_get_file_name_and_size);
+    vt[FileWrite] = reinterpret_cast<void *>(&hk_file_write);
+    if (g_block) {
+        vt[FileForget] = reinterpret_cast<void *>(&hk_file_forget);
+        vt[FileDelete] = reinterpret_cast<void *>(&hk_file_delete);
+        vt[FileWriteStreamOpen] = reinterpret_cast<void *>(&hk_stream_open);
+        vt[FileWriteStreamClose] = reinterpret_cast<void *>(&hk_stream_false);
+    }
+    VirtualProtect(vt, sizeof(void *) * (GetFileNameAndSize + 1), old, &old);
+    InterlockedExchange(&g_patched, 1);
+    if (g_block)
+        logf("save-guard: ACTIVE, ISteamRemoteStorage %p vtable %p patched", iface, vt);
+    else
+        logf("storage: ISteamRemoteStorage %p vtable %p patched (saves allowed)", iface, vt);
+}
+
+void *__cdecl hk_get_remote_storage()
+{
+    void *iface = g_orig_get();
+    if (iface && !g_patched)
+        patch_vtable(iface);
+    return iface;
+}
+
+} // namespace
+
+bool save_guard_install(bool block)
+{
+    g_block = block;
+    InitializeCriticalSection(&g_save_lock);
+    HMODULE steam = nullptr;
+    for (int i = 0; i < 500 && !steam; ++i) { // wait up to 5 s for the static import
+        steam = GetModuleHandleA("steam_api.dll");
+        if (!steam)
+            Sleep(10);
+    }
+    if (!steam) {
+        logf("save-guard: steam_api.dll not loaded");
+        return false;
+    }
+    void *target = reinterpret_cast<void *>(GetProcAddress(steam, "SteamRemoteStorage"));
+    if (!target) {
+        logf("save-guard: SteamRemoteStorage export missing");
+        return false;
+    }
+    MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void *>(&hk_get_remote_storage),
+                                 reinterpret_cast<void **>(&g_orig_get));
+    if (st == MH_OK)
+        st = MH_EnableHook(target);
+    logf("save-guard: hook SteamRemoteStorage %p: %s", target, MH_StatusToString(st));
+    return st == MH_OK;
+}
+
+// Called from the mod thread: patch as soon as Steam hands out the interface, in case the game
+// fetched (and cached) it before our hook went in.
+void save_guard_poll()
+{
+    if (g_patched || !g_orig_get)
+        return;
+    if (void *iface = g_orig_get())
+        patch_vtable(iface);
+}
+
+bool save_guard_active() { return g_patched != 0; }
+long save_guard_blocked() { return g_blocked; }
+
+// Host: what the guests should load (the merged save when guests' characters are in, else its
+// latest DDDA.sav) and a version that changes with it; false when none yet.
+bool storage_own_save(std::vector<uint8_t> &out, uint32_t &version)
+{
+    if (!g_patched)
+        return false;
+    EnterCriticalSection(&g_save_lock);
+    const std::vector<uint8_t> &serve = g_merged.empty() ? g_own_save : g_merged;
+    bool have = !serve.empty();
+    if (have) {
+        out = serve;
+        version = g_serve_version;
+    }
+    LeaveCriticalSection(&g_save_lock);
+    return have;
+}
+
+// Host: guest's character for a pawn (empty = give the pawn back to the host). Merged by storage_merge_tick.
+void storage_set_party_character(int pawn, const std::string &character)
+{
+    if (pawn < 0 || pawn >= kPawns)
+        return;
+    EnterCriticalSection(&g_save_lock);
+    if (g_party_char[pawn] != character) {
+        g_party_char[pawn] = character;
+        g_party_dirty = true;
+    }
+    LeaveCriticalSection(&g_save_lock);
+}
+
+// Host, net thread: rebuild the merged save when the guests' characters or the host's save change
+// (about 300 ms: unpack, replace, pack with the game's zlib).
+void storage_merge_tick()
+{
+    EnterCriticalSection(&g_save_lock);
+    bool need = (g_party_dirty || g_merged_from != g_own_version) && !g_own_save.empty();
+    std::vector<uint8_t> base;
+    std::string chars[kPawns];
+    uint32_t from = g_own_version;
+    bool any = false;
+    if (need) {
+        base = g_own_save;
+        for (int p = 0; p < kPawns; ++p) {
+            chars[p] = g_party_char[p];
+            any |= !chars[p].empty();
+        }
+        g_party_dirty = false;
+        g_merged_from = from;
+    }
+    LeaveCriticalSection(&g_save_lock);
+    if (!need)
+        return;
+    std::vector<uint8_t> merged;
+    std::string orig[kPawns];
+    if (any) {
+        std::string xml;
+        uint32_t head[8];
+        if (!save_unpack(base, xml, head)) {
+            logf("storage: merge: the host's save could not be read");
+            return;
+        }
+        std::string names;
+        for (int p = 0; p < kPawns; ++p) {
+            if (chars[p].empty())
+                continue;
+            if (!save_character(xml, p, orig[p]) || !save_put_character(xml, p, chars[p])) {
+                logf("storage: merge: pawn %d could not be replaced", p);
+                orig[p].clear();
+                continue;
+            }
+            names += " pawn " + std::to_string(p) + " = " + save_character_name(chars[p]) + " (was " +
+                     save_character_name(orig[p]) + ");";
+        }
+        if (!save_pack(xml, head, merged)) {
+            logf("storage: merge: the merged save does not fit");
+            return;
+        }
+        logf("storage: merged save built from version %u:%s", from, names.c_str());
+    }
+    EnterCriticalSection(&g_save_lock);
+    g_merged.swap(merged);
+    for (int p = 0; p < kPawns; ++p)
+        g_orig_char[p] = orig[p];
+    ++g_serve_version;
+    LeaveCriticalSection(&g_save_lock);
+}
+
+// Guest: its own character (its Arisen's mEdit and mParam), once its own save was read.
+bool storage_guest_character(std::string &out)
+{
+    static std::string cached;
+    if (!cached.empty()) {
+        out = cached;
+        return true;
+    }
+    EnterCriticalSection(&g_save_lock);
+    std::vector<uint8_t> own = g_guest_own;
+    LeaveCriticalSection(&g_save_lock);
+    std::string xml;
+    uint32_t head[8];
+    if (own.empty() || !save_unpack(own, xml, head) || !save_character(xml, -1, cached)) {
+        cached.clear();
+        return false;
+    }
+    logf("storage: the guest's character: %s (%u bytes)", save_character_name(cached).c_str(), unsigned(cached.size()));
+    out = cached;
+    return true;
+}
+
+// Guest: the host's DDDA.sav arrived complete (checked); used for every later read of DDDA.sav.
+void storage_set_peer_save(const uint8_t *data, size_t size, uint32_t version)
+{
+    EnterCriticalSection(&g_save_lock);
+    g_peer_save.assign(data, data + size);
+    g_peer_version = version;
+    LeaveCriticalSection(&g_save_lock);
+}
+
+// Guest: the game refuses a save whose owner is another Steam account. FUN_0040F880 compares the
+// save's mSteamID (u64, last element of the save XML; read into [0x018FA4F8]+0x21AF98) with
+// SteamUser()->GetSteamID() and returns error 5 when they differ. A guest loads the HOST's save, so
+// on a guest the jne at 0x0040FA31 (75 09, to the error path) becomes jmp 0x0040FA4A (EB 17, the
+// success path). The guest never saves, so the foreign id is never written anywhere.
+bool storage_guest_patch()
+{
+    auto *at = reinterpret_cast<uint8_t *>(0x0040FA31);
+    const uint8_t want[2] = {0x75, 0x09}, patch[2] = {0xEB, 0x17};
+    if (memcmp(at, patch, 2) == 0)
+        return true;
+    if (memcmp(at, want, 2) != 0) {
+        logf("storage: save owner check not patched: bytes %02X %02X, expected 75 09", at[0], at[1]);
+        return false;
+    }
+    DWORD old;
+    if (!VirtualProtect(at, 2, PAGE_EXECUTE_READWRITE, &old))
+        return false;
+    memcpy(at, patch, 2);
+    VirtualProtect(at, 2, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, 2);
+    logf("storage: save owner check patched (a guest loads the host's save, owned by another account)");
+    return true;
+}
