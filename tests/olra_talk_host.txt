@@ -1,0 +1,20 @@
+# Host on the cutscene save: walk onto the pier (Olra's cutscene, ~20 s), then talk to Olra (B) and
+# go through the lines with A; B twice to leave a menu. Quest flags should change.
+wait 20000
+pad 0 0 0 32000 0 0 0 0 8000
+wait 30000
+nlist
+pad 0 2000 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 15000

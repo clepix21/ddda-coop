@@ -75,6 +75,15 @@ void loot_net_mine(std::vector<LootEv> &out, uint32_t from_seq, int max); // thi
 uint32_t loot_mine_count();
 void loot_net_apply(const LootEv &e);       // net thread: another player's pickup, applied on the game thread
 void loot_apply_queued();                   // game thread
+// flags.cpp: shared world, quest and world flags
+#pragma pack(push, 1)
+struct FlagEv { uint16_t index; uint32_t set, clr; };
+#pragma pack(pop)
+bool flags_install();
+void flags_scan();                           // net thread: this world's changes
+uint32_t flags_mine_count();
+void flags_net_mine(std::vector<FlagEv> &out, uint32_t from_seq, int max);
+void flags_net_apply(const FlagEv &e);       // net thread: another world's change
 int net_guest_my_pawn();   // net.cpp: the pawn the host gave this guest, -1 = none
 void save_guard_poll();
 bool save_guard_active();
