@@ -1,0 +1,9 @@
+# Talk target search (single copy, inn save): NPC references in the Arisen before and during a talk.
+wait 4000
+npcref before
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+npcref during
+wait 3000
+npcref during2
+wait 3000

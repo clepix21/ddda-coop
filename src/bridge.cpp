@@ -282,6 +282,53 @@ void run_line(const char *line)
                          unsigned(game::at<uintptr_t>(p, 0)), unsigned(q), game::at<float>(p, q));
         }
         _snprintf(g_current, sizeof g_current, "ptrscan %s (%d hits)", who, hits);
+    } else if (strncmp(line, "npcref", 6) == 0) {
+        // npcref [tag]: for each NPC within 6 m of the Arisen, where the Arisen holds a pointer to
+        // it, directly or one pointer away (the talk target: compare before and during a talk)
+        char tag[16] = "-";
+        sscanf(line + 6, "%15s", tag);
+        uintptr_t npcs[64], a = possess_arisen();
+        int n = probe_npcs(npcs, 64), hits = 0;
+        float ax = 0, az = 0;
+        position(a, ax, az);
+        for (int k = 0; k < n && a; ++k) {
+            float x, z;
+            position(npcs[k], x, z);
+            if ((x - ax) * (x - ax) + (z - az) * (z - az) > 600.f * 600.f)
+                continue;
+            logf("bridge: npcref %s npc %p %s at %.0f u", tag, (void *)npcs[k], enemies_class_of(npcs[k]),
+                 std::sqrt((x - ax) * (x - ax) + (z - az) * (z - az)));
+            // the other way round: the NPC holding the Arisen (only game objects: vtable inside the exe)
+            for (uintptr_t o = 0; o < 0x8000 && hits < 60 && mem_readable((void *)(npcs[k] + o), 4); o += 4) {
+                uintptr_t p = game::at<uintptr_t>(npcs[k], o);
+                if (p == a && ++hits)
+                    logf("bridge: npcref %s npc %p +0x%X -> arisen", tag, (void *)npcs[k], unsigned(o));
+                if (p < 0x10000 || (p & 3) || p == a || !mem_readable((void *)p, 0x400))
+                    continue;
+                uintptr_t vt = game::at<uintptr_t>(p, 0);
+                if (vt < 0x00401000 || vt > 0x01700000)
+                    continue;
+                for (uintptr_t q = 0; q < 0x400 && hits < 60; q += 4)
+                    if (game::at<uintptr_t>(p, q) == a && ++hits)
+                        logf("bridge: npcref %s npc %p [+0x%X] %p (vt %08X) +0x%X -> arisen", tag, (void *)npcs[k], unsigned(o),
+                             (void *)p, unsigned(vt), unsigned(q));
+            }
+            for (uintptr_t o = 0; o < 0x8000 && hits < 60 && mem_readable((void *)(a + o), 4); o += 4) {
+                uintptr_t p = game::at<uintptr_t>(a, o);
+                if (p == npcs[k] && ++hits)
+                    logf("bridge: npcref %s arisen +0x%X -> npc %p", tag, unsigned(o), (void *)npcs[k]);
+                if (p < 0x10000 || (p & 3) || p == npcs[k] || !mem_readable((void *)p, 0x400) ||
+                    game::at<uintptr_t>(p, 0) < 0x00401000 || game::at<uintptr_t>(p, 0) > 0x01700000)
+                    continue;
+                for (uintptr_t q = 0; q < 0x400 && hits < 60; q += 4)
+                    if (game::at<uintptr_t>(p, q) == npcs[k] && ++hits)
+                        logf("bridge: npcref %s arisen [+0x%X] %p (vt %08X) +0x%X -> npc %p", tag, unsigned(o), (void *)p,
+                             unsigned(game::at<uintptr_t>(p, 0)), unsigned(q), (void *)npcs[k]);
+            }
+        }
+        uintptr_t gm = game::at<uintptr_t>(game::kGameMain, 0);
+        logf("bridge: npcref %s done: event state %d, %d hits", tag, gm ? game::at<int32_t>(gm, game::kGsEvent) : -1, hits);
+        _snprintf(g_current, sizeof g_current, "npcref %s (%d hits)", tag, hits);
     } else if (strncmp(line, "netstart", 8) == 0) { // tests with net_late=1: both copies walk first
         static bool started = false;
         if (!started && cfg_role() != NET_OFF) {
