@@ -1,0 +1,37 @@
+DDDA Coop (alpha) - Dragon's Dogma: Dark Arisen à 2 à 4 joueurs, sur Steam
+==========================================================================
+
+Chaque joueur a le jeu sur Steam, sur son propre PC. Les invités doivent être amis Steam avec
+l'hôte. Pas d'adresse IP ni de port à régler.
+
+Dans ce dossier : DDDA-Coop.exe (la fenêtre de réglage), dinput8.dll (le mod), coop.ini (modèle).
+Garde les trois fichiers ensemble, n'importe où (Bureau, Documents...).
+
+Pour jouer
+----------
+1. Ouvre DDDA-Coop.exe. Il trouve le jeu tout seul ; sinon, clique sur « Changer... » et choisis
+   le dossier qui contient DDDA.exe.
+2. Choisis ton rôle :
+   - l'hôte : il charge sa partie, les autres le rejoignent ;
+   - un invité : tu rejoins l'hôte avec ton propre perso, qui remplace un de ses pions.
+3. Clique sur « Lancer le jeu en co-op ». La fenêtre copie d'abord tes sauvegardes dans
+   Documents\DDDA Coop\Sauvegardes, installe le mod et lance le jeu par Steam.
+4. Invité : reste sur l'écran titre jusqu'à ce que la fenêtre affiche « Connecté ! », puis appuie
+   sur Start et choisis « Charger ». Tu arrives dans le monde de l'hôte.
+   L'hôte peut déjà être en train de jouer : son jeu sauvegarde et recharge quelques secondes
+   pour faire entrer l'invité.
+
+Après la partie
+---------------
+- Invité : clique sur « Retirer le mod » avant de rejouer à ta propre partie. En mode invité, ton
+  jeu ne charge ni ne sauvegarde ta partie.
+- En cas de problème : « Exporter le journal » copie le journal dans Documents\DDDA Coop\Journaux.
+  Envoie-le à l'hôte.
+
+À savoir
+--------
+- Version alpha : jamais encore testée entre deux vrais PC. Garde tes copies de sauvegardes.
+- Seule la version Steam actuelle du jeu est prise en charge (la fenêtre le vérifie).
+- Évitez la Faille (Rift) et les fonctions en ligne du jeu.
+- Si le dossier du jeu contient déjà un autre dinput8.dll (un autre mod), la fenêtre ne le
+  remplace pas : retire-le toi-même d'abord.
