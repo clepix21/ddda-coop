@@ -231,13 +231,23 @@ bool __attribute__((thiscall)) hk_stream_false(void *, uint64_t)
 }
 
 // The save/load machine [0x018FA518] runs a save (modes 2, 7, 0xF: FUN_004B8280 -> FUN_004B8DF0).
-bool saving()
+uint8_t machine_mode()
 {
     uintptr_t sm = *reinterpret_cast<uintptr_t *>(0x018FA518);
-    if (!sm)
-        return false;
-    uint8_t mode = *reinterpret_cast<uint8_t *>(sm + 0x648);
+    return sm ? *reinterpret_cast<uint8_t *>(sm + 0x648) : 0;
+}
+bool saving()
+{
+    uint8_t mode = machine_mode();
     return mode == 2 || mode == 7 || mode == 0xF;
+}
+// A read that loads the save into the game (modes 3, 5, B, C, 0x12: FUN_004B8280 restores the
+// party from it). Other reads (modes 6, D, 0x13 at boot and at the title, the read during a stage
+// jump on a guest) do not change what the world shows.
+bool loading()
+{
+    uint8_t mode = machine_mode();
+    return mode == 3 || mode == 5 || mode == 0xB || mode == 0xC || mode == 0x12;
 }
 
 // Reads, logged (milestone 6: how the game loads its save)
@@ -264,10 +274,12 @@ int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, voi
     if (is_save(name) && peer_save(host, version)) {
         int32_t n = int32_t(host.size()) < cap ? int32_t(host.size()) : cap;
         memcpy(data, host.data(), size_t(n));
-        EnterCriticalSection(&g_save_lock);
-        g_peer_read_sig = g_peer_sig;
-        g_peer_read_any = true;
-        LeaveCriticalSection(&g_save_lock);
+        if (loading()) {
+            EnterCriticalSection(&g_save_lock);
+            g_peer_read_sig = g_peer_sig;
+            g_peer_read_any = true;
+            LeaveCriticalSection(&g_save_lock);
+        }
         logf("storage: FileRead(\"%s\", cap %d) = %d: the host's save (version %u)", name, cap, n, version);
         return n;
     }
@@ -278,9 +290,11 @@ int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, voi
         int32_t n = g_merged.empty() ? -1 : (int32_t(g_merged.size()) < cap ? int32_t(g_merged.size()) : cap);
         if (n >= 0)
             memcpy(data, g_merged.data(), size_t(n));
-        g_loaded_sig = n >= 0 ? g_merged_sig : 0; // the host's own save otherwise (below)
-        for (int p = 0; p < kPawns; ++p)
-            g_loaded_orig[p] = n >= 0 ? g_orig_char[p] : std::string();
+        if (loading()) {
+            g_loaded_sig = n >= 0 ? g_merged_sig : 0; // the host's own save otherwise (below)
+            for (int p = 0; p < kPawns; ++p)
+                g_loaded_orig[p] = n >= 0 ? g_orig_char[p] : std::string();
+        }
         LeaveCriticalSection(&g_save_lock);
         if (n >= 0) {
             logf("storage: FileRead(\"%s\", cap %d) = %d: the merged save (guests' characters as pawns)", name, cap, n);

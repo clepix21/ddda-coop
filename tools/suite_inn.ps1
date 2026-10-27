@@ -1,7 +1,8 @@
 # Inn (milestone 6): both copies load the frozen inn save (saves/inn.sav, in front of the innkeeper);
 # the host's bot talks to the innkeeper and A through the lines picks "Se reposer" (a talk, then a
 # jump in time to 6:00 in the same stage; the online pawn update fails behind the firewall).
-# The guest's clock, Arisen position and HP must follow. Prints PASS/FAIL lines and a summary.
+# The host waits 40 s first, so the guest is in game: its game goes through the same talk (the
+# host's B on its Arisen puppet, the host's pad mirrored). The guest's clock, Arisen position and HP must follow. Prints PASS/FAIL lines and a summary.
 param([ValidateSet("udp", "mock")][string]$Transport = "udp")
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
@@ -14,9 +15,9 @@ if ($Transport -eq "udp") {
     $hostNet = @("transport=steam", "steam_mock=1", "mock_id=1", "mock_friends=2")
     $guestNet = @("transport=steam", "steam_mock=1", "mock_id=2", "mock_friends=1")
 }
-$run = & (Join-Path $tools "run_pair.ps1") -Seconds 170 -OutDir $out -Shots 110, 140, 165 -GuestSavesFromRole `
+$run = & (Join-Path $tools "run_pair.ps1") -Seconds 210 -OutDir $out -Shots 140, 150, 200 -GuestSavesFromRole `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "bot_load_game_p2.txt") `
-    -HostBridge @((Join-Path $tests "inn_talk_full.txt")) `
+    -HostBridge @((Join-Path $tests "talk_wait.txt"), (Join-Path $tests "inn_talk_full.txt")) `
     -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", $save) + $hostNet) `
     -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "guest_cam_pawn=1", $save) + $guestNet) 2>$null
 $run | ForEach-Object { "   $_" }

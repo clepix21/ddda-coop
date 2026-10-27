@@ -1,0 +1,9 @@
+wait 5000
+php arisen 1
+wait 700
+pdmg 3000
+wait 700
+pkill
+wait 15000
+partyhp
+wait 5000

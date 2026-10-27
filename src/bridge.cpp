@@ -339,7 +339,7 @@ void run_line(const char *line)
         }
         _snprintf(g_current, sizeof g_current, "ngoto #%u", slot);
     } else if (sscanf(line, "camto %u", &slot) == 1) { // camto <pawn>: the camera follows that pawn (tests)
-        int n = slot < unsigned(kPawns) ? camera_follow(possess_pawn_ptr(int(slot))) : 0;
+        int n = slot < unsigned(kPawns) ? camera_follow(possess_arisen(), possess_pawn_ptr(int(slot))) : 0;
         logf("bridge: camto %u: %d camera references moved", slot, n);
         _snprintf(g_current, sizeof g_current, "camto %u", slot);
     } else if (strncmp(line, "codectest", 9) == 0) {
@@ -384,6 +384,14 @@ void run_line(const char *line)
             }
         }
         _snprintf(g_current, sizeof g_current, "php %s", who);
+    } else if (strncmp(line, "pkill", 5) == 0) { // pkill: the Arisen's dead flag (tests)
+        enemies_queue_arisen_kill();
+        strcpy(g_current, "pkill");
+    } else if (strncmp(line, "pdmg ", 5) == 0) { // pdmg <damage>: the Arisen takes damage the game's way (tests)
+        float v = 0.f;
+        if (sscanf(line + 5, "%f", &v) == 1)
+            enemies_queue_arisen_damage(v);
+        _snprintf(g_current, sizeof g_current, "pdmg %.0f", v);
     } else if (strncmp(line, "findvt ", 7) == 0) { // findvt <vtable hex>: globals in .data pointing at such an object
         unsigned vt = 0;
         int hits = 0;

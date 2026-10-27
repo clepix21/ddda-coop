@@ -54,6 +54,46 @@ extern "C" __attribute__((naked)) void enemies_damage_thunk()
                  "ret $8\n\t");
 }
 
+// Tests: damage to the Arisen through the game's own damage function (HP 0 written directly does not
+// kill: the death comes from that function). Queued by the bridge, applied on the game thread.
+volatile LONG g_queued_damage = 0; // float bits, 0 = none
+volatile LONG g_queued_kill = 0;
+
+void enemies_queue_arisen_kill() { InterlockedExchange(&g_queued_kill, 1); }
+
+void enemies_queue_arisen_damage(float dmg)
+{
+    LONG bits;
+    memcpy(&bits, &dmg, 4);
+    InterlockedExchange(&g_queued_damage, bits);
+}
+
+void enemies_run_queued(uintptr_t arisen)
+{
+    if (InterlockedExchange(&g_queued_kill, 0) && arisen && enemies_hp(arisen)) {
+        uintptr_t e = game::at<uintptr_t>(game::at<uintptr_t>(arisen, 0x1D18), 0);
+        game::at<float>(e, 8) = 0.f;
+        game::at<uint32_t>(e, 0x110) |= 1; // the dead flag FUN_0076E7C0 consumes
+        logf("enemies: test kill of the Arisen (HP entry %08X)", unsigned(e));
+    }
+    LONG bits = InterlockedExchange(&g_queued_damage, 0);
+    if (!bits || !arisen || !enemies_hp(arisen))
+        return;
+    uintptr_t entry = game::at<uintptr_t>(game::at<uintptr_t>(arisen, 0x1D18), 0);
+    uintptr_t fn = game::kApplyDamage;
+    uint32_t b = uint32_t(bits);
+    float dmg;
+    memcpy(&dmg, &b, 4);
+    logf("enemies: test damage %.1f to the Arisen (HP entry %08X)", dmg, unsigned(entry));
+    // EAX = HP entry, push flag then damage; the callee pops both
+    asm volatile("pushl $0\n\t"
+                 "pushl %%edx\n\t"
+                 "call *%%ecx\n\t"
+                 : "+a"(entry), "+c"(fn), "+d"(b)
+                 :
+                 : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7");
+}
+
 bool mem_readable(const void *p, size_t n)
 {
     MEMORY_BASIC_INFORMATION mbi;

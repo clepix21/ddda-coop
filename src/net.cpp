@@ -44,6 +44,8 @@
 #include "game.h"
 #include "mod.h"
 
+void guest_talk_mirror(DWORD now); // below: the guest mirrors the host's pad during talks
+
 namespace {
 
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6 };
@@ -93,6 +95,10 @@ struct StageState {
     int32_t time_speed;             // sGameSys +0xB877C (500 running, 0 stopped: talks, messages)
     int32_t event;                  // sGameSys +0x9E3A8 (256 = none, 7 = a talk)
     uint32_t party_sig;             // the guests' characters the host's world shows (rejoin.cpp)
+    // Talks (milestone 6): the host's own pad, which the guest's game mirrors while both are in a
+    // talk (the host's B reaches the guest's Arisen puppet, which starts the same talk there)
+    uint16_t pad_buttons;
+    int16_t pad_lx, pad_ly;
 };
 struct SnapMsg {
     Header h;
@@ -314,6 +320,12 @@ void read_stage(StageState &s)
     s.jump_seq = seq;
     s.reload_seq = stages_other_loads();
     s.party_sig = rejoin_loaded_sig();
+    XINPUT_STATE pad = {};
+    if (pads_read_raw(0, &pad) == ERROR_SUCCESS) { // the host's own pad (the Arisen's, slot 0)
+        s.pad_buttons = pad.Gamepad.wButtons;
+        s.pad_lx = pad.Gamepad.sThumbLX;
+        s.pad_ly = pad.Gamepad.sThumbLY;
+    }
     s.day = gm && st ? game::at<int32_t>(gm, game::kGsDay) : -1;
     s.day_ms = gm ? game::at<int32_t>(gm, game::kGsDayMs) : 0;
     s.time_speed = gm ? game::at<int32_t>(gm, game::kGsTimeSpeed) : 500;
@@ -680,6 +692,15 @@ void guest_char_send(DWORD now)
         return;
     next = (now + 500) | 1;
     if (ch.empty()) {
+        // coop.ini send_character=0: this friend plays the host's pawn as it is (no own character)
+        char opt[8] = "1";
+        if (cfg_str("send_character", opt, sizeof opt) && opt[0] == '0') {
+            static bool logged = false;
+            if (!logged)
+                logf("net: send_character=0: this guest plays the host's pawn, its own character stays home");
+            logged = true;
+            return;
+        }
         if (!storage_guest_character(ch))
             return; // its own save not read yet
         crc = crc32(reinterpret_cast<const uint8_t *>(ch.data()), ch.size());
@@ -770,6 +791,7 @@ DWORD WINAPI net_thread(LPVOID)
                 next_send = now + 16;
                 guest_save_need(now);
                 guest_char_send(now);
+                guest_talk_mirror(now);
                 if (g_have_snap) {
                     EnterCriticalSection(&g_snap_lock);
                     uint32_t host_sig = g_snap.stage.party_sig;
@@ -1047,6 +1069,64 @@ void net_guest_stage()
     logf("net: stage: guest in %d jumps to %d (point %d): %s", mine, to, point, why);
 }
 
+// Guest, net thread: while the host and the guest are both in a talk (or another event), the
+// guest's game reads the host's pad on slot 0, so the lines, menus and choices advance together.
+void guest_talk_mirror(DWORD now)
+{
+    uintptr_t gm = game::at<uintptr_t>(game::kGameMain, 0);
+    if (!gm || !g_have_snap)
+        return;
+    EnterCriticalSection(&g_snap_lock);
+    StageState h = g_snap.stage;
+    LeaveCriticalSection(&g_snap_lock);
+    int32_t mine = game::at<int32_t>(gm, game::kGsEvent);
+    static bool on = false;
+    static DWORD host_out = 0, catch_from = 0; // the host's talk ended / the guest's catch-up began
+    static bool followed = false; // the guest's current talk is one it went through with the host
+    bool want = h.event != 256 && mine != 256 && h.stage >= 0;
+    if (want)
+        followed = true;
+    if (want != on) {
+        on = want;
+        logf("net: talk: guest %s the host's pad (host event %d, guest %d)", on ? "mirrors" : "stops mirroring", h.event, mine);
+    }
+    // The guest's talk can lag a step behind (a press that came while its text was still being
+    // written): once the host's talk is over for 1 s and the guest's is not, B (back out of a
+    // menu) and A (next line) in turn until it ends, at most 20 s. Its choices stay on its own PC
+    // (a guest never saves). A talk the host never had (its puppet reached an NPC the host's
+    // Arisen did not) only gets B: an unknown menu could be a Rift pawn's ("Recruter").
+    if (h.event == 256 && mine != 256 && h.stage >= 0) {
+        if (!host_out)
+            host_out = now | 1;
+        if (now - host_out > 1000) {
+            if (!catch_from) {
+                catch_from = now | 1;
+                logf("net: talk: guest still in a talk 1 s after the host's ended: %s until it ends",
+                     followed ? "B/A" : "B only (a talk the host did not have)");
+            }
+            if (now - catch_from < 20000) {
+                XINPUT_GAMEPAD g = {};
+                DWORD phase = (now - catch_from) / 250 % 4; // B, -, A, -
+                g.wButtons = phase == 0 ? XINPUT_GAMEPAD_B : phase == 2 && followed ? XINPUT_GAMEPAD_A : 0;
+                pads_override(0, g, now + 100);
+            }
+        }
+        return;
+    }
+    if (catch_from)
+        logf("net: talk: guest's talk ended after %lu ms of catch-up", now - catch_from);
+    host_out = catch_from = 0;
+    if (mine == 256)
+        followed = false;
+    if (!on)
+        return;
+    XINPUT_GAMEPAD g = {};
+    g.wButtons = h.pad_buttons & WORD(~(XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START));
+    g.sThumbLX = h.pad_lx;
+    g.sThumbLY = h.pad_ly;
+    pads_override(0, g, now + 150);
+}
+
 // Guest: called after the character's own UpdateCommands (local input already hidden).
 // Log label of a party member on the guest: "arisen", "pawn" (its own pawn), "party<i>" (others).
 const char *party_label(int i, int my_pawn)
@@ -1075,6 +1155,9 @@ void net_apply_snapshot(uintptr_t ch, int i)
     memcpy(reinterpret_cast<void *>(cmd + kCmdExtraFrom), s.cmd_extra, kCmdExtraLen);
     game::at<uint32_t>(cmd, 0x2C) = press;
     game::at<uint32_t>(cmd, 0x34) = release;
+    if (press && is_arisen) // dialogue study: does the host's B (0x1000) reach the puppet?
+        logf("net: guest arisen puppet press %08X (event state %d)", press,
+             game::at<int32_t>(game::at<uintptr_t>(game::kGameMain, 0), game::kGsEvent));
     static DWORD next_log[kParty] = {}; // 0 = not set yet
     if (!next_log[i] || int(GetTickCount() - next_log[i]) >= 0) {
         next_log[i] = GetTickCount() + 1000;
@@ -1137,24 +1220,39 @@ void net_guest_camera()
         enabled = early_flag("guest_cam_pawn") ? 1 : 0;
     if (g_role != NET_GUEST || !enabled)
         return;
+    static uintptr_t followed = 0; // the pawn the camera was moved to (0 = the Arisen's)
+    uintptr_t arisen = possess_arisen(), gm = game::at<uintptr_t>(game::kGameMain, 0);
     int mine = g_have_snap ? g_snap.my_pawn : -1;
-    if (int moved = camera_follow(mine >= 0 ? possess_pawn_ptr(mine) : 0))
-        logf("net: guest camera: %d references moved from the Arisen to pawn %d", moved, mine);
+    uintptr_t pawn = mine >= 0 ? possess_pawn_ptr(mine) : 0;
+    // During a talk, a rest or a cutscene (event state not 256) the camera stays on the Arisen, the
+    // way the game frames them; and it never keeps a pawn the game stopped updating (a rest
+    // replaces the party: the camera read a freed pawn, crash in FUN_007DCF30, 2026-10-27 04:34).
+    bool event = gm && game::at<int32_t>(gm, game::kGsEvent) != 256;
+    uintptr_t want = event ? 0 : pawn;
+    if (followed && followed != want && arisen) {
+        int back = camera_follow(followed, arisen);
+        logf("net: guest camera: back on the Arisen (%d references; %s)", back, event ? "an event" : "pawn gone");
+        followed = 0;
+    }
+    if (want && arisen) {
+        if (int moved = camera_follow(arisen, want))
+            logf("net: guest camera: %d references moved from the Arisen to pawn %d", moved, mine);
+        followed = want;
+    }
 }
 
-// Make the camera follow `pawn` instead of the Arisen; returns how many references it moved.
-int camera_follow(uintptr_t pawn)
+// Move the camera's references to `from` (a character) over to `to`; returns how many it moved.
+int camera_follow(uintptr_t from, uintptr_t to)
 {
-    uintptr_t arisen = possess_arisen();
     uintptr_t holder = game::at<uintptr_t>(0, 0x018D0B6C);
     uintptr_t cam = holder ? game::at<uintptr_t>(holder, 0x34) : 0;
-    if (!pawn || !arisen || !cam)
+    if (!from || !to || !cam)
         return 0;
     int changed = 0;
     auto retarget = [&](uintptr_t obj, uintptr_t off) {
         uintptr_t &p = game::at<uintptr_t>(obj, off);
-        if (p == arisen) {
-            p = pawn;
+        if (p == from) {
+            p = to;
             ++changed;
         }
     };

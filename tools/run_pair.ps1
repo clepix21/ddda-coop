@@ -30,7 +30,8 @@ param(
     [string[]]$Guest2Ini = @(),
     [string[]]$Guest2Bridge = @(),
     # the (first) guest's game starts that many seconds after the host's (a friend joining during play)
-    [double]$GuestStartAt = 0
+    [double]$GuestStartAt = 0,
+    [double]$Guest2StartAt = 0
 )
 function Get-SaveHashes {
     Get-ChildItem $SaveDir -Recurse -File | Sort-Object FullName | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" }
@@ -40,12 +41,12 @@ New-Item -ItemType Directory -Force $OutDir | Out-Null
 Get-ChildItem $OutDir -File | Remove-Item
 $stopFile = Join-Path $OutDir "STOP"
 $sides = @(
-    @{ Name = "host"; Dir = "J:\coop-test\DDDA"; Bot = $HostBot; Ini = $HostIni; Bridge = $HostBridge; Window = $HostWindow },
-    @{ Name = "guest"; Dir = "J:\coop-test\DDDA2"; Bot = $GuestBot; Ini = $GuestIni; Bridge = $GuestBridge; Window = $GuestWindow }
+    @{ Name = "host"; Dir = "J:\coop-test\DDDA"; Bot = $HostBot; Ini = $HostIni; Bridge = $HostBridge; Window = $HostWindow; StartAt = 0 },
+    @{ Name = "guest"; Dir = "J:\coop-test\DDDA2"; Bot = $GuestBot; Ini = $GuestIni; Bridge = $GuestBridge; Window = $GuestWindow; StartAt = $GuestStartAt }
 )
 if ($Guest2Ini.Count -gt 0) {
     $sides[1].Window = "-1920,0,960,540"
-    $sides += @{ Name = "guest2"; Dir = "J:\coop-test\DDDA3"; Bot = $Guest2Bot; Ini = $Guest2Ini; Bridge = $Guest2Bridge; Window = "-1920,540,960,540" }
+    $sides += @{ Name = "guest2"; Dir = "J:\coop-test\DDDA3"; Bot = $Guest2Bot; Ini = $Guest2Ini; Bridge = $Guest2Bridge; Window = "-1920,540,960,540"; StartAt = $Guest2StartAt }
 }
 # Real Steam (rich presence on the owner's account, P2P to friends) only when asked for explicitly.
 foreach ($s in $sides) {
@@ -75,7 +76,7 @@ function Start-Side($s, $el) {
 $before = Get-SaveHashes
 $start = Get-Date
 foreach ($s in $sides) {
-    if ($s.Name -eq "guest" -and $GuestStartAt -gt 0) { $s.Proc = $null; continue }
+    if ($s.StartAt -gt 0) { $s.Proc = $null; continue }
     Start-Side $s ((Get-Date) - $start).TotalSeconds; Start-Sleep 5
 }
 $guestSide = $sides[1]; $restartAt = 0
@@ -84,7 +85,7 @@ while (((Get-Date) - $start).TotalSeconds -lt $Seconds) {
     Start-Sleep -Milliseconds 250
     if (Test-Path $stopFile) { "STOP file found"; break }
     $el = ((Get-Date) - $start).TotalSeconds
-    if ($GuestStartAt -gt 0 -and -not $guestSide.Proc -and $el -ge $GuestStartAt) { Start-Side $guestSide $el; "guest started at $([int]$el) s" }
+    foreach ($s in $sides) { if ($s.StartAt -gt 0 -and -not $s.Proc -and $el -ge $s.StartAt) { Start-Side $s $el; "$($s.Name) started at $([int]$el) s" } }
     foreach ($s in $sides) {
         if (-not $s.Proc) { continue }
         $log = Join-Path $s.Dir "coop.log"

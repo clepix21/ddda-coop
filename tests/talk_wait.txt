@@ -1,0 +1,4 @@
+# Talk tests: the host waits 20 s (the guest is in game ~9 s after the host), then stands at the
+# inn counter again (pawns pushed it away once during a 40 s wait, 2026-10-27 04:57).
+wait 20000
+goto 5830 -3145 40 4000

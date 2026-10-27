@@ -50,5 +50,13 @@ late = [p for p in pos if rest and p[0] > rest[0][0] + 10]
 med = sorted(p[1] for p in late)[len(late) // 2] if late else None
 check(med is not None and med < 50, f"guest's Arisen stands where the host's does after the rest (median error {med if med is None else round(med, 1)} u)")
 check(bool(late) and all(abs(p[2] - p[3]) <= 1 for p in late), "guest's Arisen has the host's HP after the rest" + (f" ({late[-1][2]:g} / {late[-1][3]:g})" if late else ""))
+# the guest's game goes through the same talk: the host's B starts it on the guest's Arisen puppet,
+# the host's pad drives its lines and menus, and it ends with the host's
+gstart = [t(ln) for ln in guest if "world: guest event state 256 -> 7" in ln]
+gend = [t(ln) for ln in guest if "world: guest event state 7 -> 256" in ln]
+d0 = gstart[0] - t_talk if gstart and talk else None
+check(d0 is not None and abs(d0) <= 2, f"guest's game started the same talk (after {d0 if d0 is None else round(d0, 2)} s)")
+d1 = gend[0] - rest[0][0] if gend and rest else None
+check(d1 is not None and -1 <= d1 <= 15, f"guest's talk ended soon after the host's (after {d1 if d1 is None else round(d1, 2)} s)")
 gev = [ln[13:] for ln in guest if "world: guest event state" in ln]
 print("info  guest event states: " + "; ".join(gev))

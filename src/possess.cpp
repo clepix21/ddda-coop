@@ -214,6 +214,7 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
         g_arisen = ch;
         g_arisen_tick = GetTickCount();
         net_capture(ch, 0);
+        enemies_run_queued(ch);
     } else if (pawn >= 0) {
         g_pawn[pawn] = ch;
         g_pawn_tick[pawn] = GetTickCount();

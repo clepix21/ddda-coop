@@ -100,7 +100,7 @@ void net_apply_snapshot(uintptr_t ch, int party_index);
 void net_host_record(uintptr_t ch, int party_index);
 void net_apply_transform(uintptr_t ch, int party_index);
 void net_guest_camera();
-int camera_follow(uintptr_t ch); // camera follows ch instead of the Arisen (guest, tests)
+int camera_follow(uintptr_t from, uintptr_t to); // the camera follows `to` instead of `from` (guest, tests)
 uintptr_t net_host_guest_camera_holder(int peer);
 NetRole cfg_role();
 const char *cfg_peer();
@@ -136,7 +136,10 @@ bool stages_install(); // stages.cpp: log every stage load
 uint32_t stages_other_loads(); // stage loads not made by a jump request (retry, load game)
 DWORD stages_last_load(int32_t *stage); // tick (0 = none) and stage of the last stage load
 bool enemies_install();
-float *enemies_hp(uintptr_t ch); // [[ch+0x1D18]]+8: {current HP, max HP}, or null
+float *enemies_hp(uintptr_t ch);
+void enemies_queue_arisen_damage(float dmg); // tests: the game's damage function, on the game thread
+void enemies_run_queued(uintptr_t arisen);
+void enemies_queue_arisen_kill();           // tests: the Arisen's dead flag, on the game thread  // possess_pre (game thread), for the Arisen // [[ch+0x1D18]]+8: {current HP, max HP}, or null
 void enemies_on_finalize(uintptr_t em);
 int enemies_snapshot(EnemySlot *out, int cap);
 const char *enemies_class_of(uintptr_t obj);
