@@ -23,6 +23,7 @@ volatile LONG g_last_load_tick = 0, g_last_load_stage = -1; // any load, for the
 
 extern "C" void __cdecl stages_on_load(const int32_t *req, uintptr_t ret)
 {
+    hang_note_main_thread();
     if (!req || req[0] == -1)
         return;
     if (ret != kJumpLoadRet)

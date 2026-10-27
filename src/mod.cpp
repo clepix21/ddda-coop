@@ -63,6 +63,7 @@ static DWORD WINAPI pad_thread(LPVOID)
         net_start(cfg_role(), cfg_peer(), cfg_port());
     if (cfg_bridge())
         bridge_start();
+    hang_watch_start();
     DWORD t0 = GetTickCount();
     bool combo_was_down = false;
     bool auto_done = false; // auto possession fires once; the combo stays in charge afterwards

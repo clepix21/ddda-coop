@@ -65,6 +65,9 @@ bool cfg_debug_log();
 bool cfg_bridge();
 int possess_bridge_sign();
 uintptr_t possess_arisen();
+DWORD possess_last_update(); // tick of the Arisen's last update (0 = never)
+void hang_note_main_thread(); // hang_watch.cpp: called on the game's main thread
+void hang_watch_start();
 uintptr_t possess_main_pawn();
 void possess_set(bool on);
 bool possess_on();

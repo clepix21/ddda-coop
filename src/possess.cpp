@@ -200,6 +200,7 @@ int possess_bridge_sign() { return g_bridge_sign; }
 // The party, as long as the game keeps updating them (0 while a stage loads, or after a reload
 // until the new objects run).
 uintptr_t possess_arisen() { return fresh(g_arisen, g_arisen_tick); }
+DWORD possess_last_update() { return g_arisen_tick; }
 uintptr_t possess_main_pawn() { return fresh(g_pawn[0], g_pawn_tick[0]); }
 uintptr_t possess_pawn_ptr(int pawn) { return pawn >= 0 && pawn < kPawns ? fresh(g_pawn[pawn], g_pawn_tick[pawn]) : 0; }
 DWORD possess_auto_ms() { return g_auto_ms; }

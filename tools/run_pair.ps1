@@ -31,7 +31,12 @@ param(
     [string[]]$Guest2Bridge = @(),
     # the (first) guest's game starts that many seconds after the host's (a friend joining during play)
     [double]$GuestStartAt = 0,
-    [double]$Guest2StartAt = 0
+    [double]$Guest2StartAt = 0,
+    # a third guest (fourth copy, DDDA4), top right quarter of the left screen
+    [string]$Guest3Bot = "",
+    [string[]]$Guest3Ini = @(),
+    [string[]]$Guest3Bridge = @(),
+    [double]$Guest3StartAt = 0
 )
 function Get-SaveHashes {
     Get-ChildItem $SaveDir -Recurse -File | Sort-Object FullName | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" }
@@ -47,6 +52,9 @@ $sides = @(
 if ($Guest2Ini.Count -gt 0) {
     $sides[1].Window = "-1920,0,960,540"
     $sides += @{ Name = "guest2"; Dir = "J:\coop-test\DDDA3"; Bot = $Guest2Bot; Ini = $Guest2Ini; Bridge = $Guest2Bridge; Window = "-1920,540,960,540"; StartAt = $Guest2StartAt }
+}
+if ($Guest3Ini.Count -gt 0) {
+    $sides += @{ Name = "guest3"; Dir = "J:\coop-test\DDDA4"; Bot = $Guest3Bot; Ini = $Guest3Ini; Bridge = $Guest3Bridge; Window = "-960,0,960,540"; StartAt = $Guest3StartAt }
 }
 # Real Steam (rich presence on the owner's account, P2P to friends) only when asked for explicitly.
 foreach ($s in $sides) {
