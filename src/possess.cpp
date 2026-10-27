@@ -218,6 +218,7 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
         enemies_run_queued(ch);
         exp_sync_apply(); // shared world: the exp other players earned
         loot_apply_queued(); // and copies of their pickups
+        revive_game_tick(ch); // getting up, coming back next to a player
     } else if (pawn >= 0) {
         g_pawn[pawn] = ch;
         g_pawn_tick[pawn] = GetTickCount();
@@ -255,7 +256,9 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
         return 0;
     memcpy(copy, reinterpret_cast<const void *>(in), kInputSize);
     keep_idle(copy);
-    if (guest || (puppet && who != ARISEN)) { // puppets: no local input at all, no AI
+    // shared world (revive.cpp): this player is down, or helps one up (its B must not talk)
+    bool down = who == ARISEN && (revive_down() || revive_helping());
+    if (guest || (puppet && who != ARISEN) || down) { // puppets: no local input at all, no AI
         for (int i = 0; i < 4; ++i)
             if (i != g_idle)
                 hide_slot(copy, i);

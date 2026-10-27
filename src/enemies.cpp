@@ -27,13 +27,15 @@ using Death_t = void(__fastcall *)(uintptr_t, void *, uint32_t, uint32_t); // th
 Death_t g_death_orig = nullptr;
 void __fastcall hk_death(uintptr_t ch, void *edx, uint32_t a, uint32_t hit);
 
-extern "C" bool __cdecl enemies_damage_filter(uintptr_t entry) asm("enemies_damage_filter");
+extern "C" bool __cdecl enemies_damage_filter(uintptr_t entry, float *dmg) asm("enemies_damage_filter");
 extern "C" void *g_damage_orig asm("g_damage_orig");
 void *g_damage_orig = nullptr;
 
-extern "C" bool __cdecl enemies_damage_filter(uintptr_t entry)
+extern "C" bool __cdecl enemies_damage_filter(uintptr_t entry, float *dmg)
 {
     uintptr_t ch = game::at<uintptr_t>(entry, 0x1B4);
+    if (ch && revive_on_damage(ch, dmg)) // shared world: down instead of dead (revive.cpp)
+        return true;
     return ch && enemy_net_block_damage(ch);
 }
 
@@ -43,9 +45,11 @@ extern "C" __attribute__((naked)) void enemies_damage_thunk() asm("enemies_damag
 extern "C" __attribute__((naked)) void enemies_damage_thunk()
 {
     asm volatile("pushl %eax\n\t"
+                 "leal 8(%esp), %ecx\n\t" // the damage argument (may be cut by the filter)
+                 "pushl %ecx\n\t"
                  "pushl %eax\n\t"
                  "call enemies_damage_filter\n\t"
-                 "addl $4, %esp\n\t"
+                 "addl $8, %esp\n\t"
                  "testb %al, %al\n\t"
                  "popl %eax\n\t"
                  "jnz 1f\n\t"

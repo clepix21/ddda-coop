@@ -84,6 +84,23 @@ void flags_scan();                           // net thread: this world's changes
 uint32_t flags_mine_count();
 void flags_net_mine(std::vector<FlagEv> &out, uint32_t from_seq, int max);
 void flags_net_apply(const FlagEv &e);       // net thread: another world's change
+// revive.cpp: shared world, down and helped up instead of dying
+struct PlayerInfo {
+    bool present, downed;
+    int32_t stage;
+    float pos[3];
+};
+bool net_player_info(int slot, PlayerInfo &out); // net.cpp: player by place (0 = host, 1 + guest)
+int net_my_slot();
+int32_t net_my_stage();
+void net_send_revive(int slot);
+bool net_stage_jump(int32_t to, int32_t point);  // game thread
+bool revive_down();
+bool revive_helping();                             // B held next to a downed player
+bool revive_on_damage(uintptr_t ch, float *dmg);  // game thread, the damage hook
+void revive_tick();                               // net thread
+void revive_helped();                             // net thread
+void revive_game_tick(uintptr_t arisen);          // game thread
 int net_guest_my_pawn();   // net.cpp: the pawn the host gave this guest, -1 = none
 void save_guard_poll();
 bool save_guard_active();

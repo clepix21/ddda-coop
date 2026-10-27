@@ -1,0 +1,13 @@
+# Revive test, guest: walk away from the Rift stone with the host, take a lethal blow (down), wait to be
+# helped up by the host (B held next to it); then a second lethal blow and 60 s alone down: back next
+# to the host.
+wait 3000
+goto -2350 -4550 60 8000
+where
+wait 12000
+pdmg 99999
+wait 30000
+where
+pdmg 99999
+wait 75000
+where

@@ -59,7 +59,7 @@ void guest_talk_mirror(DWORD now); // below: the guest mirrors the host's pad du
 namespace {
 
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
-                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11 };
+                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11, MSG_REVIVE = 12 };
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 // A big correction must move every copy the movement code keeps, or the next collision pass pulls
@@ -124,6 +124,12 @@ struct SnapMsg {
     int8_t my_slot;           // this guest's place in exp_total
     uint32_t loot_got;        // shared world: this guest's pickups the host has (loot.cpp)
     uint32_t flags_got;       // and its world flag changes (flags.cpp)
+    uint8_t down[4];          // shared world: player down, by place (revive.cpp)
+    int8_t pawn_of[4];        // the pawn showing each guest (by place), -1 = none
+};
+struct ReviveMsg { // shared world: the player at `target` was helped up
+    Header h;
+    uint8_t target;
 };
 struct PStateMsg { // shared world, guest -> host: its own Arisen
     Header h;
@@ -133,6 +139,7 @@ struct PStateMsg { // shared world, guest -> host: its own Arisen
     uint32_t loot_session;     // this game run (pickups restart at 1 with a new one)
     uint32_t loot_applied[4];  // the other players' pickups this guest applied, by place
     uint32_t flags_applied[4]; // the same for world flag changes
+    uint8_t downed;            // revive.cpp
 };
 constexpr int kFlagsPage = 80;
 struct FlagsMsg { // shared world: world flag changes of the player at `slot`, numbered from `first`
@@ -237,6 +244,7 @@ struct Peer {
     uint32_t loot_applied[4], loot_joined[4];
     DWORD loot_next;
     uint32_t flags_applied[4], flags_joined[4];
+    uint8_t downed;
 };
 Peer g_peers[kMaxPeers] = {};
 int g_pawn_order[kPawns] = {1, 2, 0};
@@ -791,10 +799,19 @@ void receive_all()
             peer.exp_total = m->exp_total;
             memcpy(peer.loot_applied, m->loot_applied, sizeof peer.loot_applied);
             memcpy(peer.flags_applied, m->flags_applied, sizeof peer.flags_applied);
+            if (peer.downed != m->downed)
+                logf("net: guest %d is %s", k + 1, m->downed ? "down" : "up again");
+            peer.downed = m->downed;
             if (g_shared)
                 exp_sync_seen(1 + k, m->exp_total);
             if (g_shared && peer.pawn >= 0)
                 shared_take(1 + peer.pawn, m->me, m->stage == my_stage());
+        } else if (h->type == MSG_REVIVE && n == int(sizeof(ReviveMsg))) {
+            int t = reinterpret_cast<const ReviveMsg *>(buf)->target;
+            if (g_role == NET_GUEST || t == 0)
+                revive_helped();
+            else if (t >= 1 && t <= kMaxPeers && g_peers[t - 1].used) // the host passes it on
+                send_to(g_peers[t - 1], buf, n);
         } else if (h->type == MSG_FLAGS && n >= int(sizeof(Header) + 10)) {
             auto m = reinterpret_cast<const FlagsMsg *>(buf);
             if (m->n > kFlagsPage || m->slot >= 4 || n < int(sizeof(Header) + 10 + m->n * sizeof(FlagEv)))
@@ -1251,6 +1268,8 @@ DWORD WINAPI net_thread(LPVOID)
                 next_send = now + 16;
                 guest_save_need(now);
                 guest_char_send(now);
+                if (g_shared)
+                    revive_tick();
                 static DWORD flags_next = 0; // shared world: quest and world flags (flags.cpp)
                 if (g_shared && (!flags_next || int(now - flags_next) >= 0)) {
                     flags_next = (now + 250) | 1;
@@ -1265,6 +1284,7 @@ DWORD WINAPI net_thread(LPVOID)
                     ps.loot_session = g_loot_my_session;
                     memcpy(ps.loot_applied, g_loot_applied, sizeof ps.loot_applied);
                     memcpy(ps.flags_applied, g_flags_applied, sizeof ps.flags_applied);
+                    ps.downed = revive_down() ? 1 : 0;
                     send_raw(&ps, sizeof ps);
                     static DWORD loot_next = 0;
                     if (g_have_snap && (!loot_next || int(now - loot_next) >= 0)) { // its pickups the host lacks
@@ -1337,6 +1357,12 @@ DWORD WINAPI net_thread(LPVOID)
                     m.my_slot = int8_t(1 + (&peer - g_peers));
                     m.loot_got = uint32_t(g_loot_log[m.my_slot].size());
                     m.flags_got = uint32_t(g_flags_log[m.my_slot].size());
+                    m.down[0] = revive_down() ? 1 : 0;
+                    m.pawn_of[0] = -1;
+                    for (int q = 0; q < kMaxPeers; ++q) {
+                        m.down[1 + q] = g_peers[q].used ? g_peers[q].downed : 0;
+                        m.pawn_of[1 + q] = int8_t(g_peers[q].used ? g_peers[q].pawn : -1);
+                    }
                     m.my_pawn = int8_t(peer.pawn);
                     m.char_crc = peer.char_crc;
                     send_to(peer, &m, sizeof m);
@@ -1347,6 +1373,8 @@ DWORD WINAPI net_thread(LPVOID)
                 rejoin_tick(NET_HOST, 0); // and the host's world reloaded with them, during play
                 host_save_send(now);
                 host_progress_send(now);
+                if (g_shared)
+                    revive_tick();
                 static DWORD flags_next = 0;
                 if (g_shared && (!flags_next || int(now - flags_next) >= 0)) {
                     flags_next = (now + 250) | 1;
@@ -2109,4 +2137,102 @@ bool net_puppet(int i)
     bool on = (g_rp[i].valid || g_rp_away[i]) && g_rp_tick[i] && GetTickCount() - g_rp_tick[i] < 500;
     LeaveCriticalSection(&g_cap_lock);
     return on;
+}
+
+// ---- shared world: players by place, for revive.cpp ----
+
+int net_my_slot()
+{
+    if (g_role == NET_HOST)
+        return 0;
+    if (g_role != NET_GUEST || !g_have_snap)
+        return -1;
+    EnterCriticalSection(&g_snap_lock);
+    int s = g_snap.my_slot;
+    LeaveCriticalSection(&g_snap_lock);
+    return s;
+}
+
+int32_t net_my_stage() { return my_stage(); }
+
+bool net_player_info(int slot, PlayerInfo &out)
+{
+    out = PlayerInfo{};
+    if (slot < 0 || slot >= 4 || !g_shared)
+        return false;
+    if (slot == net_my_slot()) {
+        CharState c = {};
+        read_state(0, c);
+        out.present = true;
+        out.downed = revive_down();
+        out.stage = my_stage();
+        memcpy(out.pos, c.pos, sizeof out.pos);
+        return true;
+    }
+    if (g_role == NET_HOST) {
+        const Peer &p = g_peers[slot - 1];
+        if (slot < 1 || !p.used || !p.pstate_tick || GetTickCount() - p.pstate_tick > 3000)
+            return false;
+        out.present = true;
+        out.downed = p.downed;
+        out.stage = p.pstage;
+        memcpy(out.pos, p.pstate.pos, sizeof out.pos);
+        return true;
+    }
+    if (!g_have_snap)
+        return false;
+    // the last time each place was seen: a player is still there for 3 s without news (its game
+    // stops sending its state during a talk or a load)
+    static PlayerInfo last[4];
+    static DWORD last_at[4] = {};
+    EnterCriticalSection(&g_snap_lock);
+    int i = slot == 0 ? 0 : (g_snap.pawn_of[slot] >= 0 ? 1 + g_snap.pawn_of[slot] : -1);
+    bool ok = i >= 0 && i < kParty && g_snap.ch[i].valid;
+    if (ok) {
+        out.present = true;
+        out.downed = g_snap.down[slot] != 0;
+        out.stage = g_snap.stage_of[i];
+        memcpy(out.pos, g_snap.ch[i].pos, sizeof out.pos);
+        last[slot] = out;
+        last_at[slot] = GetTickCount() | 1;
+    } else if (last_at[slot] && GetTickCount() - last_at[slot] < 3000) {
+        out = last[slot];
+        out.downed = g_snap.down[slot] != 0;
+        ok = true;
+    }
+    if (!ok) {
+        static DWORD next = 0;
+        if (!next || int(GetTickCount() - next) >= 0) {
+            next = GetTickCount() + 2000;
+            logf("net: player %d unknown: entry %d, valid %d, pawn_of %d %d %d %d, my_slot %d", slot, i,
+                 i >= 0 && i < kParty ? g_snap.ch[i].valid : -1, g_snap.pawn_of[0], g_snap.pawn_of[1], g_snap.pawn_of[2],
+                 g_snap.pawn_of[3], g_snap.my_slot);
+        }
+    }
+    LeaveCriticalSection(&g_snap_lock);
+    return ok;
+}
+
+void net_send_revive(int slot)
+{
+    ReviveMsg m = {{kMagic, MSG_REVIVE, ++g_seq}, uint8_t(slot)};
+    if (g_role == NET_GUEST)
+        send_raw(&m, sizeof m);
+    else if (slot >= 1 && slot <= kMaxPeers && g_peers[slot - 1].used)
+        send_to(g_peers[slot - 1], &m, sizeof m);
+}
+
+// Game thread: an area change to `to` (entry point `point`), the way the guests follow the host.
+bool net_stage_jump(int32_t to, int32_t point)
+{
+    uintptr_t st = current_stage_area();
+    if (!st || !plain_stage(to) || game::at<int32_t>(st, 0x808) != 1)
+        return false;
+    game::at<int32_t>(st, 0x80C) = to;
+    game::at<int32_t>(st, 0x810) = point;
+    game::at<uint8_t>(st, 0x814) = 0;
+    game::at<int32_t>(st, 0x808) = 2;
+    game::at<int32_t>(st, 4) = 0x13;
+    logf("net: stage: jump to %d (point %d) to come back next to a player", to, point);
+    return true;
 }
