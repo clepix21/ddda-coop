@@ -157,16 +157,18 @@ void link_steam_tick()
     if (g_role == NET_HOST) {
         for_each_candidate([](uint64_t id) {
             g_f.AcceptP2PSessionWithUser(g_f.net, id);
-            const char *rp = g_f.GetFriendRichPresence(g_f.friends, id, "ddda_coop");
-            if (g_fixed_peer || (rp && strcmp(rp, "guest") == 0)) {
-                const uint8_t hello[9] = {0x44, 0x44, 0x43, 0x4F, 0, 0, 0, 0, 0}; // net.cpp Header: 'DDCO', type 0
-                g_f.SendP2PPacket(g_f.net, id, hello, sizeof hello, kSendUnreliable, kChannel);
-            }
+            // every friend in the game, not only those whose rich presence already says guest: Steam
+            // may be slow to pass it on, and the guest's packets only come in once the host has sent
+            // to it (a real test on 2026-10-27 22:49: the guest sent for 30 s and got nothing back)
+            const uint8_t hello[9] = {0x44, 0x44, 0x43, 0x4F, 0, 0, 0, 0, 0}; // net.cpp Header: 'DDCO', type 0
+            g_f.SendP2PPacket(g_f.net, id, hello, sizeof hello, kSendUnreliable, kChannel);
         });
         return;
     }
-    if (g_peer)
+    if (g_peer) { // keep the session with the host accepted, and tell when nothing comes back
+        g_f.AcceptP2PSessionWithUser(g_f.net, g_peer);
         return;
+    }
     for_each_candidate([](uint64_t id) {
         if (g_peer)
             return;
