@@ -1,0 +1,37 @@
+# Soak, host side: the party HP every 20 s for 6 minutes.
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp

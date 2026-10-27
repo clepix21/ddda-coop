@@ -40,6 +40,7 @@ uint32_t g_peer_version = 0;
 uint32_t g_peer_sig = 0, g_peer_read_sig = 0; // guest: sig of the host's save it has / its game read
 bool g_peer_read_any = false;
 uint32_t g_merged_sig = 0, g_loaded_sig = 0;  // host: sig of the merged save / of the save the game read
+uint32_t g_merged_crc[kPawns] = {}, g_loaded_crc[kPawns] = {}; // the same, per pawn (0 = the host's own)
 std::vector<uint8_t> g_guest_own;  // guest: its own DDDA.sav (its character), read once
 
 // Host, 2 to 4 players: the guests' characters by pawn, and the merged save built from them.
@@ -292,8 +293,10 @@ int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, voi
             memcpy(data, g_merged.data(), size_t(n));
         if (loading()) {
             g_loaded_sig = n >= 0 ? g_merged_sig : 0; // the host's own save otherwise (below)
-            for (int p = 0; p < kPawns; ++p)
+            for (int p = 0; p < kPawns; ++p) {
                 g_loaded_orig[p] = n >= 0 ? g_orig_char[p] : std::string();
+                g_loaded_crc[p] = n >= 0 ? g_merged_crc[p] : 0;
+            }
         }
         LeaveCriticalSection(&g_save_lock);
         if (n >= 0) {
@@ -526,8 +529,8 @@ void storage_merge_tick()
     std::vector<uint8_t> merged;
     std::string orig[kPawns];
     uint32_t sig = 0; // CRC of the characters put in, per pawn (0 = none)
+    uint32_t crcs[kPawns] = {};
     if (any) {
-        uint32_t crcs[kPawns] = {};
         for (int p = 0; p < kPawns; ++p)
             if (!chars[p].empty())
                 crcs[p] = save_crc(chars[p].data(), chars[p].size()) | 1;
@@ -559,6 +562,8 @@ void storage_merge_tick()
     EnterCriticalSection(&g_save_lock);
     g_merged.swap(merged);
     g_merged_sig = g_merged.empty() ? 0 : sig;
+    for (int p = 0; p < kPawns; ++p)
+        g_merged_crc[p] = g_merged.empty() ? 0 : crcs[p];
     for (int p = 0; p < kPawns; ++p)
         g_orig_char[p] = orig[p];
     ++g_serve_version;
@@ -597,10 +602,13 @@ void storage_set_peer_save(const uint8_t *data, size_t size, uint32_t version, u
     LeaveCriticalSection(&g_save_lock);
 }
 
-uint32_t storage_host_sigs(uint32_t *loaded, bool *stable, uint32_t *own_version)
+uint32_t storage_host_sigs(uint32_t *loaded, bool *stable, uint32_t *own_version, bool *arrivals)
 {
     EnterCriticalSection(&g_save_lock);
     uint32_t want = g_merged.empty() ? 0 : g_merged_sig;
+    *arrivals = false; // a guest's character the game's world does not show yet (leaving ones do not count)
+    for (int p = 0; p < kPawns; ++p)
+        *arrivals |= !g_merged.empty() && g_merged_crc[p] && g_merged_crc[p] != g_loaded_crc[p];
     *loaded = g_loaded_sig;
     *stable = !g_party_dirty && g_merged_from == g_own_version;
     *own_version = g_own_version;

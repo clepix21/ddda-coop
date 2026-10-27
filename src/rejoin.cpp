@@ -90,9 +90,9 @@ void rejoin_tick(int role, uint32_t host_loaded_sig)
 {
     DWORD now = GetTickCount();
     uint32_t want = 0, loaded = 0, own = 0;
-    bool stable = false, read_any = false;
+    bool stable = false, read_any = false, arrivals = true;
     if (role == NET_HOST) {
-        want = storage_host_sigs(&loaded, &stable, &own);
+        want = storage_host_sigs(&loaded, &stable, &own, &arrivals);
         InterlockedExchange(&g_loaded_sig, LONG(loaded));
     } else if (role == NET_GUEST) {
         want = storage_guest_sigs(&loaded, &read_any);
@@ -107,9 +107,11 @@ void rejoin_tick(int role, uint32_t host_loaded_sig)
     switch (g_step) {
     case IDLE: {
         bool quiet = world_quiet();
-        // nothing new to show (want 0: the guests left; the pawns they had stay until the next load,
-        // and save_guard keeps un-merging the host's writes meanwhile)
-        if (!quiet || want == loaded || want == 0 || !stable) {
+        // only a character the world does not show yet is worth a reload: a guest that leaves keeps
+        // its look on its pawn until the next load (save_guard keeps un-merging the host's writes),
+        // and coming back with the same character needs nothing (seen in the soak test: a drop made
+        // the host reload, 2026-10-27 06:52)
+        if (!quiet || want == loaded || want == 0 || !arrivals || !stable) {
             g_quiet_since = 0;
             return;
         }

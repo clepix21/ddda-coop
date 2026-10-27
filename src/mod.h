@@ -28,7 +28,7 @@ void storage_set_peer_save(const uint8_t *data, size_t size, uint32_t version, u
 // Join during play (rejoin.cpp): which guests' characters a save holds, as a signature (0 = none).
 // Host: the one the game should show (the merged save; stable = rebuilt from the latest own save) and
 // the one it last read. Guest: the host's save it has and the one its game last read.
-uint32_t storage_host_sigs(uint32_t *loaded, bool *stable, uint32_t *own_version);
+uint32_t storage_host_sigs(uint32_t *loaded, bool *stable, uint32_t *own_version, bool *arrivals);
 uint32_t storage_guest_sigs(uint32_t *read, bool *read_any);
 uint32_t save_crc(const void *p, size_t n); // savecodec.cpp: CRC-32 without the final inversion
 uintptr_t current_stage_area();            // net.cpp: the current aStage, 0 elsewhere
