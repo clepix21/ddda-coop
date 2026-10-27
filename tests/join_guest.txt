@@ -1,0 +1,17 @@
+# Join during play, guest side: the party's HP every 20 s.
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp
+wait 20000
+partyhp

@@ -417,6 +417,34 @@ void run_line(const char *line)
             logf("bridge: dumpg %08X -> %08X, %X bytes as %s", g, unsigned(obj), size, path);
         }
         _snprintf(g_current, sizeof g_current, "dumpg %s", name);
+    } else if (sscanf(line, "gsflag %u", &ms) == 1 && ms < 64) {
+        // gsflag <bit>: sets a bit of sGameSys +0xB8840 (25 = game over, 26 = reload from +0x50)
+        if (uintptr_t gs = game::at<uintptr_t>(game::kGameMain, 0))
+            InterlockedOr(reinterpret_cast<volatile LONG *>(gs + 0xB8840 + ms / 32 * 4), LONG(1u << (ms % 32)));
+        _snprintf(g_current, sizeof g_current, "gsflag %u", ms);
+    } else if (strncmp(line, "savereq ", 8) == 0) {
+        // savereq <mode hex> <slot>: a request to the save/load machine [0x018FA518], written the
+        // way the game's menu does it (FUN_00532110), only when the machine is idle (+0x648 = 0)
+        unsigned mode = 0, slot = 0;
+        uintptr_t sm = game::at<uintptr_t>(0x018FA518, 0);
+        if (sscanf(line + 8, "%x %u", &mode, &slot) == 2 && sm && game::at<uint8_t>(sm, 0x648) == 0) {
+            game::at<int32_t>(sm, 0xA44) = -1;
+            game::at<int32_t>(sm, 0xA48) = -1;
+            game::at<uint8_t>(sm, 0x638) = uint8_t(slot);
+            game::at<uint8_t>(sm, 0x63B) = 1;
+            game::at<int32_t>(sm, 0xA4C) = 0;
+            game::at<int32_t>(sm, 0xA50) = 0;
+            game::at<uint8_t>(sm, 0x829) = 1;
+            game::at<uint8_t>(sm, 0x64D) = 0;
+            game::at<uint8_t>(sm, 0x82A) = mode == 0x12;
+            game::at<uint8_t>(sm, 0x649) = 0; // state, then the mode last: the machine starts on it
+            MemoryBarrier();
+            game::at<uint8_t>(sm, 0x648) = uint8_t(mode);
+            logf("bridge: savereq mode %X slot %u sent to %08X", mode, slot, unsigned(sm));
+        } else {
+            logf("bridge: savereq refused (machine %08X busy or bad args)", unsigned(sm));
+        }
+        _snprintf(g_current, sizeof g_current, "savereq");
     } else if (sscanf(line, "wait %u", &ms) == 1) {
         g_busy_until = GetTickCount() + ms;
         _snprintf(g_current, sizeof g_current, "wait %u ms", ms);
@@ -512,6 +540,19 @@ void steer()
     pads_override(0, g, GetTickCount() + 200);
 }
 
+// Logs every change of the save/load machine's mode, state and slot (seen every 50 ms).
+void watch_save_machine()
+{
+    static uint32_t last = 0xFFFFFFFF;
+    uintptr_t sm = game::at<uintptr_t>(0x018FA518, 0);
+    if (!sm || !mem_readable(reinterpret_cast<void *>(sm + 0x638), 0x20))
+        return;
+    uint32_t now = game::at<uint8_t>(sm, 0x648) | game::at<uint8_t>(sm, 0x649) << 8 | game::at<uint8_t>(sm, 0x638) << 16;
+    if (now != last)
+        logf("bridge: save machine mode %X state %X slot %u", now & 0xFF, now >> 8 & 0xFF, now >> 16);
+    last = now;
+}
+
 void write_status()
 {
     FILE *f = fopen("bridge_out.txt.tmp", "w");
@@ -537,6 +578,7 @@ DWORD WINAPI bridge_thread(LPVOID)
             g_qhead = (g_qhead + 1) % 256;
         }
         steer();
+        watch_save_machine();
         write_status();
         Sleep(50);
     }

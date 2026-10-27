@@ -92,6 +92,7 @@ struct StageState {
     int32_t day, day_ms;            // time (sGameSys: day, milliseconds into the day); day -1 = unknown
     int32_t time_speed;             // sGameSys +0xB877C (500 running, 0 stopped: talks, messages)
     int32_t event;                  // sGameSys +0x9E3A8 (256 = none, 7 = a talk)
+    uint32_t party_sig;             // the guests' characters the host's world shows (rejoin.cpp)
 };
 struct SnapMsg {
     Header h;
@@ -120,6 +121,7 @@ constexpr int kSaveChunk = 1024;
 struct SaveChunkMsg {
     Header h;
     uint32_t version, total, crc;
+    uint32_t sig;         // which guests' characters this save holds (storage_party_sig, 0 = none)
     uint16_t index, len;
     uint8_t data[kSaveChunk];
 };
@@ -208,11 +210,11 @@ uint32_t crc32(const uint8_t *p, size_t n)
 }
 struct HostSave {
     std::vector<uint8_t> data;
-    uint32_t version = 0, crc = 0;
+    uint32_t version = 0, crc = 0, sig = 0;
 } g_hsave; // the pieces each guest still needs are in its Peer
 struct GuestSave {
     std::vector<uint8_t> data, got;
-    uint32_t version = 0, total = 0, crc = 0, have = 0;
+    uint32_t version = 0, total = 0, crc = 0, have = 0, sig = 0;
     DWORD next_need = 0;
 } g_gsave;
 
@@ -249,7 +251,14 @@ uint32_t class_hash(const char *name)
     return h;
 }
 
-void read_state(uintptr_t ch, int i, CharState &s)
+// Host: each party member's state, copied on the game thread (net_capture) right before its own
+// update: the net thread never reads a character the game may be freeing (a reload freed one under
+// it on 2026-10-27: crash in enemies_hp).
+CRITICAL_SECTION g_cap_lock;
+CharState g_cap[kParty] = {};
+DWORD g_cap_tick[kParty] = {};
+
+void capture_state(uintptr_t ch, CharState &s)
 {
     s.valid = ch != 0;
     if (!ch)
@@ -263,19 +272,24 @@ void read_state(uintptr_t ch, int i, CharState &s)
         s.hp = hp[0];
         s.hp_max = hp[1];
     }
+}
+
+// Net thread: the latest copy (invalid when older than 500 ms: a load, a reload), plus the buttons
+// pressed and released since the last send.
+void read_state(int i, CharState &s)
+{
+    EnterCriticalSection(&g_cap_lock);
+    s = g_cap[i];
+    s.valid = s.valid && g_cap_tick[i] && GetTickCount() - g_cap_tick[i] < 500;
+    LeaveCriticalSection(&g_cap_lock);
+    if (!s.valid) {
+        s = CharState{};
+        return;
+    }
     uint32_t press = uint32_t(InterlockedExchange(&g_acc_press[i], 0));
     uint32_t release = uint32_t(InterlockedExchange(&g_acc_release[i], 0));
     memcpy(s.cmd + (0x2C - kCmdCopyFrom), &press, 4);   // pressed bits since last send
     memcpy(s.cmd + (0x34 - kCmdCopyFrom), &release, 4); // released bits since last send
-}
-
-// The current aStage<NNN>, or 0 when the current area is something else (aTitle, aGameMain while a
-// game loads, ...): the jump fields below only exist on an aStage.
-uintptr_t current_stage_area()
-{
-    uintptr_t area = game::at<uintptr_t>(game::kArea, 0);
-    uintptr_t cur = area ? game::at<uintptr_t>(area, game::kAreaCurrent) : 0;
-    return cur && strncmp(enemies_class_of(cur), "aStage", 6) == 0 ? cur : 0;
 }
 
 // Host, net thread: stage, entry point and jump in progress. A jump lasts the whole fade (seconds),
@@ -299,6 +313,7 @@ void read_stage(StageState &s)
     was_jumping = s.jumping;
     s.jump_seq = seq;
     s.reload_seq = stages_other_loads();
+    s.party_sig = rejoin_loaded_sig();
     s.day = gm && st ? game::at<int32_t>(gm, game::kGsDay) : -1;
     s.day_ms = gm ? game::at<int32_t>(gm, game::kGsDayMs) : 0;
     s.time_speed = gm ? game::at<int32_t>(gm, game::kGsTimeSpeed) : 500;
@@ -490,7 +505,7 @@ void receive_all()
                 for (int i = 0; i < m->count && i < kSaveNeedMax; ++i)
                     if (m->index[i] < peer.save_queued.size())
                         peer.save_queued[m->index[i]] = 1;
-        } else if (g_role == NET_GUEST && h->type == MSG_SAVE_CHUNK && n >= int(sizeof(Header) + 16)) {
+        } else if (g_role == NET_GUEST && h->type == MSG_SAVE_CHUNK && n >= int(sizeof(Header) + 20)) {
             auto m = reinterpret_cast<const SaveChunkMsg *>(buf);
             GuestSave &g = g_gsave;
             if (m->version == g.have || m->total == 0 || m->total > 4u << 20 || m->len > kSaveChunk)
@@ -499,6 +514,7 @@ void receive_all()
                 g.version = m->version;
                 g.total = m->total;
                 g.crc = m->crc;
+                g.sig = m->sig;
                 g.data.assign(m->total, 0);
                 g.got.assign((m->total + kSaveChunk - 1) / kSaveChunk, 0);
                 logf("net: save: receiving the host's save, version %u, %u bytes", g.version, g.total);
@@ -514,7 +530,7 @@ void receive_all()
             if (!missing) {
                 uint32_t c = crc32(g.data.data(), g.data.size());
                 if (c == g.crc) {
-                    storage_set_peer_save(g.data.data(), g.data.size(), g.version);
+                    storage_set_peer_save(g.data.data(), g.data.size(), g.version, g.sig);
                     g.have = g.version;
                     logf("net: save: the host's save version %u arrived (%u bytes, crc %08X)", g.version, g.total, c);
                 } else {
@@ -599,10 +615,11 @@ void host_save_send(DWORD now)
 {
     HostSave &s = g_hsave;
     std::vector<uint8_t> data;
-    uint32_t version = 0;
-    if (storage_own_save(data, version) && version != s.version) {
+    uint32_t version = 0, sig = 0;
+    if (storage_own_save(data, version, &sig) && version != s.version) {
         s.data.swap(data);
         s.version = version;
+        s.sig = sig;
         s.crc = crc32(s.data.data(), s.data.size());
         for (Peer &p : g_peers)
             p.save_queued.clear(); // queued again below for each guest that lacks it
@@ -643,11 +660,12 @@ void host_save_pieces(Peer &peer)
         m.version = s.version;
         m.total = uint32_t(s.data.size());
         m.crc = s.crc;
+        m.sig = s.sig;
         m.index = uint16_t(i);
         size_t off = i * kSaveChunk;
         m.len = uint16_t(std::min<size_t>(kSaveChunk, s.data.size() - off));
         memcpy(m.data, s.data.data() + off, m.len);
-        send_to(peer, &m, int(sizeof(Header) + 16 + m.len));
+        send_to(peer, &m, int(sizeof(Header) + 20 + m.len));
         ++sent;
     }
 }
@@ -752,12 +770,17 @@ DWORD WINAPI net_thread(LPVOID)
                 next_send = now + 16;
                 guest_save_need(now);
                 guest_char_send(now);
+                if (g_have_snap) {
+                    EnterCriticalSection(&g_snap_lock);
+                    uint32_t host_sig = g_snap.stage.party_sig;
+                    LeaveCriticalSection(&g_snap_lock);
+                    rejoin_tick(NET_GUEST, host_sig);
+                }
             } else {
                 SnapMsg m = {};
                 m.h = {kMagic, MSG_SNAP, ++g_seq};
-                read_state(possess_arisen(), 0, m.ch[0]);
-                for (int p = 0; p < kPawns; ++p)
-                    read_state(possess_pawn_ptr(p), 1 + p, m.ch[1 + p]);
+                for (int i = 0; i < kParty; ++i)
+                    read_state(i, m.ch[i]);
                 read_stage(m.stage);
                 for (const Peer &peer : g_peers) { // each guest is told which pawn is its own
                     m.my_pawn = int8_t(peer.pawn);
@@ -767,6 +790,7 @@ DWORD WINAPI net_thread(LPVOID)
                 next_send = now + 33;
                 send_enemies(now);
                 storage_merge_tick(); // the guests' characters into the save, when something changed
+                rejoin_tick(NET_HOST, 0); // and the host's world reloaded with them, during play
                 host_save_send(now);
             }
         }
@@ -785,8 +809,33 @@ DWORD WINAPI net_thread(LPVOID)
 
 } // namespace
 
+// Host, game thread (possess_pre, before the character's own update): copy its state for the SNAP.
+void net_capture(uintptr_t ch, int i)
+{
+    if (g_role != NET_HOST || i < 0 || i >= kParty)
+        return;
+    CharState s = {};
+    capture_state(ch, s);
+    EnterCriticalSection(&g_cap_lock);
+    g_cap[i] = s;
+    g_cap_tick[i] = GetTickCount() | 1;
+    LeaveCriticalSection(&g_cap_lock);
+}
+
+// The current aStage<NNN>, or 0 when the current area is something else (aTitle, aGameMain while a
+// game loads, ...): the jump fields below only exist on an aStage.
+uintptr_t current_stage_area()
+{
+    uintptr_t area = game::at<uintptr_t>(game::kArea, 0);
+    uintptr_t cur = area ? game::at<uintptr_t>(area, game::kAreaCurrent) : 0;
+    return cur && strncmp(enemies_class_of(cur), "aStage", 6) == 0 ? cur : 0;
+}
+
+
 void net_start(NetRole role, const char *peer, int port)
 {
+    InitializeCriticalSection(&g_cap_lock); // before g_role: net_capture runs once the role is set
+    MemoryBarrier();
     g_role = role;
     for (Peer &p : g_peers)
         p.pawn = -1;
@@ -921,6 +970,8 @@ void net_guest_stage()
         return;
     int32_t mine = game::at<int32_t>(st, 0x724), my_point = game::at<int32_t>(gm, 0x44);
     guest_world(gm, h);
+    if (rejoin_busy())
+        return; // the guest reloads the host's save (rejoin.cpp), which puts it where the host saved
     bool idle = game::at<int32_t>(st, 0x808) == 1;
     static int32_t logged = -2;
     if (mine != logged) {

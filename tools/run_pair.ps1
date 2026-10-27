@@ -28,7 +28,9 @@ param(
     # a second guest (third copy, DDDA3): both guests then share the left screen, 960x540 each
     [string]$Guest2Bot = "",
     [string[]]$Guest2Ini = @(),
-    [string[]]$Guest2Bridge = @()
+    [string[]]$Guest2Bridge = @(),
+    # the (first) guest's game starts that many seconds after the host's (a friend joining during play)
+    [double]$GuestStartAt = 0
 )
 function Get-SaveHashes {
     Get-ChildItem $SaveDir -Recurse -File | Sort-Object FullName | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" }
@@ -72,14 +74,19 @@ function Start-Side($s, $el) {
 }
 $before = Get-SaveHashes
 $start = Get-Date
-foreach ($s in $sides) { Start-Side $s ((Get-Date) - $start).TotalSeconds; Start-Sleep 5 }
+foreach ($s in $sides) {
+    if ($s.Name -eq "guest" -and $GuestStartAt -gt 0) { $s.Proc = $null; continue }
+    Start-Side $s ((Get-Date) - $start).TotalSeconds; Start-Sleep 5
+}
 $guestSide = $sides[1]; $restartAt = 0
 $pending = [System.Collections.Generic.List[double]]::new(); $Shots | ForEach-Object { $pending.Add($_) }
 while (((Get-Date) - $start).TotalSeconds -lt $Seconds) {
     Start-Sleep -Milliseconds 250
     if (Test-Path $stopFile) { "STOP file found"; break }
     $el = ((Get-Date) - $start).TotalSeconds
+    if ($GuestStartAt -gt 0 -and -not $guestSide.Proc -and $el -ge $GuestStartAt) { Start-Side $guestSide $el; "guest started at $([int]$el) s" }
     foreach ($s in $sides) {
+        if (-not $s.Proc) { continue }
         $log = Join-Path $s.Dir "coop.log"
         if (-not $s.Guard -and (Test-Path $log) -and (Select-String -Path $log -Pattern "save-guard: ACTIVE" -Quiet)) { $s.Guard = $true }
         if (-not $s.Guard -and ($el - $s.Launched) -gt 25) { "$($s.Name): save guard not active after 20 s, stopping"; $Seconds = 0 }
@@ -97,9 +104,10 @@ while (((Get-Date) - $start).TotalSeconds -lt $Seconds) {
         "guest killed at $([int]$el) s"; $restartAt = $el + $RestartDelay
     }
     if ($restartAt -gt 0 -and $el -ge $restartAt) { Start-Side $guestSide $el; "guest started again at $([int]$el) s"; $restartAt = -1 }
-    if (($sides | Where-Object { $_.Proc.HasExited }).Count -and $restartAt -le 0) { "a copy exited early"; break }
+    if (($sides | Where-Object { $_.Proc -and $_.Proc.HasExited }).Count -and $restartAt -le 0) { "a copy exited early"; break }
 }
 foreach ($s in $sides) {
+    if (-not $s.Proc) { "$($s.Name): never started"; continue }
     $exited = $s.Proc.HasExited
     if (-not $exited) { Stop-Process -Id $s.Proc.Id -Force; $s.Proc.WaitForExit(10000) | Out-Null }
     Copy-Item (Join-Path $s.Dir "coop.log") (Join-Path $OutDir "$($s.Name).log") -ErrorAction SilentlyContinue

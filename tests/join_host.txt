@@ -1,0 +1,34 @@
+# Join during play, host side: the party's HP every 15 s (pawn 1 = a hired pawn, then the guest's
+# character once the host saved and reloaded with it).
+wait 5000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp
+wait 15000
+partyhp

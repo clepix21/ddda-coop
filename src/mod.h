@@ -23,8 +23,22 @@ bool save_pack(const std::string &xml, const uint32_t base_head[8], std::vector<
 bool save_character(const std::string &xml, int pawn, std::string &out);
 bool save_put_character(std::string &xml, int pawn, const std::string &character);
 std::string save_character_name(const std::string &character); // guest: accept a save owned by another Steam account (the host's)
-bool storage_own_save(std::vector<uint8_t> &out, uint32_t &version);
-void storage_set_peer_save(const uint8_t *data, size_t size, uint32_t version);
+bool storage_own_save(std::vector<uint8_t> &out, uint32_t &version, uint32_t *sig = nullptr);
+void storage_set_peer_save(const uint8_t *data, size_t size, uint32_t version, uint32_t sig);
+// Join during play (rejoin.cpp): which guests' characters a save holds, as a signature (0 = none).
+// Host: the one the game should show (the merged save; stable = rebuilt from the latest own save) and
+// the one it last read. Guest: the host's save it has and the one its game last read.
+uint32_t storage_host_sigs(uint32_t *loaded, bool *stable, uint32_t *own_version);
+uint32_t storage_guest_sigs(uint32_t *read, bool *read_any);
+uint32_t save_crc(const void *p, size_t n); // savecodec.cpp: CRC-32 without the final inversion
+uintptr_t current_stage_area();            // net.cpp: the current aStage, 0 elsewhere
+// rejoin.cpp, net thread: host saves and reloads when the guests' characters in its world changed;
+// a guest reloads when the host's save it has holds other characters than the one its game read
+// (host_loaded_sig: what the host's game shows, from its SNAP).
+void rejoin_tick(int role, uint32_t host_loaded_sig);
+void net_capture(uintptr_t ch, int i); // host, game thread: party member i (0 = Arisen, 1 + pawn) for the SNAP
+bool rejoin_busy(); // a reload of rejoin_tick is under way (guests: no stage following meanwhile)
+uint32_t rejoin_loaded_sig(); // host: the signature of the characters its game shows
 void storage_set_party_character(int pawn, const std::string &character); // host; empty = the host's own pawn
 void storage_merge_tick();                                                 // host, net thread
 bool storage_guest_character(std::string &out);                            // guest: its own Arisen

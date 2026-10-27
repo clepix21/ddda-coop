@@ -148,7 +148,7 @@ void enemies_on_finalize(uintptr_t em)
 // copies the same value into cPlayerInfo+0x29C each frame (FUN_00B63F70), which is how it was found.
 float *enemies_hp(uintptr_t ch)
 {
-    if (!game::at<uintptr_t>(ch, 0x1D0C))
+    if (!ch || !readable(reinterpret_cast<void *>(ch + 0x1D0C), 0x10) || !game::at<uintptr_t>(ch, 0x1D0C))
         return nullptr;
     uintptr_t list = game::at<uintptr_t>(ch, 0x1D18);
     if (!list || !readable(reinterpret_cast<void *>(list), 4))

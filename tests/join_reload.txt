@@ -1,0 +1,9 @@
+# Join during play, single copy: autosave (mode 2 slot 3), load the file back (mode B slot 0), then
+# bit 26 (reload from the +0x50 copy the file load filled) so the world is rebuilt from the file.
+wait 8000
+savereq 2 3
+wait 8000
+savereq b 0
+wait 6000
+gsflag 26
+wait 40000

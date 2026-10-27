@@ -213,9 +213,11 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
     if (vt == game::kVtPlayer) {
         g_arisen = ch;
         g_arisen_tick = GetTickCount();
+        net_capture(ch, 0);
     } else if (pawn >= 0) {
         g_pawn[pawn] = ch;
         g_pawn_tick[pawn] = GetTickCount();
+        net_capture(ch, 1 + pawn);
     }
     if (!input_redirect_active())
         return 0;
