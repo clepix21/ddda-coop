@@ -185,6 +185,11 @@ over the Steam code path with a test stand-in for Steam (`steam_mock.cpp`):
   follow the host, end where the host's lie with the same HP and death, the 6 deaths happen on the
   guest too (1 to 5 of them forced), the guest's own hits on living enemies are dropped, and the
   guest's Arisen and pawn keep the host's HP (11/11 over UDP and over the Steam stand-in).
+- cutscene (`tools\suite_cutscene.ps1`, the owner's save before the Dark Arisen start, Cassardis
+  pier at night): the host walks onto the pier and Olra's cutscene plays; the guest's game plays
+  the same cutscene by itself (its Arisen follows the host's onto the trigger), starting 0.02 to
+  0.05 s and ending 0.2 s after the host's, with no reload, and its Arisen follows the host's
+  afterwards (8/8 over UDP and over the Steam stand-in).
 
 ## Known issues / not tested
 
@@ -204,10 +209,12 @@ over the Steam code path with a test stand-in for Steam (`steam_mock.cpp`):
   The removal of guest-only enemies and the pairing on current position were only exercised
   before the last fixes (those runs had no such enemies). Bosses and large monsters are not tested.
 - Not tested: skills (RT/LT combos), grab/climb, items, whether the
-  pawn AI interferes during fights, fast travel, "mode facile" retries, cutscenes on the guest, the Everfall, long sessions, the leash that may
+  pawn AI interferes during fights, fast travel, "mode facile" retries, cutscenes other than the Olra one, the Everfall, long sessions, the leash that may
   pull a far-away pawn back.
 - Talks: a guest may talk to another NPC than the host's when the NPCs do not stand at the same
-  place on both PCs (seen once at the inn); cutscenes are not tested.
+  place on both PCs (seen once at the inn). Cutscenes: one tested (Olra on the Cassardis pier);
+  the guest's game starts its own copy from the same trigger, so a cutscene whose trigger the
+  guest's Arisen does not reach (or that depends on a talk the guest missed) would not play there.
 - Join during play forces a save on the host (the same save the game makes at a gate), then a
   reload: the host loses nothing, but the world restarts around the party (enemies, NPC places).
 - Player 2's face buttons can still act in menus while player 1 is in a menu.

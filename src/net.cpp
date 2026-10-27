@@ -299,6 +299,25 @@ void read_state(int i, CharState &s)
     memcpy(s.cmd + (0x34 - kCmdCopyFrom), &release, 4); // released bits since last send
 }
 
+// sGameSys words that changed only during a cutscene (the Olra one on the Cassardis pier, dumps
+// 2026-10-27 11:06): +0xAC720, +0xB883C, +0xB8840 and +0xB8844 (bit 25 set). Logged on change.
+void log_scene_flags(const char *who, uintptr_t gm)
+{
+    static const uint32_t kOffs[] = {0xAC720, 0xB883C, 0xB8840, 0xB8844};
+    static uint32_t logged[2][4] = {};
+    uint32_t *last = logged[who[0] == 'g'];
+    uint32_t v[4];
+    bool changed = false;
+    for (int i = 0; i < 4; ++i) {
+        v[i] = game::at<uint32_t>(gm, kOffs[i]);
+        changed = changed || v[i] != last[i];
+    }
+    if (!changed)
+        return;
+    logf("world: %s scene flags %08X %08X %08X %08X", who, v[0], v[1], v[2], v[3]);
+    memcpy(last, v, sizeof v);
+}
+
 // Host, net thread: stage, entry point and jump in progress. A jump lasts the whole fade (seconds),
 // so 30 polls a second see every one.
 void read_stage(StageState &s)
@@ -338,6 +357,8 @@ void read_stage(StageState &s)
              s.day_ms / 60000 % 60);
         ev_logged = s.event;
     }
+    if (gm && st)
+        log_scene_flags("host", gm);
     static int32_t logged = -2;
     if (s.stage != logged) {
         logged = s.stage;
@@ -945,6 +966,7 @@ void guest_world(uintptr_t gm, const StageState &h)
         logf("world: guest event state %d -> %d (host %d)", ev_logged, ev, h.event);
         ev_logged = ev;
     }
+    log_scene_flags("guest", gm);
     if (h.day < 0)
         return;
     // The host's world sets the time: an inn rest jumps to 6:00, talks and messages stop the clock

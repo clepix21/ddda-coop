@@ -1,0 +1,5 @@
+# Host on the owner's cutscene save: waits 20 s (the guest is in game ~9 s after the host), then walks
+# forward 8 s onto the Cassardis pier, which starts the Olra cutscene; then waits.
+wait 20000
+pad 0 0 0 32000 0 0 0 0 8000
+wait 40000

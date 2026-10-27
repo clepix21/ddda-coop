@@ -1,0 +1,18 @@
+# Owner's cutscene save: sGameSys dumps before, during and after the Olra cutscene on the Cassardis
+# pier (run 2026-10-27 11:01: fade at ~8 s after the walk starts, cutscene until ~26 s).
+wait 3000
+dumpg 018fa4bc be470 c0
+wait 1000
+dumpg 018fa4bc be470 c1
+pad 0 0 0 32000 0 0 0 0 8000
+dumpg 018fa4bc be470 c2
+wait 4000
+dumpg 018fa4bc be470 c3
+wait 4000
+dumpg 018fa4bc be470 c4
+wait 4000
+dumpg 018fa4bc be470 c5
+wait 12000
+dumpg 018fa4bc be470 c6
+wait 4000
+dumpg 018fa4bc be470 c7
