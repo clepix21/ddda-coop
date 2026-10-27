@@ -18,8 +18,6 @@ bool save_machine_request(uint8_t mode, uint8_t slot); // rejoin.cpp
 bool save_machine_idle();
 bool rejoin_world_quiet();
 void rejoin_reload_world();
-void storage_set_override_save(const std::vector<uint8_t> &file); // save_guard.cpp
-bool storage_own_raw(std::vector<uint8_t> &out, uint32_t &version);
 
 namespace {
 
@@ -30,6 +28,7 @@ DWORD g_step_at = 0;
 volatile LONG g_dirty_at = 0;   // a local quest change waiting (tick), 0 = none
 uint32_t g_own_before = 0;
 uint32_t g_last_crc = 0;        // the quest state this world has (sent or applied)
+uint32_t g_my_list = 0;         // the quest list this world has (save_quest_list_crc), 0 = not known
 CRITICAL_SECTION g_lock;
 volatile LONG g_ready = 0;
 std::string g_pending;          // another world's quest state to take
@@ -113,7 +112,13 @@ void quest_sync_tick()
             return;
         }
         if (g_step == SNAP_SEND) {
-            uint32_t crc = save_crc(state.data(), state.size()) | 1;
+            uint32_t crc = save_crc(state.data(), state.size()) | 1, list = save_quest_list_crc(state);
+            if (list == g_my_list) { // talks, NPCs: nothing worth a reload elsewhere
+                g_last_crc = crc;
+                g_step = IDLE;
+                return;
+            }
+            g_my_list = list;
             if (crc != g_last_crc) {
                 std::vector<uint8_t> blob;
                 if (save_deflate(state, blob)) {
@@ -144,6 +149,17 @@ void quest_sync_tick()
         std::string theirs = g_pending;
         uint32_t crc = g_pending_crc;
         LeaveCriticalSection(&g_lock);
+        uint32_t mine_list = save_quest_list_crc(state), their_list = save_quest_list_crc(theirs);
+        if (mine_list == their_list) { // the same quest list here already: no reload
+            logf("quests: the other player's quest list is this world's already: no reload");
+            g_my_list = mine_list;
+            g_last_crc = crc;
+            EnterCriticalSection(&g_lock);
+            g_pending.clear();
+            LeaveCriticalSection(&g_lock);
+            g_step = IDLE;
+            return;
+        }
         std::vector<uint8_t> out;
         if (!save_put_quest_state(xml, theirs) || !save_pack(xml, head, out)) {
             logf("quests: the other player's quest state could not be put in this world's save");
@@ -155,6 +171,7 @@ void quest_sync_tick()
         }
         storage_set_override_save(out);
         g_last_crc = crc;
+        g_my_list = their_list;
         if (save_machine_request(0xB, 0))
             go(LOADING, now);
         return;

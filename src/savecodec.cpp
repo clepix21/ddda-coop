@@ -448,3 +448,18 @@ bool save_inflate(const std::vector<uint8_t> &in, std::string &out)
     int r = z_inflate(&z, Z_FINISH);
     return r == Z_STREAM_END && z.total_out == n;
 }
+
+// A quest state's quest list only (active quest, quests, sub data, finished quests, from the first
+// player data copy): what is worth a reload elsewhere (talks and NPC moves change the rest often:
+// the first real test reloaded the other worlds twice in 30 s for nothing).
+uint32_t save_quest_list_crc(const std::string &state)
+{
+    std::vector<std::string> parts;
+    for (size_t at = 0, nx; (nx = state.find('\x01', at)) != std::string::npos; at = nx + 1)
+        parts.push_back(state.substr(at, nx - at));
+    std::string list;
+    for (size_t k : {size_t(1), size_t(5), size_t(6), size_t(7), size_t(8), size_t(9)}) // see kQuestKeys
+        if (k < parts.size())
+            list += parts[k];
+    return save_crc(list.data(), list.size()) | 1;
+}

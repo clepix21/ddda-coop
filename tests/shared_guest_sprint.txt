@@ -1,0 +1,13 @@
+# Shared world, guest: boot and load (pad 1), then sprint (L3 held with the stick) from 160 s: left
+# 6 s, then forward 10 s; then walk forward 6 s.
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+160000 0 0040 -30000 0
+166000 0 0040 0 30000
+176000 0 0 0 30000
+182000 0 0 0 0

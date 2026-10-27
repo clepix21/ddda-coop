@@ -5,6 +5,7 @@ import re
 import sys
 
 out = sys.argv[1]
+limit = float(sys.argv[2]) if len(sys.argv) > 2 else 30.0  # more with network delay
 
 
 def lines(name):
@@ -44,7 +45,7 @@ def errs(log, until):
 for name, log in (("host", host), ("guest", guest)):
     e = errs(log, tj)
     med = e[len(e) // 2] if e else None
-    check(med is not None and med < 30 and len(e) > 20, f"{name} shows the other player where it is (median error {med} u, {len(e)} samples)")
+    check(med is not None and med < limit and len(e) > 20, f"{name} shows the other player where it is (median error {med} u, {len(e)} samples)")
 me = [(t(ln), float(m[1]), float(m[2]), int(m[3])) for ln in guest for m in [re.search(r"shared: me at \((-?\d+), (-?\d+)\), stage (-?\d+)", ln)] if m]
 moved = max(((a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5 for a in me for b in me) if me else 0
 check(moved > 200, f"guest walked with its own character ({moved:.0f} u)")

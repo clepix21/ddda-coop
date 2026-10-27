@@ -25,8 +25,8 @@ constexpr uint32_t kReloadBit = 1u << 26, kGameOverBit = 1u << 25;
 constexpr DWORD kQuietMs = 3000;   // the world must be quiet that long before a reload starts
 constexpr DWORD kStepMs = 15000;   // a step that takes longer is given up (tried again later)
 
-enum Step { IDLE, SAVING, MERGING, LOADING, RELOADING };
-const char *kStepName[] = {"idle", "saving", "merging", "loading", "reloading"};
+enum Step { IDLE, SAVING, MERGING, LOADING, RELOADING, GUEST_SNAP };
+const char *kStepName[] = {"idle", "saving", "merging", "loading", "reloading", "guest snapshot"};
 Step g_step = IDLE;
 DWORD g_step_at = 0, g_quiet_since = 0, g_retry_at = 0;
 uint32_t g_target = 0, g_own_before = 0;
@@ -78,6 +78,7 @@ void go(Step s, DWORD now)
 
 void give_up(DWORD now, const char *why)
 {
+    storage_set_override_save({}); // a guest's snapshot with the new party, if any
     logf("rejoin: %s gave up (%s), trying again in 20 s", kStepName[g_step], why);
     g_step = IDLE;
     g_retry_at = (now + 20000) | 1;
@@ -126,9 +127,33 @@ void rejoin_tick(int role, uint32_t host_loaded_sig)
         g_target = want;
         g_own_before = own;
         logf("rejoin: the %s's world shows characters %08X, the save holds %08X: %s", role == NET_HOST ? "host" : "guest",
-             loaded, want, role == NET_HOST ? "save, then load the merged save" : "load the host's save");
+             loaded, want,
+             role == NET_HOST ? "save, then load the merged save"
+             : net_shared()   ? "its own snapshot with the new party, then a reload in place"
+                              : "load the host's save");
+        if (role == NET_GUEST && net_shared()) { // shared world: the guest keeps its place
+            std::vector<uint8_t> file;
+            storage_own_raw(file, g_own_before);
+            if (machine_request(7, 0))
+                go(GUEST_SNAP, now);
+            return;
+        }
         if (role == NET_HOST ? machine_request(7, 0) : machine_request(0xB, 0))
             go(role == NET_HOST ? SAVING : LOADING, now);
+        return;
+    }
+    case GUEST_SNAP: {
+        std::vector<uint8_t> file, host, out;
+        uint32_t version = 0;
+        if (!machine_idle() || int(now - g_step_at) < 500 || !storage_own_raw(file, version) || version == g_own_before)
+            return;
+        if (!storage_peer_raw(host) || !roam_refresh_party(file, host, out)) {
+            give_up(now, "the new party could not be put in this guest's snapshot");
+            return;
+        }
+        storage_set_override_save(out);
+        if (machine_request(0xB, 0))
+            go(LOADING, now);
         return;
     }
     case SAVING: // the save runs (write, then a read back); then the merge of the new own save
@@ -146,7 +171,9 @@ void rejoin_tick(int role, uint32_t host_loaded_sig)
     case LOADING:
         if (!machine_idle() || int(now - g_step_at) < 500)
             return;
-        if (loaded != g_target) {
+        if (role == NET_GUEST && net_shared()) {
+            storage_guest_mark_read(g_target); // the snapshot with the host's party was read
+        } else if (loaded != g_target) {
             give_up(now, "the game did not read the expected save");
             return;
         }
@@ -158,7 +185,9 @@ void rejoin_tick(int role, uint32_t host_loaded_sig)
         int32_t stage = 0;
         DWORD load = stages_last_load(&stage);
         if (load && int(load - g_step_at) >= 0) {
-            logf("rejoin: world reloaded with characters %08X", loaded);
+            if (role == NET_GUEST && net_shared())
+                storage_set_override_save({});
+            logf("rejoin: world reloaded with characters %08X", role == NET_GUEST && net_shared() ? g_target : loaded);
             g_step = IDLE;
         }
         return;

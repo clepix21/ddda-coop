@@ -29,6 +29,7 @@ bool save_bag(const std::string &xml, int who, std::string &out);             //
 bool save_put_bag_everywhere(std::string &xml, int who, const std::string &bag);
 bool save_quest_state(const std::string &xml, std::string &out);        // shared world: quests, NPCs, talks
 bool save_put_quest_state(std::string &xml, const std::string &state);
+uint32_t save_quest_list_crc(const std::string &state);              // its quest list only
 bool save_deflate(const std::string &in, std::vector<uint8_t> &out);    // the game's zlib, length first
 bool save_inflate(const std::vector<uint8_t> &in, std::string &out);
 std::string save_character_name(const std::string &character); // guest: accept a save owned by another Steam account (the host's)
@@ -66,6 +67,12 @@ bool net_guest_roaming();  // the guest plays its own Arisen, no host sync
 bool net_shared();         // net.cpp: shared_world=1, every player its own character in its own world copy
 bool net_puppet(int i);    // shared world: local party index i shows another player in this area
 bool roam_world_from_host(const std::vector<uint8_t> &host, std::vector<uint8_t> &out); // roam.cpp
+bool roam_refresh_party(const std::vector<uint8_t> &own, const std::vector<uint8_t> &host, std::vector<uint8_t> &out);
+std::vector<size_t> player_data_starts(const std::string &x); // savecodec.cpp
+void storage_set_override_save(const std::vector<uint8_t> &file); // save_guard.cpp
+bool storage_own_raw(std::vector<uint8_t> &out, uint32_t &version);
+bool storage_peer_raw(std::vector<uint8_t> &out);
+void storage_guest_mark_read(uint32_t sig);
 bool net_shared_in_host_area(); // shared world, guest: in the host's area now
 // exp_sync.cpp: shared world, one exp for all players
 bool exp_sync_install();

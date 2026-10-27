@@ -265,6 +265,16 @@ DWORD g_rp_tick[kParty] = {};
 // a pawn showing a player who is in another area: kept still out of sight, no AI (owner: "quand une
 // personne part elle n'est pas remplacée"), until that player comes back
 bool g_rp_away[kParty] = {};
+// a pawn slot no player uses (a hired pawn): kept out of sight in every world (owner, after the first
+// real test: only the players and the host's main pawn; hired pawns were doubled and odd)
+bool g_rp_hidden[kParty] = {};
+// each player's speed, from its last two states, and when the last one came: over the internet a
+// state is 50-150 ms old when it arrives, which at a sprint put the pawn 60-100 u behind and the old
+// 50 u snap made it jump every few seconds (first real test, 2026-10-27)
+float g_rp_vel[kParty][3] = {};
+DWORD g_rp_at[kParty] = {};
+float g_rp_prev[kParty][3] = {};
+
 // shared world loot (loot.cpp): host, the guests' pickups by place (1 + guest index) and their run;
 // guest, what it applied of each place's pickups and from which run
 std::vector<LootEv> g_loot_log[4];
@@ -315,6 +325,19 @@ CRITICAL_SECTION g_cap_lock;
 CharState g_cap[kParty] = {};
 DWORD g_cap_tick[kParty] = {};
 
+void shared_set_hidden(int i, bool hidden)
+{
+    if (i < 1 || i >= kParty)
+        return;
+    EnterCriticalSection(&g_cap_lock);
+    if (g_rp_hidden[i] != hidden)
+        logf("net: shared: party %d %s", i, hidden ? "is a pawn no player uses: kept out of sight" : "is used again");
+    g_rp_hidden[i] = hidden;
+    if (hidden)
+        g_rp_tick[i] = GetTickCount() | 1;
+    LeaveCriticalSection(&g_cap_lock);
+}
+
 // ---- shared world ----
 
 } // namespace
@@ -337,6 +360,20 @@ void shared_take(int i, const CharState &c, bool here)
     memcpy(&p, c.cmd + (0x2C - kCmdCopyFrom), 4);
     memcpy(&r, c.cmd + (0x34 - kCmdCopyFrom), 4);
     EnterCriticalSection(&g_cap_lock);
+    DWORD t = GetTickCount();
+    if (c.valid && here) {
+        float dt = g_rp_at[i] ? (t - g_rp_at[i]) / 1000.f : 0.f;
+        if (dt > 0.01f && dt < 0.5f) {
+            for (int a = 0; a < 3; ++a) // smoothed: half the new estimate
+                g_rp_vel[i][a] = 0.5f * g_rp_vel[i][a] + 0.5f * (c.pos[a] - g_rp_prev[i][a]) / dt;
+        } else if (dt >= 0.5f || dt == 0.f) {
+            memset(g_rp_vel[i], 0, sizeof g_rp_vel[i]);
+        }
+        if (dt == 0.f || dt > 0.01f) {
+            memcpy(g_rp_prev[i], c.pos, sizeof g_rp_prev[i]);
+            g_rp_at[i] = t | 1;
+        }
+    }
     g_rp[i] = c;
     g_rp[i].valid = c.valid && here;
     g_rp_away[i] = c.valid && !here;
@@ -358,13 +395,23 @@ void shared_from_snap(const SnapMsg &m)
     int32_t here = my_stage();
     if (me < 0 || me >= kPawns)
         return;
+    bool used[kParty] = {};
     for (int i = 0; i < kParty; ++i) {
         if (i == 1 + me)
             continue; // this guest itself
         int local = i == 0 ? 1 + me : i;
+        used[local] = true; // the host on this guest's pawn; the other guests; the host's main pawn
         if (m.ch[i].valid)
             shared_take(local, m.ch[i], here >= 0 && m.stage_of[i] == here);
+        else if (i >= 1)
+            used[local] = false;
     }
+    for (int s = 1; s < 4; ++s) // a guest who has a pawn is a player even between its states
+        if (m.pawn_of[s] >= 0 && m.pawn_of[s] < kPawns && m.pawn_of[s] != me)
+            used[1 + m.pawn_of[s]] = true;
+    used[1 + me] = true;
+    for (int i = 1; i < kParty; ++i)
+        shared_set_hidden(i, !used[i]);
 }
 
 } // namespace
@@ -390,7 +437,7 @@ void shared_apply_commands(uintptr_t ch, int i)
         return;
     EnterCriticalSection(&g_cap_lock);
     CharState s = g_rp[i];
-    bool away = g_rp_away[i];
+    bool away = g_rp_away[i] || g_rp_hidden[i];
     uint32_t press = g_rp_press[i], release = g_rp_release[i];
     g_rp_press[i] = g_rp_release[i] = 0;
     LeaveCriticalSection(&g_cap_lock);
@@ -430,7 +477,10 @@ void shared_apply_transform(uintptr_t ch, int i)
         return;
     EnterCriticalSection(&g_cap_lock);
     CharState s = g_rp[i];
-    bool away = g_rp_away[i];
+    bool away = g_rp_away[i] || g_rp_hidden[i];
+    float vel[3];
+    memcpy(vel, g_rp_vel[i], sizeof vel);
+    float age = g_rp_at[i] ? (GetTickCount() - g_rp_at[i]) / 1000.f : 0.f;
     LeaveCriticalSection(&g_cap_lock);
     float *pos = reinterpret_cast<float *>(ch + 0x40);
     if (away) { // parked under the local Arisen, out of sight
@@ -448,16 +498,21 @@ void shared_apply_transform(uintptr_t ch, int i)
         }
         return;
     }
-    float dx = s.pos[0] - pos[0], dy = s.pos[1] - pos[1], dz = s.pos[2] - pos[2];
+    // where that player is now: its last place, moved on at its speed for the age of that state plus
+    // the time it took to come (about 60 ms), at most 0.3 s ahead; ground height as received
+    float ahead = age + 0.06f > 0.3f ? 0.3f : age + 0.06f;
+    float target[3] = {s.pos[0] + vel[0] * ahead, s.pos[1], s.pos[2] + vel[2] * ahead};
+    float dx = target[0] - pos[0], dy = target[1] - pos[1], dz = target[2] - pos[2];
     float err = std::sqrt(dx * dx + dy * dy + dz * dz);
-    if (err > 50.f) {
-        memcpy(pos, s.pos, sizeof s.pos);
+    if (err > 400.f) { // far off (a load, a fall): straight there
+        memcpy(pos, target, sizeof target);
         for (uintptr_t off : kPosCopies)
-            memcpy(reinterpret_cast<void *>(ch + off), s.pos, 12);
-    } else {
-        pos[0] += dx * 0.2f;
-        pos[1] += dy * 0.2f;
-        pos[2] += dz * 0.2f;
+            memcpy(reinterpret_cast<void *>(ch + off), target, 12);
+    } else { // its own replayed moves carry it; a gentle pull keeps it on the player's path
+        float k = err > 120.f ? 0.3f : 0.12f;
+        pos[0] += dx * k;
+        pos[1] += dy * k;
+        pos[2] += dz * k;
     }
     game::at<float>(ch, kYawA) = s.yaw;
     game::at<float>(ch, kYawB) = s.yaw;
@@ -1442,9 +1497,17 @@ DWORD WINAPI net_thread(LPVOID)
                 read_stage(m.stage);
                 for (int i = 0; i < kParty; ++i)
                     m.stage_of[i] = m.stage.stage;
-                if (g_shared) { // every player's own state; AI pawns: each world runs its own
-                    for (int i = 1; i < kParty; ++i)
+                if (g_shared) { // every player's own state and the host's main pawn; no hired pawns
+                    bool taken[kParty] = {};
+                    for (const Peer &p : g_peers)
+                        if (p.used && p.pawn >= 0 && p.pawn < kPawns)
+                            taken[1 + p.pawn] = true;
+                    for (int i = 2; i < kParty; ++i) {
                         m.ch[i].valid = 0;
+                        shared_set_hidden(i, !taken[i]);
+                    }
+                    if (taken[1])
+                        m.ch[1].valid = 0; // the main pawn shows a guest (4 players)
                     for (Peer &p : g_peers)
                         if (p.used && p.pawn >= 0 && p.pstate_tick && now - p.pstate_tick < 500) {
                             m.ch[1 + p.pawn] = p.pstate;
@@ -2241,7 +2304,7 @@ bool net_puppet(int i)
     if (!g_shared || i < 1 || i >= kParty)
         return false;
     EnterCriticalSection(&g_cap_lock);
-    bool on = (g_rp[i].valid || g_rp_away[i]) && g_rp_tick[i] && GetTickCount() - g_rp_tick[i] < 500;
+    bool on = (g_rp[i].valid || g_rp_away[i] || g_rp_hidden[i]) && g_rp_tick[i] && GetTickCount() - g_rp_tick[i] < 500;
     LeaveCriticalSection(&g_cap_lock);
     return on;
 }
@@ -2278,7 +2341,9 @@ bool net_player_info(int slot, PlayerInfo &out)
     }
     if (g_role == NET_HOST) {
         const Peer &p = g_peers[slot - 1];
-        if (slot < 1 || !p.used || !p.pstate_tick || GetTickCount() - p.pstate_tick > 3000)
+        // present while connected (packets heard in the last 10 s): over the internet its state came
+        // in bursts, and a host down saw nobody up for a moment and died (first real test, 23:47)
+        if (slot < 1 || !p.used || !p.pstate_tick || !p.last_rx || GetTickCount() - p.last_rx > 10000)
             return false;
         out.present = true;
         out.downed = p.downed;
@@ -2302,7 +2367,8 @@ bool net_player_info(int slot, PlayerInfo &out)
         memcpy(out.pos, g_snap.ch[i].pos, sizeof out.pos);
         last[slot] = out;
         last_at[slot] = GetTickCount() | 1;
-    } else if (last_at[slot] && GetTickCount() - last_at[slot] < 3000) {
+    } else if (last_at[slot] && (slot == 0 || g_snap.pawn_of[slot] >= 0)) {
+        // the host lists that player: still there, at the last place seen
         out = last[slot];
         out.downed = g_snap.down[slot] != 0;
         ok = true;

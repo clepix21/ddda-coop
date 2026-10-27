@@ -795,3 +795,21 @@ bool storage_own_raw(std::vector<uint8_t> &out, uint32_t &version)
     LeaveCriticalSection(&g_save_lock);
     return !out.empty();
 }
+
+// Guest: the host's latest save as it came (merged with the guests' characters).
+bool storage_peer_raw(std::vector<uint8_t> &out)
+{
+    EnterCriticalSection(&g_save_lock);
+    out = g_peer_save;
+    LeaveCriticalSection(&g_save_lock);
+    return !out.empty();
+}
+
+// Guest, shared world (rejoin.cpp): its world was rebuilt with the characters of host save `sig`.
+void storage_guest_mark_read(uint32_t sig)
+{
+    EnterCriticalSection(&g_save_lock);
+    g_peer_read_sig = sig;
+    g_peer_read_any = true;
+    LeaveCriticalSection(&g_save_lock);
+}

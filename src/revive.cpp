@@ -40,6 +40,8 @@ int someone_up(bool here, PlayerInfo *out)
             continue;
         if (here && p.stage != stage)
             continue;
+        if (out && p.pos[0] == 0.f && p.pos[2] == 0.f)
+            continue; // no place known yet (a load): not a place to come back to
         found = s;
         if (out)
             *out = p;
@@ -83,7 +85,13 @@ void revive_tick()
     if (g_down) {
         PlayerInfo p;
         bool here = someone_up(true, &p) >= 0;
-        if (!here && someone_up(false, &p) < 0) { // every player is down
+        // every player is down, and still so 3 s later (a player's news can come late)
+        static DWORD all_down_since = 0;
+        bool all_down = !here && someone_up(false, nullptr) < 0; // present at all, place known or not
+        all_down_since = all_down ? (all_down_since ? all_down_since : now | 1) : 0;
+        if (all_down && int(now - all_down_since) < 3000)
+            return;
+        if (all_down) {
             if (!g_die) {
                 for (int q = 0; q < 4; ++q) {
                     PlayerInfo i;
@@ -97,8 +105,8 @@ void revive_tick()
             return;
         }
         if (!here || int(now - g_down_at) > int(kDownMs)) {
-            if (!here)
-                someone_up(false, &p);
+            if (!here && someone_up(false, &p) < 0)
+                return; // the players up have no known place yet: wait
             memcpy(g_to, p.pos, sizeof g_to);
             g_to_stage = p.stage;
             if (!g_get_up) {
@@ -150,8 +158,8 @@ void revive_tick()
         return;
     }
     if (g_help_since && int(now - g_help_since) >= int(kHelpMs)) {
-        logf("revive: helped player %d up", target);
-        net_send_revive(target);
+        logf("revive: helped player %d up", g_help_target);
+        net_send_revive(g_help_target); // the target kept through short misses, not this tick's
         g_help_since = 0;
         g_help_target = -1;
     }

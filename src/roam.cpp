@@ -143,6 +143,35 @@ bool roam_world_from_host(const std::vector<uint8_t> &host, std::vector<uint8_t>
     return true;
 }
 
+// Shared world, guest: a new player came in the host's world. This guest's own snapshot (where it
+// stands) gets the host's latest party: the host's Arisen on this guest's pawn, the host's merged
+// pawns (the other guests' characters) on the others, in both player data copies. The guest stays in
+// place (the first real test reloaded the guests at the host's last save, 2026-10-27 22:57).
+bool roam_refresh_party(const std::vector<uint8_t> &own, const std::vector<uint8_t> &host, std::vector<uint8_t> &out)
+{
+    std::string mine, theirs;
+    uint32_t head[8], hhead[8];
+    int me = net_guest_my_pawn();
+    if (me < 0 || !save_unpack(own, mine, head) || !save_unpack(host, theirs, hhead))
+        return false;
+    for (int p = 0; p < kPawns; ++p) {
+        std::string ch;
+        if (!save_character(theirs, p == me ? -1 : p, ch))
+            return false;
+        for (size_t c = 0;; ++c) {
+            std::vector<size_t> starts = player_data_starts(mine);
+            if (c >= starts.size())
+                break;
+            if (!save_put_character_at(mine, p, ch, starts[c]))
+                return false;
+        }
+    }
+    if (!save_pack(mine, head, out))
+        return false;
+    logf("roam: shared world: this guest's own snapshot with the host's latest party (it stays where it is)");
+    return true;
+}
+
 bool net_guest_roaming() { return g_roaming != 0; }
 bool roam_busy() { return g_step != ATTACHED && g_step != ROAMING; }
 
