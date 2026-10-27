@@ -16,8 +16,11 @@ TalkStart_t g_talk_orig = nullptr;
 void __fastcall hk_talk_start(uintptr_t action)
 {
     if (cfg_debug_log() && action && mem_readable(reinterpret_cast<void *>(action), 0x180)) {
-        logf("talk: start, action %p (vt %08X), actor %p", (void *)action, unsigned(game::at<uintptr_t>(action, 0)),
-             (void *)game::at<uintptr_t>(action, 0x74));
+        uintptr_t npc = game::at<uintptr_t>(action, 0x74);
+        bool pos = npc && mem_readable(reinterpret_cast<void *>(npc + 0x40), 12);
+        logf("talk: start, action %p (vt %08X), actor %p at (%.0f, %.0f, %.0f)", (void *)action,
+             unsigned(game::at<uintptr_t>(action, 0)), (void *)npc, pos ? game::at<float>(npc, 0x40) : 0.f,
+             pos ? game::at<float>(npc, 0x44) : 0.f, pos ? game::at<float>(npc, 0x48) : 0.f);
         for (uintptr_t f = 4; f < 0x180; f += 4) {
             uintptr_t v = game::at<uintptr_t>(action, f);
             if (v < 0x10000 || (v & 3) || !mem_readable(reinterpret_cast<void *>(v), 8))
