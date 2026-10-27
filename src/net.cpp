@@ -99,6 +99,7 @@ struct StageState {
     // talk (the host's B reaches the guest's Arisen puppet, which starts the same talk there)
     uint16_t pad_buttons;
     int16_t pad_lx, pad_ly;
+    float talk_npc[3]; // where the NPC of the host's latest talk stands (talk.cpp)
 };
 struct SnapMsg {
     Header h;
@@ -320,6 +321,7 @@ void read_stage(StageState &s)
     s.jump_seq = seq;
     s.reload_seq = stages_other_loads();
     s.party_sig = rejoin_loaded_sig();
+    talk_last(s.talk_npc);
     XINPUT_STATE pad = {};
     if (pads_read_raw(0, &pad) == ERROR_SUCCESS) { // the host's own pad (the Arisen's, slot 0)
         s.pad_buttons = pad.Gamepad.wButtons;
@@ -1084,6 +1086,29 @@ void guest_talk_mirror(DWORD now)
     static DWORD host_out = 0, catch_from = 0; // the host's talk ended / the guest's catch-up began
     static bool followed = false; // the guest's current talk is one it went through with the host
     bool want = h.event != 256 && mine != 256 && h.stage >= 0;
+    // the guest's talk must be with the host's NPC: another one (NPCs walk on their own on each PC)
+    // is a talk the host does not have (B only, no mirrored pad on another NPC's menus)
+    // (judged for 1 s after the guest's talk starts: the host's SNAP with its NPC may come later)
+    static uint32_t talks_seen = 0;
+    static DWORD talk_at = 0;
+    static bool other_npc = false;
+    float mine_npc[3];
+    uint32_t talks = talk_last(mine_npc);
+    if (talks != talks_seen) {
+        talks_seen = talks;
+        talk_at = now | 1;
+    }
+    if (talk_at && now - talk_at < 1000) {
+        float dx = mine_npc[0] - h.talk_npc[0], dz = mine_npc[2] - h.talk_npc[2];
+        bool other = dx * dx + dz * dz > 150.f * 150.f;
+        if (other != other_npc || now - talk_at < 40)
+            logf("net: talk: guest's NPC %.0f u from the host's%s", std::sqrt(dx * dx + dz * dz), other ? ": another NPC" : "");
+        other_npc = other;
+    }
+    if (mine == 256)
+        other_npc = false;
+    if (other_npc)
+        want = false;
     if (want)
         followed = true;
     if (want != on) {
@@ -1095,7 +1120,7 @@ void guest_talk_mirror(DWORD now)
     // menu) and A (next line) in turn until it ends, at most 20 s. Its choices stay on its own PC
     // (a guest never saves). A talk the host never had (its puppet reached an NPC the host's
     // Arisen did not) only gets B: an unknown menu could be a Rift pawn's ("Recruter").
-    if (h.event == 256 && mine != 256 && h.stage >= 0) {
+    if ((h.event == 256 || other_npc) && mine != 256 && h.stage >= 0) {
         if (!host_out)
             host_out = now | 1;
         if (now - host_out > 1000) {
