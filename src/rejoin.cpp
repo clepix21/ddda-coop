@@ -1,8 +1,10 @@
 // Join during play. A friend's character reaches the host while the host already plays: the host's
 // world still shows the pawn it had. The game rebuilds the world from a save in two places only (a
 // game loaded from the title, a retry after death), so the host goes through the same steps:
-//   1. a save request to the save/load machine [0x018FA518] (mode 2, slot 3: what the autosave at a
-//      gate sends), so the host keeps its progress; the write goes through save_guard (un-merged);
+//   1. a save request to the save/load machine [0x018FA518] (mode 7, slot 0: it takes a fresh
+//      snapshot of the world; mode 2 slot 3, the autosave's request, writes the last checkpoint's
+//      snapshot, which put the host back where it had loaded, 2026-10-27 13:15), so the host keeps
+//      its place and progress; the write goes through save_guard (un-merged);
 //   2. once the merged save is rebuilt from that write, a load request (mode B, slot 0: what "load
 //      game" at the title sends). The game reads DDDA.sav (served merged by save_guard) into its
 //      in-memory copy [0x018FA4F8]+0x50 and restores the party from it;
@@ -100,7 +102,9 @@ void rejoin_tick(int role, uint32_t host_loaded_sig)
     } else {
         return;
     }
-    if (g_step != IDLE && now - g_step_at > kStepMs) {
+    // signed: g_step_at is `now | 1`, one ms ahead of a later `now` in the same tick (an unsigned
+    // difference gave up a step 8 ms after it began, 2026-10-27 13:32)
+    if (g_step != IDLE && int(now - g_step_at) > int(kStepMs)) {
         give_up(now, "too long");
         return;
     }
@@ -117,18 +121,18 @@ void rejoin_tick(int role, uint32_t host_loaded_sig)
         }
         if (!g_quiet_since)
             g_quiet_since = now | 1;
-        if (now - g_quiet_since < kQuietMs || (g_retry_at && int(now - g_retry_at) < 0))
+        if (int(now - g_quiet_since) < int(kQuietMs) || (g_retry_at && int(now - g_retry_at) < 0))
             return;
         g_target = want;
         g_own_before = own;
         logf("rejoin: the %s's world shows characters %08X, the save holds %08X: %s", role == NET_HOST ? "host" : "guest",
              loaded, want, role == NET_HOST ? "save, then load the merged save" : "load the host's save");
-        if (role == NET_HOST ? machine_request(2, 3) : machine_request(0xB, 0))
+        if (role == NET_HOST ? machine_request(7, 0) : machine_request(0xB, 0))
             go(role == NET_HOST ? SAVING : LOADING, now);
         return;
     }
-    case SAVING: // the autosave runs (write, then a read back); then the merge of the new own save
-        if (machine_idle() && now - g_step_at > 500)
+    case SAVING: // the save runs (write, then a read back); then the merge of the new own save
+        if (machine_idle() && int(now - g_step_at) > 500)
             go(MERGING, now);
         return;
     case MERGING:
@@ -140,7 +144,7 @@ void rejoin_tick(int role, uint32_t host_loaded_sig)
             go(LOADING, now);
         return;
     case LOADING:
-        if (!machine_idle() || now - g_step_at < 500)
+        if (!machine_idle() || int(now - g_step_at) < 500)
             return;
         if (loaded != g_target) {
             give_up(now, "the game did not read the expected save");

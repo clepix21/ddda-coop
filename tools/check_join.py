@@ -35,6 +35,15 @@ check(any("rejoin: merging -> loading" in ln for ln in host), "host asked its ga
 reloaded = [ln for ln in host if "rejoin: world reloaded with characters" in ln and not ln.endswith(" 00000000")]
 check(bool(reloaded), "host's world reloaded with the guest's character" + (f": {reloaded[0][13:]}" if reloaded else ""))
 check(not any("gave up" in ln for ln in host + guest), "no rejoin step given up")
+# the host walked before the friend came: the reload must keep it there (the save before it once wrote
+# the last checkpoint and put the host back where it loaded, 2026-10-27 13:15)
+wheres = [(t(ln), [float(v) for v in ln.split("bridge: where ")[1].split()]) for ln in host if "bridge: where -" in ln or "bridge: where " in ln and ln.split("bridge: where ")[1][:1].isdigit()]
+if reloaded and wheres:
+    tr = t(reloaded[0])
+    pre = [p for tt, p in wheres if tt < tr]
+    post = [p for tt, p in wheres if tt > tr + 2]
+    d = ((pre[-1][0] - post[0][0]) ** 2 + (pre[-1][2] - post[0][2]) ** 2) ** 0.5 if pre and post else None
+    check(d is not None and d < 100, f"host's Arisen stays where it walked through the reload ({d:.0f} u)" if d is not None else "host's Arisen stays where it walked through the reload")
 
 
 def parties(log):

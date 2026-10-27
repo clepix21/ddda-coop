@@ -244,8 +244,9 @@ over the Steam code path with a test stand-in for Steam (`steam_mock.cpp`):
   place on both PCs (seen once at the inn). Cutscenes: one tested (Olra on the Cassardis pier);
   the guest's game starts its own copy from the same trigger, so a cutscene whose trigger the
   guest's Arisen does not reach (or that depends on a talk the guest missed) would not play there.
-- Join during play forces a save on the host (the same save the game makes at a gate), then a
-  reload: the host loses nothing, but the world restarts around the party (enemies, NPC places).
+- Join during play forces a save on the host (a fresh snapshot, like a save from the menu, so the
+  host keeps its place: checked by walking first), then a reload: the world restarts around the
+  party (enemies, NPC places).
 - Player 2's face buttons can still act in menus while player 1 is in a menu.
 - One shared camera that follows the Arisen.
 - Only the main pawn can be possessed.

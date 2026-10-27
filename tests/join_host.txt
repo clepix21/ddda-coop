@@ -1,34 +1,55 @@
-# Join during play, host side: the party's HP every 15 s (pawn 1 = a hired pawn, then the guest's
+# Join during play, host side: walks ~1100 u from the Rift stone first (a join must not put it
+# back there: the save before the reload once wrote the last checkpoint, 2026-10-27 13:15); the party's HP every 15 s (pawn 1 = a hired pawn, then the guest's
 # character once the host saved and reloaded with it).
-wait 5000
+wait 3000
+goto -2350 -4550 60 8000
+goto -2235 -3940 60 9000
+goto -2015 -3546 60 8000
+where
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
 wait 15000
 partyhp
+where
