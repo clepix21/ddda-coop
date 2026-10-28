@@ -144,11 +144,17 @@ void action_tick(uintptr_t arisen)
 namespace {
 using FallCheck_t = void(__stdcall *)(uintptr_t, char);
 FallCheck_t g_fall_orig = nullptr;
+} // namespace
+int g_in_fall = 0; // game thread: inside the Arisen's fall check (its HP change is the fall's)
+namespace {
 void __stdcall hk_fall_check(uintptr_t ch, char flag)
 {
     if (net_puppet_ptr(ch))
         return;
+    bool arisen = ch == possess_arisen();
+    g_in_fall += arisen;
     g_fall_orig(ch, flag);
+    g_in_fall -= arisen;
 }
 } // namespace
 
@@ -165,6 +171,8 @@ Set210_t g_set210_orig = nullptr;
 Set214_t g_set214_orig = nullptr;
 volatile LONG g_refused = 0;
 
+} // namespace
+
 // The class name of action number n (the table at 0x01866C48, 0x44-byte entries, MtDTI first).
 const char *action_class(int n)
 {
@@ -175,6 +183,7 @@ const char *action_class(int n)
     return name && mem_readable(name, 1) ? name : "";
 }
 
+namespace {
 bool sleeping_may(int n)
 {
     if (n == 0 || n == 1 || n == 2) // wait, walk, run
@@ -184,8 +193,23 @@ bool sleeping_may(int n)
            strncmp(c, "cPlActDmg", 9) == 0 || strstr(c, "Dead") || strstr(c, "Neardeath");
 }
 
+// The game's death actions: the Arisen's ends the game, a pawn's makes it vanish (deep water).
+bool deadly(int n)
+{
+    const char *c = action_class(n);
+    return strstr(c, "Dead") || strstr(c, "DipWater");
+}
+
 bool refuse(uintptr_t ch, int n)
 {
+    if (ch == possess_arisen() && deadly(n)) // shared world: down instead while another player is up
+        return revive_on_fatal(ch, action_class(n), true);
+    if (net_puppet_ptr(ch) && deadly(n)) { // a pawn showing a player dies with that player only
+        static LONG k = 0;
+        if (++k <= 20 || k % 100 == 0)
+            logf("actions: a pawn showing a player asked for %s (0x%X): refused (%ld so far)", action_class(n), unsigned(n), k);
+        return true;
+    }
     if (!net_hidden_pawn_ptr(ch) || sleeping_may(n))
         return false;
     LONG k = InterlockedIncrement(&g_refused);
@@ -253,18 +277,35 @@ void actions_quiet_save() { InterlockedExchange(&g_quiet_until, LONG((GetTickCou
 // callers: falls, landings, ...): a pawn showing a player, or a hidden one, loses no HP through it.
 // After the fall check was skipped, a pawn parked under the ground for minutes still died when its
 // player came back (cPlActDmgDownDead, monster grab test 2026-10-28 19:28).
-extern "C" bool __cdecl actions_hp_filter(uintptr_t ch, float change) asm("actions_hp_filter");
+// The Arisen's fall takes its HP through here too: a fatal one (shared world, another player up)
+// leaves 1 HP and puts it down where it last stood (revive.cpp); any other fatal change too, in place.
+extern "C" bool __cdecl actions_hp_filter(uintptr_t ch, float *change) asm("actions_hp_filter");
 extern "C" void *g_hp_orig asm("g_hp_orig");
 void *g_hp_orig = nullptr;
-extern "C" bool __cdecl actions_hp_filter(uintptr_t ch, float change)
+extern "C" bool __cdecl actions_hp_filter(uintptr_t ch, float *change)
 {
-    return change < 0.f && (net_puppet_ptr(ch) || net_hidden_pawn_ptr(ch));
+    if (*change >= 0.f)
+        return false;
+    if (net_puppet_ptr(ch) || net_hidden_pawn_ptr(ch))
+        return true;
+    if (ch != possess_arisen() || !net_shared())
+        return false;
+    if (revive_down())
+        return true; // down: no more HP lost
+    const float *hp = enemies_hp(ch);
+    if (!hp || hp[0] + *change > 0.f)
+        return false;
+    if (!revive_on_fatal(ch, g_in_fall ? "a fall" : "a fatal HP change", g_in_fall != 0))
+        return false;
+    *change = hp[0] > 1.f ? 1.f - hp[0] : 0.f;
+    return false;
 }
 extern "C" __attribute__((naked)) void actions_hp_thunk() asm("actions_hp_thunk");
 extern "C" __attribute__((naked)) void actions_hp_thunk()
 {
     asm volatile("pushl %eax\n\t"
-                 "pushl 8(%esp)\n\t" // the change (first stack argument, past the pushed EAX)
+                 "leal 8(%esp), %ecx\n\t" // the change (first stack argument, past the pushed EAX)
+                 "pushl %ecx\n\t"
                  "pushl %eax\n\t"
                  "call actions_hp_filter\n\t"
                  "addl $8, %esp\n\t"

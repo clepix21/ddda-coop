@@ -88,6 +88,7 @@ void loot_net_mine(std::vector<LootEv> &out, uint32_t from_seq, int max); // thi
 uint32_t loot_mine_count();
 void loot_net_apply(const LootEv &e);       // net thread: another player's pickup, applied on the game thread
 const char *action_name(uintptr_t ch);       // actions.cpp: the class of a character's current action
+const char *action_class(int n);             // actions.cpp: the class of action number n ("" if none)
 void action_set(uintptr_t ch, int number);
 void action_stand_up(uintptr_t ch);
 void action_lie_down(uintptr_t ch);          // into near death (0x80), the HP entry flags remembered          // up from near death (0x80), its flags cleared   // game thread: change it (vtable slot 0x210)
@@ -125,6 +126,7 @@ bool net_stage_jump(int32_t to, int32_t point);  // game thread
 bool revive_down();
 bool revive_helping();                             // B held next to a downed player
 bool revive_on_damage(uintptr_t ch, float *dmg);  // game thread, the damage hook
+bool revive_on_fatal(uintptr_t ch, const char *why, bool move_back); // game thread: a death that is not a blow
 void revive_tick();                               // net thread
 void revive_helped();                             // net thread
 void revive_game_tick(uintptr_t arisen);          // game thread

@@ -1,0 +1,20 @@
+# Special deaths test, guest: walk away from the Rift stone with the host; the game's own death action
+# (cPlActDead, as an instant death) must put it down, the host helps it up; then a lethal fall (8000 u
+# up) must put it down where it last stood, alone for 60 s: back next to the host.
+wait 3000
+goto -2350 -4550 60 8000
+where
+wait 12000
+actc 0 cPlActDead
+wait 1000
+actname
+wait 29000
+where
+liftme 8000
+wait 1500
+where
+wait 8000
+where
+actname
+wait 70000
+where

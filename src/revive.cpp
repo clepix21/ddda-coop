@@ -11,6 +11,11 @@
 //
 // The blow that would take the Arisen to 0 HP is cut in the game's damage function (enemies.cpp's
 // hook: HP entry, damage) so 1 HP is left; the HP entry is [[Arisen+0x1D18]]+0 (HP at +8, max at +0xC).
+//
+// Deaths that are no blow (friends' evening, 2026-10-28: a fall, deep water and Death's scythe in
+// Bitterblack killed players nobody could help) come through revive_on_fatal (actions.cpp): the fall's
+// HP change and the game's death actions (cPlAct*Dead, cPlActDipWater). The player goes down where
+// it last stood on the ground (a second ago or more), not at the bottom of the cliff or in the water.
 #include <windows.h>
 
 #include <cmath>
@@ -27,6 +32,7 @@ volatile LONG g_down = 0;          // this player is down
 DWORD g_down_at = 0;
 volatile LONG g_get_up = 0;        // game thread: 1 = helped up here, 2 = come back next to `g_to`
 volatile LONG g_die = 0;           // game thread: every player is down, let the game's death run
+volatile LONG g_move_back = 0;     // game thread: down by a fall, water or an instant death: put it back
 float g_to[3] = {};
 int32_t g_to_stage = -1;
 DWORD g_help_since = 0;
@@ -79,6 +85,24 @@ bool revive_on_damage(uintptr_t ch, float *dmg)
     InterlockedExchange(&g_down, 1);
     logf("revive: down (HP %.0f, the blow cut to %.0f): another player can help with B, or back in 60 s", hp[0], *dmg);
     return false;
+}
+
+// actions.cpp, game thread: a death that is no blow (fall, deep water, instant death). True = this
+// player goes down instead (another player is up); `move_back`: back where it last stood.
+bool revive_on_fatal(uintptr_t ch, const char *why, bool move_back)
+{
+    if (!net_shared() || !ch || ch != possess_arisen())
+        return false;
+    if (g_down)
+        return true;
+    if (someone_up(false, nullptr) < 0)
+        return false; // nobody to help: the game's own death
+    g_down_at = GetTickCount() | 1;
+    InterlockedExchange(&g_move_back, move_back ? 1 : 0);
+    InterlockedExchange(&g_down, 1);
+    logf("revive: down (%s)%s: another player can help with B, or back in 60 s", why,
+         move_back ? ", back where it last stood" : "");
+    return true;
 }
 
 // Net thread, ~every 33 ms.
@@ -195,6 +219,31 @@ void revive_game_tick(uintptr_t arisen)
     }
     static DWORD next_look = 0;
     DWORD now = GetTickCount();
+    // where it last stood (waiting, walking, running), every second; the older of the last two
+    static float stood[2][3] = {};
+    static DWORD stood_at = 0;
+    static int stood_n = 0;
+    int act = game::at<int32_t>(arisen, 0x2DD4);
+    if (!g_down && (act == 0 || act == 1 || act == 2) && (!stood_at || int(now - stood_at) >= 1000)) {
+        memcpy(stood[0], stood[1], sizeof stood[0]);
+        memcpy(stood[1], reinterpret_cast<void *>(arisen + 0x40), sizeof stood[1]);
+        stood_at = now | 1;
+        ++stood_n;
+    }
+    if (g_down && InterlockedExchange(&g_move_back, 0) && stood_n > 0) {
+        const float *to = stood[stood_n >= 2 ? 0 : 1];
+        memcpy(reinterpret_cast<void *>(arisen + 0x40), to, 12);
+        for (uintptr_t off : {uintptr_t(0xE70), uintptr_t(0xE80), uintptr_t(0x1990)})
+            memcpy(reinterpret_cast<void *>(arisen + off), to, 12);
+        logf("revive: put back where it last stood (%.0f, %.0f, %.0f)", to[0], to[1], to[2]);
+    }
+    if (g_down) { // an instant death may have left 0 HP and the dead flag: down is alive
+        uintptr_t e = game::at<uintptr_t>(game::at<uintptr_t>(arisen, 0x1D18), 0);
+        if (e && game::at<float>(e, 8) < 1.f)
+            game::at<float>(e, 8) = 1.f;
+        if (e && (game::at<uint32_t>(e, 0x110) & 1))
+            game::at<uint32_t>(e, 0x110) &= ~1u;
+    }
     if (g_down && !g_get_up && (!next_look || int(now - next_look) >= 0)) {
         next_look = (now + 500) | 1;
         if (strcmp(action_name(arisen), "cPlActCmcNeardeath") != 0)

@@ -383,6 +383,27 @@ void run_line(const char *line)
         if (sscanf(line + 4, "%u %x", &who, &number) == 2)
             action_queue(int(who), int(number));
         _snprintf(g_current, sizeof g_current, "act %u %X", who, number);
+    } else if (strncmp(line, "actc ", 5) == 0) { // actc <who> <class>: change its action, by class name (tests)
+        unsigned who = 0;
+        char cls[64] = {};
+        int found = -1;
+        if (sscanf(line + 5, "%u %63s", &who, cls) == 2)
+            for (int n = 0; n <= 0x201 && found < 0; ++n)
+                if (strcmp(action_class(n), cls) == 0)
+                    found = n;
+        logf("bridge: actc %u %s = number 0x%X", who, cls, unsigned(found));
+        if (found >= 0)
+            action_queue(int(who), found);
+        _snprintf(g_current, sizeof g_current, "actc %u %s", who, cls);
+    } else if (strncmp(line, "liftme ", 7) == 0) { // liftme <height>: the Arisen that much higher (a fall, tests)
+        float dy = 0.f;
+        uintptr_t a = possess_arisen();
+        if (sscanf(line + 7, "%f", &dy) == 1 && a) {
+            for (uintptr_t off : {uintptr_t(0x40), uintptr_t(0xE70), uintptr_t(0xE80), uintptr_t(0x1990)})
+                game::at<float>(a, off + 4) += dy;
+            logf("bridge: liftme %.0f: the Arisen at height %.0f", dy, game::at<float>(a, 0x44));
+        }
+        _snprintf(g_current, sizeof g_current, "liftme %.0f", dy);
     } else if (sscanf(line, "grabtest %u", &slot) == 1) { // grabtest <pawn>: the Arisen holds it (forced actions)
         action_queue_grab(int(slot));
         _snprintf(g_current, sizeof g_current, "grabtest %u", slot);
