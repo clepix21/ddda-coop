@@ -51,6 +51,10 @@ Monde partagé (shared_world=1 dans coop.ini, le réglage de ce paquet)
   présent qui fait tourner les ennemis de la zone.
 - À 0 PV on tombe au sol : un autre joueur maintient B à côté pour relever. Sans aide, retour
   près d'un autre joueur après 60 s. Seuls tous les joueurs à terre donnent « Réessayer ».
+- Un joueur à terre est couché au sol, chez lui comme chez les autres (crâne au-dessus du nom).
+- Saisir un autre joueur avec RT : la prise se voit chez tout le monde.
+- Sur la carte (Start > Carte), les autres joueurs sont des flèches de pion. Un joueur parti dans une
+  autre zone reste affiché à l'endroit par où il est parti.
 - La Faille est fermée pendant le co-op (la pierre ne réagit plus). allow_rift=1 la rouvre.
 - L'hôte : gardez 2 pions recrutés, sinon le 2e invité prend votre pion principal.
 
