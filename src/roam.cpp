@@ -140,6 +140,7 @@ bool roam_world_from_host(const std::vector<uint8_t> &host, std::vector<uint8_t>
         return false;
     logf("roam: shared world: %s is this guest's Arisen%s", name.c_str(),
          swapped ? " (the host's Arisen on its pawn)" : " (the host has not merged it yet)");
+    logf("roam: shared world party: %s", save_copy_names(xml).c_str());
     return true;
 }
 
@@ -156,19 +157,13 @@ bool roam_refresh_party(const std::vector<uint8_t> &own, const std::vector<uint8
         return false;
     for (int p = 0; p < kPawns; ++p) {
         std::string ch;
-        if (!save_character(theirs, p == me ? -1 : p, ch))
+        if (!save_character(theirs, p == me ? -1 : p, ch) || !save_put_character(mine, p, ch))
             return false;
-        for (size_t c = 0;; ++c) {
-            std::vector<size_t> starts = player_data_starts(mine);
-            if (c >= starts.size())
-                break;
-            if (!save_put_character_at(mine, p, ch, starts[c]))
-                return false;
-        }
     }
     if (!save_pack(mine, head, out))
         return false;
     logf("roam: shared world: this guest's own snapshot with the host's latest party (it stays where it is)");
+    logf("roam: shared world party: %s", save_copy_names(mine).c_str());
     return true;
 }
 

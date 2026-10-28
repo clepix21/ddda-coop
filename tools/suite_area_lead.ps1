@@ -1,7 +1,8 @@
 ﻿# Shared world, three copies: the host stays in the Pawn Guild; both guests walk to the underground (stage
 # 600, small creatures) where the host is not. Guest 1 (the lowest slot there) must run the enemies of that
 # group and guest 2 must follow them (pairs with guest 1's enemies, no removals near it). Prints PASS/FAIL lines.
-param([ValidateSet("udp", "mock")][string]$Transport = "udp")
+# -Look: guest 1 plays another character (guest_arisen.sav, Arisen "Invite")
+param([ValidateSet("udp", "mock")][string]$Transport = "udp", [switch]$Look)
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
 $out = "J:\coop-test\re\runs\area_lead_$Transport"
@@ -19,7 +20,7 @@ $route = Join-Path $tests "route_guild_to_underground.txt"
 $run = & (Join-Path $tools "run_pair.ps1") -Seconds 380 -OutDir $out -Shots 300, 340 -GuestSavesFromRole `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "shared_guest_load.txt") `
     -Guest2Bot (Join-Path $tests "shared_guest_load.txt") -GuestBridge @($route) -Guest2Bridge @((Join-Path $tests "wait_25s.txt"), $route) `
-    -HostIni ($common + @("role=host", "bridge=1") + $hostNet) -GuestIni ($guest + $g1Net) -Guest2Ini ($guest + $g2Net) 2>$null
+    -HostIni ($common + @("role=host", "bridge=1") + $hostNet) -GuestIni ($guest + $g1Net + $(if ($Look) { @("test_save=J:\coop-test\saves\guest_arisen.sav") } else { @() })) -Guest2Ini ($guest + $g2Net) 2>$null
 $run | ForEach-Object { "   $_" }
 $g1 = Get-Content (Join-Path $out "guest.log"); $g2 = Get-Content (Join-Path $out "guest2.log"); $h = Get-Content (Join-Path $out "host.log")
 $checks = @()

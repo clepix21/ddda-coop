@@ -2,3 +2,4 @@
 # (its autosave must be un-merged: the host's own pawns put back).
 wait 3000
 partyhp
+partyname Clement Invite Jeanne Marcus Kaliste

@@ -4,10 +4,11 @@
 # both guests load that save. Then the host goes through the iron gate: its autosave must be
 # un-merged. Prints PASS/FAIL lines and a summary; exit 1 on any failure.
 # -Four: a third guest (fourth copy) takes the main pawn: all three pawns are friends' characters.
-param([ValidateSet("udp", "mock")][string]$Transport = "udp", [switch]$Four)
+# -Look: guest 1 plays another character (guest_arisen.sav, Arisen "Invite"): every copy must show it on pawn 1.
+param([ValidateSet("udp", "mock")][string]$Transport = "udp", [switch]$Four, [switch]$Look)
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
-$out = "J:\coop-test\re\runs\party_$Transport$(if ($Four) { '_four' })"
+$out = "J:\coop-test\re\runs\party_$Transport$(if ($Four) { '_four' })$(if ($Look) { '_look' })"
 if ($Transport -eq "udp") {
     $hostNet = @("transport=udp"); $g1Net = @("transport=udp", "peer=127.0.0.1"); $g2Net = $g1Net; $g3Net = $g1Net
 } else {
@@ -18,6 +19,7 @@ if ($Transport -eq "udp") {
     $g3Net = $mock + @("mock_id=4", "mock_friends=1")
 }
 $common = @("p2_pad=1", "idle_pad=3", "port=27101", "bridge=1")
+$g1Save = if ($Look) { @("test_save=J:\coop-test\saves\guest_arisen.sav") } else { @() }
 $extra = @{}
 if ($Four) {
     $extra = @{ Guest3Bot = (Join-Path $tests "bot_load_game_p2.txt"); Guest3Bridge = @((Join-Path $tests "party_guest.txt"))
@@ -29,7 +31,7 @@ $run = & (Join-Path $tools "run_pair.ps1") -Seconds 270 -OutDir $out -Shots 120,
     -HostBridge @((Join-Path $tests "party_host.txt"), (Join-Path $tests "route_guild_to_underground.txt")) `
     -GuestBridge @((Join-Path $tests "party_guest.txt")) -Guest2Bridge @((Join-Path $tests "party_guest.txt")) `
     -HostIni ($common + @("role=host") + $hostNet) `
-    -GuestIni ($common + @("role=guest", "guest_cam_pawn=1") + $g1Net) `
+    -GuestIni ($common + @("role=guest", "guest_cam_pawn=1") + $g1Net + $g1Save) `
     -Guest2Ini ($common + @("role=guest", "guest_cam_pawn=1") + $g2Net) @extra 2>$null
 $run | ForEach-Object { "   $_" }
 $checks = @(python -I (Join-Path $tools "check_party.py") $out)

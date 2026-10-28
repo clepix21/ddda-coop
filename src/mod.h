@@ -25,6 +25,7 @@ bool save_put_character(std::string &xml, int pawn, const std::string &character
 bool save_put_character_at(std::string &xml, int pawn, const std::string &character, size_t from);
 bool save_swap_arisen_pawn(std::string &xml, int pawn);                       // in every player data copy
 bool save_put_arisen_everywhere(std::string &xml, const std::string &character);
+std::string save_copy_names(const std::string &xml); // for logs
 bool save_bag(const std::string &xml, int who, std::string &out);             // 0 = Arisen, 1 + mCmcId
 bool save_put_bag_everywhere(std::string &xml, int who, const std::string &bag);
 bool save_quest_state(const std::string &xml, std::string &out);        // shared world: quests, NPCs, talks

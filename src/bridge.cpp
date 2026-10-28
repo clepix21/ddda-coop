@@ -764,6 +764,45 @@ void run_line(const char *line)
             logf("bridge: partyhp pawn %d %.1f/%.1f", p, h ? h[0] : -1.f, h ? h[1] : -1.f);
         }
         strcpy(g_current, "partyhp");
+    } else if (strncmp(line, "partyname ", 10) == 0) { // partyname <names...>: where each party member holds them (tests)
+        std::vector<std::string> names;
+        char buf[200];
+        strncpy(buf, line + 10, sizeof buf - 1);
+        buf[sizeof buf - 1] = 0;
+        for (char *t = strtok(buf, " "); t; t = strtok(nullptr, " "))
+            names.push_back(t);
+        for (int m = -1; m < kPawns; ++m) {
+            uintptr_t ch = m < 0 ? possess_arisen() : possess_pawn_ptr(m);
+            std::string found;
+            for (const std::string &n : names) {
+                auto scan = [&](uintptr_t base, size_t len, const char *how) {
+                    while (len > 0x100 && !mem_readable(reinterpret_cast<void *>(base), len))
+                        len /= 2;
+                    const char *b = reinterpret_cast<const char *>(base);
+                    for (size_t o = 0; o + n.size() + 1 < len; ++o) {
+                        if (b[o] == n[0] && memcmp(b + o, n.c_str(), n.size() + 1) == 0) {
+                            char t[96];
+                            _snprintf(t, sizeof t, " %s@%s+0x%X", n.c_str(), how, unsigned(o));
+                            found += t;
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                if (!ch || scan(ch, 0x10000, "ch"))
+                    continue;
+                for (size_t k = 0; k < 0x8000 && mem_readable(reinterpret_cast<void *>(ch), 0x8000); k += 4) { // one pointer away
+                    uintptr_t q = game::at<uintptr_t>(ch, k);
+                    char how[24];
+                    _snprintf(how, sizeof how, "[ch+0x%X]", unsigned(k));
+                    if (q > 0x10000 && q < 0x7FFF0000 && (q & 3) == 0 && mem_readable(reinterpret_cast<void *>(q), 0x400) &&
+                        scan(q, 0x400, how))
+                        break;
+                }
+            }
+            logf("bridge: partyname %s %d:%s", m < 0 ? "arisen" : "pawn", m, found.c_str());
+        }
+        strcpy(g_current, "partyname");
     } else if (strncmp(line, "php ", 4) == 0) { // php <arisen|pawn> <hp>: set a party member's HP (tests)
         char who[16] = {};
         float v = 0.f;

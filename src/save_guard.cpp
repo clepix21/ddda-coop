@@ -648,6 +648,7 @@ void storage_merge_tick()
             return;
         }
         logf("storage: merged save built from version %u:%s", from, names.c_str());
+        logf("storage: merged save party: %s", save_copy_names(xml).c_str());
     }
     EnterCriticalSection(&g_save_lock);
     g_merged.swap(merged);

@@ -179,23 +179,41 @@ bool save_pack(const std::string &xml, const uint32_t base_head[8], std::vector<
     return true;
 }
 
+std::vector<size_t> player_data_starts(const std::string &x);
+
 // The mEdit and mParam blocks of the Arisen (pawn -1) or of a pawn, as one string (mEdit then mParam).
+// The game shows a character with the mEdit (look, name) of the mPlayerDataBase copy and the mParam
+// of the mPlayerDataManual copy (2026-10-27 12:22), so it is taken from there: the copies differed in
+// the merged saves of the 2026-10-28 evening (only the Manual copy was merged), and the other players
+// had another pawn's face, sex and name.
 bool save_character(const std::string &xml, int pawn, std::string &out)
 {
+    std::vector<size_t> starts = player_data_starts(xml);
     size_t o = owner_block(xml, pawn);
-    if (o == std::string::npos)
+    size_t look = starts.size() >= 2 ? owner_block(xml, pawn, starts[1]) : o;
+    if (o == std::string::npos || look == std::string::npos)
         return false;
-    size_t e = child(xml, o, "mEdit"), p = child(xml, o, "mParam");
+    size_t e = child(xml, look, "mEdit"), p = child(xml, o, "mParam");
     if (e == std::string::npos || p == std::string::npos)
         return false;
     out = xml.substr(e, block_end(xml, e) - e) + "\n" + xml.substr(p, block_end(xml, p) - p);
     return true;
 }
 
-// Writes a character (from save_character) over pawn `pawn`'s mEdit and mParam.
+// Writes a character (from save_character) over pawn `pawn`'s mEdit and mParam, in every player data
+// copy.
 bool save_put_character(std::string &xml, int pawn, const std::string &character)
 {
-    return save_put_character_at(xml, pawn, character, 0);
+    int done = 0;
+    for (size_t i = 0;; ++i) {
+        std::vector<size_t> starts = player_data_starts(xml); // offsets move with each replace
+        if (i >= starts.size())
+            break;
+        if (!save_put_character_at(xml, pawn, character, starts[i]))
+            return false;
+        ++done;
+    }
+    return done > 0;
 }
 
 // The same in the copy of the player data that starts at or after `from`.
@@ -237,43 +255,31 @@ std::vector<size_t> player_data_starts(const std::string &x)
 // Every copy: the Arisen gets pawn `pawn`'s character and that pawn the Arisen's.
 bool save_swap_arisen_pawn(std::string &xml, int pawn)
 {
-    int done = 0;
-    for (size_t i = 0;; ++i) {
-        std::vector<size_t> starts = player_data_starts(xml); // offsets move with each replace
-        if (i >= starts.size())
-            break;
-        std::string arisen, other;
-        size_t a = owner_block(xml, -1, starts[i]), b = owner_block(xml, pawn, starts[i]);
-        if (a == std::string::npos || b == std::string::npos)
-            return false;
-        auto take = [&](size_t o, std::string &out) {
-            size_t e = child(xml, o, "mEdit"), p = child(xml, o, "mParam");
-            if (e == std::string::npos || p == std::string::npos)
-                return false;
-            out = xml.substr(e, block_end(xml, e) - e) + "\n" + xml.substr(p, block_end(xml, p) - p);
-            return true;
-        };
-        if (!take(a, arisen) || !take(b, other) || !save_put_character_at(xml, -1, other, starts[i]) ||
-            !save_put_character_at(xml, pawn, arisen, player_data_starts(xml)[i]))
-            return false;
-        ++done;
-    }
-    return done > 0;
+    std::string arisen, other;
+    return save_character(xml, -1, arisen) && save_character(xml, pawn, other) && save_put_character(xml, -1, other) &&
+           save_put_character(xml, pawn, arisen);
 }
 
 // Every copy: the Arisen gets `character` (its own character on this PC).
 bool save_put_arisen_everywhere(std::string &xml, const std::string &character)
 {
-    int done = 0;
-    for (size_t i = 0;; ++i) {
-        std::vector<size_t> starts = player_data_starts(xml);
-        if (i >= starts.size())
-            break;
-        if (!save_put_character_at(xml, -1, character, starts[i]))
-            return false;
-        ++done;
+    return save_put_character(xml, -1, character);
+}
+
+// For logs: the names in each player data copy, "Manual: A, p0, p1, p2 / Base: ...".
+std::string save_copy_names(const std::string &xml)
+{
+    std::string out;
+    std::vector<size_t> starts = player_data_starts(xml);
+    for (size_t i = 0; i < starts.size(); ++i) {
+        out += i ? " / Base:" : "Manual:";
+        for (int p = -1; p < kPawns; ++p) {
+            size_t o = owner_block(xml, p, starts[i]), e = o == std::string::npos ? o : child(xml, o, "mEdit");
+            out += std::string(p < 0 ? " " : ", ") +
+                   (e == std::string::npos ? "?" : save_character_name(xml.substr(e, block_end(xml, e) - e)));
+        }
     }
-    return done > 0;
+    return out;
 }
 
 // The bag of party member `who` (0 = Arisen, 1 + mCmcId) in copy `copy`: its cSAVE_DATA_ITEM block.

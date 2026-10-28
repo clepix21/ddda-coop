@@ -1,5 +1,7 @@
 # Party test, guest side: the party's HP after loading the host's merged save; camera on pawn N.
 wait 3000
 partyhp
+partyname Clement Invite Jeanne Marcus Kaliste
 wait 20000
 partyhp
+partyname Clement Invite Jeanne Marcus Kaliste
