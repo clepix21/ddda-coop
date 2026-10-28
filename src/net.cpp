@@ -466,6 +466,53 @@ void shared_apply_commands(uintptr_t ch, int i)
     game::at<uint32_t>(cmd, 0x34) = release;
 }
 
+// Local party index i shows a player who is down (revive.cpp): the host's peers, or the SNAP's down[].
+bool shared_party_down(int i)
+{
+    if (i < 1 || i >= kParty)
+        return false;
+    if (g_role == NET_HOST) {
+        for (const Peer &p : g_peers)
+            if (p.used && p.pawn == i - 1)
+                return p.downed != 0;
+        return false;
+    }
+    if (!g_have_snap)
+        return false;
+    EnterCriticalSection(&g_snap_lock);
+    bool down = false;
+    int me = g_snap.my_pawn;
+    if (i == 1 + me)
+        down = g_snap.down[0] != 0; // the host, on this guest's pawn
+    else
+        for (int s = 1; s < 4; ++s)
+            if (g_snap.pawn_of[s] == i - 1)
+                down = g_snap.down[s] != 0;
+    LeaveCriticalSection(&g_snap_lock);
+    return down;
+}
+
+// Game thread: a pawn showing a downed player plays the game's near-death action (0x80) as long as
+// that player is down, and stands up (action 0) when it is up again.
+void shared_down_look(uintptr_t ch, int i)
+{
+    static DWORD next[kParty] = {};
+    static bool forced[kParty] = {};
+    DWORD now = GetTickCount();
+    bool down = shared_party_down(i);
+    bool lying = strcmp(action_name(ch), "cPlActCmcNeardeath") == 0;
+    if (down && !lying && (!next[i] || int(now - next[i]) >= 0)) {
+        if (forced[i])
+            logf("net: shared: party %d (down) left the near-death action for %s: put back", i, action_name(ch));
+        next[i] = (now + 500) | 1;
+        forced[i] = true;
+        action_set(ch, 0x80);
+    } else if (!down && lying && forced[i]) {
+        forced[i] = false;
+        action_set(ch, 0);
+    }
+}
+
 // Game thread, after the transform finalize of such a pawn: that player's place, facing and HP.
 // The guest's own Arisen: the host's time of day (one world clock).
 void shared_apply_transform(uintptr_t ch, int i)
@@ -488,6 +535,7 @@ void shared_apply_transform(uintptr_t ch, int i)
     }
     if (!net_puppet(i))
         return;
+    shared_down_look(ch, i);
     EnterCriticalSection(&g_cap_lock);
     CharState s = g_rp[i];
     bool away = g_rp_away[i] || g_rp_hidden[i];

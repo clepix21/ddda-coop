@@ -5,11 +5,16 @@
 // player is elsewhere) with 30 % of its HP. When every player is down the game's own death runs
 // ("Réessayer").
 //
+// Down looks down: the game's own near-death action (0x80, cPlActCmcNeardeath, the one a pawn at
+// 0 HP plays: on the ground, a skull over its name) on this player's Arisen, and on the pawn that
+// shows a downed player in the other worlds (net.cpp, shared_down_look); action 0 when up again.
+//
 // The blow that would take the Arisen to 0 HP is cut in the game's damage function (enemies.cpp's
 // hook: HP entry, damage) so 1 HP is left; the HP entry is [[Arisen+0x1D18]]+0 (HP at +8, max at +0xC).
 #include <windows.h>
 
 #include <cmath>
+#include <cstring>
 
 #include "game.h"
 #include "mod.h"
@@ -188,6 +193,13 @@ void revive_game_tick(uintptr_t arisen)
         InterlockedExchange(&g_down, 0);
         return;
     }
+    static DWORD next_look = 0;
+    DWORD now = GetTickCount();
+    if (g_down && !g_get_up && (!next_look || int(now - next_look) >= 0)) {
+        next_look = (now + 500) | 1;
+        if (strcmp(action_name(arisen), "cPlActCmcNeardeath") != 0)
+            action_set(arisen, 0x80);
+    }
     LONG how = g_get_up;
     if (!how)
         return;
@@ -209,5 +221,7 @@ void revive_game_tick(uintptr_t arisen)
         hp[0] = hp[1] * kBackShare;
     InterlockedExchange(&g_get_up, 0);
     InterlockedExchange(&g_down, 0);
+    if (strcmp(action_name(arisen), "cPlActCmcNeardeath") == 0)
+        action_set(arisen, 0); // stand up
     logf("revive: up again (%s)", how == 1 ? "helped" : "next to another player");
 }

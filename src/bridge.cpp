@@ -370,6 +370,16 @@ void run_line(const char *line)
                 watch_start(p + off, long(count), 0);
         }
         _snprintf(g_current, sizeof g_current, "watchpa %s +%X +%X", who, poff, off);
+    } else if (strncmp(line, "act ", 4) == 0) { // act <who 0 = Arisen, 1..3 = pawn> <number hex>: change its action
+        unsigned who = 0, number = 0;
+        if (sscanf(line + 4, "%u %x", &who, &number) == 2)
+            action_queue(int(who), int(number));
+        _snprintf(g_current, sizeof g_current, "act %u %X", who, number);
+    } else if (strncmp(line, "actname", 7) == 0) { // the current action of the Arisen and the pawns
+        logf("bridge: actname arisen %s", action_name(possess_arisen()));
+        for (int p = 0; p < kPawns; ++p)
+            logf("bridge: actname pawn %d %s", p, action_name(possess_pawn_ptr(p)));
+        strcpy(g_current, "actname");
     } else if (strncmp(line, "questadd ", 9) == 0) { // questadd <id hex>: FUN_00484D90 on the game thread (tests)
         unsigned id = 0;
         if (sscanf(line + 9, "%x", &id) == 1)
