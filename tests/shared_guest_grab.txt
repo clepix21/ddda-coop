@@ -1,0 +1,14 @@
+# Shared world, guest: boot and load (pad 1), a short step left, then RT held twice (grab whatever is in reach).
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+150000 0 0 -30000 0
+151000 0 0 0 0
+160000 0 0 0 0 0 0 0 255
+165000 0 0 0 0
+175000 0 0 0 0 0 0 0 255
+180000 0 0 0 0

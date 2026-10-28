@@ -44,11 +44,11 @@ void __stdcall hk_grant(uintptr_t gs, int exp, float factor, char fixed)
         g_orig(gs, exp, factor, fixed);
         return;
     }
-    if (net_role() == NET_GUEST && !fixed && net_shared_in_host_area()) {
+    if (net_role() == NET_GUEST && !fixed && net_enemy_follower()) {
         static DWORD next_log = 0;
         if (!next_log || int(GetTickCount() - next_log) >= 0) {
             next_log = GetTickCount() + 2000;
-            logf("exp: a kill in the host's area: its exp comes from the host's world (%d here dropped)", exp);
+            logf("exp: a kill where another player's game runs the enemies (the host's area or a guest's group): its exp comes from there (%d here dropped)", exp);
         }
         return;
     }

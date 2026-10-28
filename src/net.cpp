@@ -48,6 +48,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstddef>
 #include <cstring>
 #include <string>
 
@@ -59,7 +60,8 @@ void guest_talk_mirror(DWORD now); // below: the guest mirrors the host's pad du
 namespace {
 
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
-                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11, MSG_REVIVE = 12, MSG_QUEST = 13 };
+                       MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11, MSG_REVIVE = 12, MSG_QUEST = 13,
+                       MSG_AREA_ENEMIES = 14 };
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 // A big correction must move every copy the movement code keeps, or the next collision pass pulls
@@ -180,6 +182,17 @@ struct EnemiesMsg {
     uint8_t count;
     EnemyState e[kEnemiesPerPage];
 };
+// Shared world: the enemies of an area the host is not in, from the player who runs them there (the
+// leader), relayed by the host to the other players in that stage.
+constexpr int kAreaPerPage = 16;
+struct AreaEnemiesMsg {
+    Header h;
+    int32_t stage;
+    uint8_t from; // the leader's slot (the host sets it from the sender)
+    uint8_t count;
+    EnemyState e[kAreaPerPage];
+};
+constexpr int area_msg_size(int count) { return int(offsetof(AreaEnemiesMsg, e) + count * sizeof(EnemyState)); }
 constexpr int kSaveChunk = 1024;
 struct SaveChunkMsg {
     Header h;
@@ -573,6 +586,17 @@ struct EnemyStats {
     int blocked, allowed, forced, removed, puppet_blocked;
 } g_enemy_stats = {};
 DWORD g_last_enemies_rx = 0; // guest: last ENEMIES page received (0 = none)
+
+// Shared world: whose game runs the enemies around this player (its group: the same stage, within
+// kLeadRange): the host when it is there, else the lowest slot there. The others follow that game's
+// enemies the way guests follow the host's. -1 = none (classic mode, or no one known yet). Stage 200
+// is the whole open world: in the first real test guests 5 km from the host had their own enemies
+// removed as "not on the host" (55 times), so removal only applies near the leader (kRemoveRange).
+constexpr float kLeadRange = 5000.f, kRemoveRange = 2500.f;
+volatile LONG g_lead = -1;
+volatile LONG g_lead_others = 0; // other players following this one (guest leader: send its pages)
+float g_lead_pos[3] = {};        // the leader's position (g_enemy_lock)
+int g_area_cursor = 0;
 
 uint32_t class_hash(const char *name)
 {
@@ -1053,11 +1077,36 @@ void receive_all()
                     g.got.assign(g.got.size(), 0);
                 }
             }
+        } else if (h->type == MSG_AREA_ENEMIES && n >= area_msg_size(0)) {
+            auto m = reinterpret_cast<AreaEnemiesMsg *>(buf);
+            int count = m->count;
+            if (count > kAreaPerPage || n != area_msg_size(count))
+                continue;
+            if (g_role == NET_HOST) { // to the other players in that stage
+                m->from = uint8_t(1 + k);
+                for (int q = 0; q < kMaxPeers; ++q)
+                    if (q != k && g_peers[q].used && g_peers[q].pstate_tick && g_peers[q].pstage == m->stage)
+                        send_to(g_peers[q], m, n);
+                continue;
+            }
+            if (!g_shared || m->from != g_lead || int(g_lead) == net_my_slot() || m->stage != my_stage())
+                continue;
+            DWORD now = GetTickCount();
+            EnterCriticalSection(&g_enemy_lock);
+            for (int e = 0; e < count; ++e)
+                if (m->e[e].slot < kEnemySlots) {
+                    g_enemy_state[m->e[e].slot] = m->e[e];
+                    g_enemy_tick[m->e[e].slot] = now;
+                }
+            g_last_enemies_rx = now;
+            LeaveCriticalSection(&g_enemy_lock);
         } else if (g_role == NET_GUEST && h->type == MSG_ENEMIES && n >= int(sizeof(Header) + 1)) {
             auto m = reinterpret_cast<const EnemiesMsg *>(buf);
             int count = m->count;
             if (count > kEnemiesPerPage || n != int(sizeof(Header) + 1 + count * sizeof(EnemyState)))
                 continue;
+            if (g_shared && g_lead != 0)
+                continue; // the host's enemies are not the ones around this guest
             DWORD now = GetTickCount();
             EnterCriticalSection(&g_enemy_lock);
             for (int k = 0; k < count; ++k)
@@ -1127,6 +1176,89 @@ void send_enemies(DWORD now)
     LeaveCriticalSection(&g_enemy_lock);
     if (m.count)
         send_raw(&m, int(sizeof(Header) + 1 + m.count * sizeof(EnemyState)));
+}
+
+// Shared world, guest, net thread (~30/s): who leads this guest's group. When the leader changes the
+// enemy table starts over with the new leader's pages (or this guest's own enemies when it leads).
+void area_lead_update()
+{
+    int me = net_my_slot();
+    PlayerInfo mine;
+    int lead = -1, others = 0;
+    float lp[3] = {};
+    if (g_shared && me >= 0 && net_player_info(me, mine) && mine.stage >= 0) {
+        for (int s = 0; s < 4; ++s) {
+            PlayerInfo o;
+            if (!net_player_info(s, o) || !o.present || o.stage != mine.stage)
+                continue;
+            float dx = o.pos[0] - mine.pos[0], dz = o.pos[2] - mine.pos[2];
+            if (s != me && dx * dx + dz * dz > kLeadRange * kLeadRange)
+                continue;
+            if (s != me)
+                ++others;
+            if (lead < 0) {
+                lead = s;
+                memcpy(lp, o.pos, sizeof lp);
+            }
+        }
+        if (!others)
+            lead = -1; // alone: its own enemies, nothing to send
+    }
+    // a change holds 1.5 s first: during a load the other players' areas are briefly unknown, and each
+    // change throws the pairings away (seen flipping four times in 200 ms when the host changed area)
+    static int pending = -2;
+    static DWORD pending_since = 0;
+    DWORD now = GetTickCount();
+    if (lead != int(g_lead)) {
+        if (lead != pending) {
+            pending = lead;
+            pending_since = now;
+        }
+        if (now - pending_since < 1500)
+            return;
+    }
+    pending = -2;
+    InterlockedExchange(&g_lead_others, lead == me ? others : 0);
+    EnterCriticalSection(&g_enemy_lock);
+    memcpy(g_lead_pos, lp, sizeof lp);
+    if (lead != int(g_lead)) {
+        memset(g_enemy_tick, 0, sizeof g_enemy_tick);
+        for (Follow &f : g_follow) {
+            f.host_slot = -1;
+            f.unpaired_since = 0;
+            f.dead_since = 0;
+        }
+        g_last_enemies_rx = 0;
+        InterlockedExchange(&g_lead, lead);
+        logf("net: enemies around this player: %s", lead < 0 ? "its own (no other player near)"
+                                                    : lead == me ? "this game runs them (it leads its group)"
+                                                    : lead == 0  ? "the host's"
+                                                                 : "another guest's");
+        if (lead > 0 && lead != me)
+            logf("net: enemies: player %d leads this group (stage %d)", lead, mine.stage);
+    }
+    LeaveCriticalSection(&g_enemy_lock);
+}
+
+// Shared world, guest leading its group: one page of its live enemies to the host, which relays it.
+void send_area_enemies(DWORD now)
+{
+    AreaEnemiesMsg m = {};
+    m.h = {kMagic, MSG_AREA_ENEMIES, ++g_seq};
+    m.stage = my_stage();
+    m.from = uint8_t(net_my_slot());
+    EnterCriticalSection(&g_enemy_lock);
+    int next = 0;
+    for (int c = 0; c < kEnemySlots && m.count < kAreaPerPage; ++c) {
+        int i = (g_area_cursor + c) % kEnemySlots;
+        if (g_enemy_tick[i] && now - g_enemy_tick[i] < 5000)
+            m.e[m.count++] = g_enemy_state[i];
+        next = (i + 1) % kEnemySlots;
+    }
+    g_area_cursor = m.count == kAreaPerPage ? next : 0;
+    LeaveCriticalSection(&g_enemy_lock);
+    if (m.count)
+        send_raw(&m, area_msg_size(m.count));
 }
 
 void host_save_pieces(Peer &peer);
@@ -1444,6 +1576,9 @@ DWORD WINAPI net_thread(LPVOID)
                     memcpy(ps.flags_applied, g_flags_applied, sizeof ps.flags_applied);
                     ps.downed = revive_down() ? 1 : 0;
                     send_raw(&ps, sizeof ps);
+                    area_lead_update();
+                    if (g_lead_others && g_lead == net_my_slot())
+                        send_area_enemies(now);
                     static DWORD loot_next = 0;
                     if (g_have_snap && (!loot_next || int(now - loot_next) >= 0)) { // its pickups the host lacks
                         loot_next = (now + 250) | 1;
@@ -2063,13 +2198,15 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     uintptr_t pending_death = 0;
     if (!g_enemy_ready || g_role == NET_OFF || i < 0 || i >= kEnemySlots || net_guest_roaming())
         return 0;
-    if (g_shared && g_role == NET_GUEST && !shared_in_host_area())
-        return 0; // elsewhere: this guest's own enemies
+    int lead = int(g_lead);
+    if (g_shared && g_role == NET_GUEST && lead < 0)
+        return 0; // no one else around: this guest's own enemies
+    bool lead_self = g_role == NET_HOST || (g_shared && lead == net_my_slot());
     uintptr_t em = slot.ptr;
     DWORD now = GetTickCount();
     if (!slot.settled) // no spawn point to pair on yet
         return 0;
-    if (g_role == NET_HOST) {
+    if (lead_self) {
         EnemyState s = {};
         s.slot = uint8_t(i);
         s.cls = class_hash(slot.name);
@@ -2155,6 +2292,10 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         // enemy of its class spawned there for 10 s, while the host is sending enemies) is removed
         // with the game's own death.
         bool host_sending = g_last_enemies_rx && now - g_last_enemies_rx < 1000;
+        if (g_shared) { // the leader only has the enemies near it
+            float lx = slot.spawn[0] - g_lead_pos[0], lz = slot.spawn[2] - g_lead_pos[2];
+            host_sending &= lx * lx + lz * lz < kRemoveRange * kRemoveRange;
+        }
         // and no host enemy of its class spawned there in the last 30 s (it may be one the host's
         // game updates rarely, or one taken by another local enemy for now)
         bool host_knows = false;
@@ -2277,7 +2418,7 @@ bool enemy_net_block_damage(uintptr_t ch)
         const Follow &f = g_follow[i];
         if (f.ptr != ch || f.host_slot < 0 || GetTickCount() - f.last > 1000)
             continue;
-        block = !g_enemy_state[f.host_slot].died;
+        block = !g_enemy_state[f.host_slot].died && !(g_shared && g_lead == net_my_slot());
         ++(block ? g_enemy_stats.blocked : g_enemy_stats.allowed);
         break;
     }
@@ -2297,6 +2438,13 @@ int net_guest_my_pawn()
 }
 
 bool net_shared() { return g_shared; }
+
+// Shared world, guest: another player's game runs the enemies around it (its kills come from there).
+bool net_enemy_follower()
+{
+    int lead = int(g_lead);
+    return g_shared && g_role == NET_GUEST && lead >= 0 && lead != net_my_slot();
+}
 
 // Shared world, game threads: local party index i shows another player in this area now.
 bool net_puppet(int i)

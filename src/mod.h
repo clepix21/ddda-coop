@@ -74,6 +74,7 @@ bool storage_own_raw(std::vector<uint8_t> &out, uint32_t &version);
 bool storage_peer_raw(std::vector<uint8_t> &out);
 void storage_guest_mark_read(uint32_t sig);
 bool net_shared_in_host_area(); // shared world, guest: in the host's area now
+bool net_enemy_follower();      // shared world, guest: another player's game runs the enemies around it
 // exp_sync.cpp: shared world, one exp for all players
 bool exp_sync_install();
 long long exp_sync_total();                 // exp this world gave its Arisen
