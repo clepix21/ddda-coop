@@ -215,6 +215,8 @@ struct EnemySlot {
 bool mem_readable(const void *p, size_t n); // committed, readable memory
 bool stages_install(); // stages.cpp: log every stage load
 bool talk_install();   // talk.cpp: the talk start
+bool rift_install();   // rift.cpp: the Rift stone does nothing while co-op is on
+uint32_t rift_blocked();
 uint32_t talk_last(float pos[3]); // the NPC of the latest talk start (position); talks started so far
 uint32_t stages_other_loads(); // stage loads not made by a jump request (retry, load game)
 DWORD stages_last_load(int32_t *stage); // tick (0 = none) and stage of the last stage load
