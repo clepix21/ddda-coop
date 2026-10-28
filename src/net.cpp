@@ -1645,6 +1645,56 @@ void send_area_enemies(DWORD now)
         send_raw(&m, area_msg_size(m.count));
 }
 
+// Shared world, net thread, every second: coop_status.txt in the game folder for DDDA-Coop.exe's
+// "Joueurs" panel. One "player" line per place: slot, connected, present, down, stage, ms since its
+// last news (-1 = unknown), same area as this player, name (the guest's character on the host).
+void write_status(DWORD now)
+{
+    std::string out = "version 1\n";
+    out += g_role == NET_HOST ? "role host\n" : "role guest\n";
+    int me = net_my_slot();
+    int32_t here = my_stage();
+    char line[256];
+    _snprintf(line, sizeof line, "me %d %d\n", me, int(here));
+    out += line;
+    for (int s = 0; s < 4; ++s) {
+        bool connected = false;
+        long ago = -1;
+        std::string name;
+        if (s == me) {
+            connected = true;
+            ago = 0;
+        } else if (g_role == NET_HOST) {
+            const Peer &p = g_peers[s - 1];
+            connected = s >= 1 && p.used;
+            if (connected && p.last_rx)
+                ago = long(now - p.last_rx);
+            if (connected && !p.char_data.empty())
+                name = save_character_name(p.char_data);
+        } else if (g_have_snap) {
+            EnterCriticalSection(&g_snap_lock);
+            connected = s == 0 || g_snap.pawn_of[s] >= 0;
+            LeaveCriticalSection(&g_snap_lock);
+            if (s == 0 && g_peers[0].last_rx)
+                ago = long(now - g_peers[0].last_rx);
+        }
+        PlayerInfo info;
+        bool known = connected && net_player_info(s, info);
+        for (char &c : name)
+            if (c == '\n' || c == '\r')
+                c = ' ';
+        _snprintf(line, sizeof line, "player %d %d %d %d %d %ld %d %s\n", s, connected ? 1 : 0, known && info.present ? 1 : 0,
+                  known && info.downed ? 1 : 0, known ? int(info.stage) : -1, ago, known && here >= 0 && info.stage == here ? 1 : 0,
+                  name.c_str());
+        out += line;
+    }
+    if (FILE *f = fopen("coop_status.tmp", "wb")) {
+        fwrite(out.data(), 1, out.size(), f);
+        fclose(f);
+        MoveFileExA("coop_status.tmp", "coop_status.txt", MOVEFILE_REPLACE_EXISTING);
+    }
+}
+
 void host_save_pieces(Peer &peer);
 
 // Host, each 33 ms: pick up a new save version, queue it when the guest lacks it, send 24 pieces.
@@ -1904,6 +1954,11 @@ DWORD WINAPI net_thread(LPVOID)
         }
         receive_all();
         now = GetTickCount();
+        static DWORD next_status = 0;
+        if (g_shared && (!next_status || int(now - next_status) >= 0)) {
+            next_status = (now + 1000) | 1;
+            write_status(now);
+        }
         for (int k = 0; k < kMaxPeers; ++k) {
             Peer &p = g_peers[k];
             // signed: last_rx is `tick | 1` (never 0) and can be 1 ms ahead of `now`
