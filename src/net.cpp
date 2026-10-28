@@ -2652,6 +2652,36 @@ int camera_follow(uintptr_t from, uintptr_t to)
     return changed;
 }
 
+// The class hashes an enemy pairs with: its own and its variants (the last digit changed). The two
+// worlds of the friends' evening (2026-10-28) often had another variant on each side (uEm0100 here,
+// uEm0101 there) and those never paired.
+struct ClassSet {
+    uint32_t h[11];
+    int n;
+    bool has(uint32_t c) const
+    {
+        for (int k = 0; k < n; ++k)
+            if (h[k] == c)
+                return true;
+        return false;
+    }
+};
+static ClassSet class_family(const char *name)
+{
+    ClassSet out = {{class_hash(name)}, 1};
+    size_t len = strlen(name);
+    if (len == 0 || len >= 63 || name[len - 1] < '0' || name[len - 1] > '9')
+        return out;
+    char v[64];
+    memcpy(v, name, len + 1);
+    for (char d = '0'; d <= '9'; ++d)
+        if (d != name[len - 1]) {
+            v[len - 1] = d;
+            out.h[out.n++] = class_hash(v);
+        }
+    return out;
+}
+
 // Game thread, right after an enemy's transform finalize (enemies.cpp, inside its table lock).
 // Host: record its state. Guest: follow the host's enemy paired with it. Returns an enemy whose
 // death enemies.cpp must run (enemy_net_death) once its lock is released, or 0.
@@ -2697,20 +2727,30 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     if (f.host_slot < 0 && int(now - f.next_try) >= 0) {
         f.next_try = now + 500;
         uint32_t cls = class_hash(slot.name);
+        ClassSet fam = class_family(slot.name);
         bool claimed[kEnemySlots] = {};
         for (int k = 0; k < kEnemySlots; ++k)
             if (k != i && g_follow[k].host_slot >= 0 && now - g_follow[k].last < 1000)
                 claimed[g_follow[k].host_slot] = true;
         // 1. same class, spawn within 40 u; 2. same class, standing within 40 u now (critters such as
-        // uEm8100 move away from their spawn after their first frames, not at the same moment on both PCs)
+        // uEm8100 move away from their spawn after their first frames, not at the same moment on both PCs);
+        // 3. once it has been here 2 s: same class or a variant, the closest standing within 800 u.
+        // Packs (wolves, bats, harpies) spawn 100 to 1500 u apart in the two worlds (friends' logs,
+        // 2026-10-28) and stayed apart: one of the same kind is as good as another.
         const float *here = reinterpret_cast<const float *>(em + 0x40);
         const char *how = "spawns";
         float best = 40.f * 40.f;
-        for (int pass = 0; pass < 2 && f.host_slot < 0; ++pass) {
+        for (int pass = 0; pass < 3 && f.host_slot < 0; ++pass) {
+            if (pass == 2) {
+                if (now - slot.first_seen < 2000)
+                    break;
+                best = 800.f * 800.f;
+                how = "kind, closest";
+            }
             const float *mine = pass == 0 ? slot.spawn : here;
             for (int k = 0; k < kEnemySlots; ++k) {
                 const EnemyState &h = g_enemy_state[k];
-                if (!g_enemy_tick[k] || now - g_enemy_tick[k] > 3000 || h.cls != cls || claimed[k])
+                if (!g_enemy_tick[k] || now - g_enemy_tick[k] > 3000 || claimed[k] || (pass < 2 ? h.cls != cls : !fam.has(h.cls)))
                     continue;
                 const float *theirs = pass == 0 ? h.spawn : h.pos;
                 float dx = theirs[0] - mine[0], dy = theirs[1] - mine[1], dz = theirs[2] - mine[2];
@@ -2733,7 +2773,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
             float near_d2 = 1e30f;
             for (int k = 0; k < kEnemySlots; ++k) {
                 const EnemyState &h = g_enemy_state[k];
-                if (!g_enemy_tick[k] || h.cls != cls)
+                if (!g_enemy_tick[k] || !fam.has(h.cls))
                     continue;
                 float dx = h.spawn[0] - slot.spawn[0], dy = h.spawn[1] - slot.spawn[1], dz = h.spawn[2] - slot.spawn[2];
                 if (dx * dx + dy * dy + dz * dz < near_d2) {
@@ -2761,11 +2801,11 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         // and no host enemy of its class spawned there in the last 30 s (it may be one the host's
         // game updates rarely, or one taken by another local enemy for now)
         bool host_knows = false;
-        uint32_t cls = class_hash(slot.name);
+        ClassSet fam = class_family(slot.name);
         for (int k = 0; k < kEnemySlots && !host_knows; ++k) {
             const EnemyState &h = g_enemy_state[k];
             float dx = h.spawn[0] - slot.spawn[0], dy = h.spawn[1] - slot.spawn[1], dz = h.spawn[2] - slot.spawn[2];
-            host_knows = g_enemy_tick[k] && now - g_enemy_tick[k] < 30000 && h.cls == cls &&
+            host_knows = g_enemy_tick[k] && now - g_enemy_tick[k] < 30000 && fam.has(h.cls) &&
                          dx * dx + dy * dy + dz * dz < 40.f * 40.f;
         }
         if (!host_sending || host_knows || slot.died || f.forced) {
