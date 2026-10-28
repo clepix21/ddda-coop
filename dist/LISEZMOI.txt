@@ -41,10 +41,23 @@ Après la partie
 - En cas de problème : « Exporter le journal » copie le journal dans Documents\DDDA Coop\Journaux.
   Envoie-le à l'hôte.
 
+Monde partagé (shared_world=1 dans coop.ini, le réglage de ce paquet)
+-----------------------------------------------------------------------
+- Chacun joue son propre perso et va où il veut. L'expérience de chaque ennemi tué va à tout le
+  monde ; un objet ramassé reste à celui qui le prend, les autres en reçoivent une copie au coffre.
+- Les quêtes suivent le monde de l'hôte. Une quête prise par un joueur arrive directement dans le
+  journal des autres ; un court rechargement ne reste que dans les autres cas (quête terminée).
+- Dans une même zone, on se voit et on partage les ennemis. Sans l'hôte, c'est le premier joueur
+  présent qui fait tourner les ennemis de la zone.
+- À 0 PV on tombe au sol : un autre joueur maintient B à côté pour relever. Sans aide, retour
+  près d'un autre joueur après 60 s. Seuls tous les joueurs à terre donnent « Réessayer ».
+- La Faille est fermée pendant le co-op (la pierre ne réagit plus). allow_rift=1 la rouvre.
+- L'hôte : gardez 2 pions recrutés, sinon le 2e invité prend votre pion principal.
+
 À savoir
 --------
 - Version alpha : jamais encore testée entre deux vrais PC. Garde tes copies de sauvegardes.
 - Seule la version Steam actuelle du jeu est prise en charge (la fenêtre le vérifie).
-- Évitez la Faille (Rift) et les fonctions en ligne du jeu.
+- Évitez les fonctions en ligne du jeu.
 - Si le dossier du jeu contient déjà un autre dinput8.dll (un autre mod), la fenêtre ne le
   remplace pas : retire-le toi-même d'abord.
