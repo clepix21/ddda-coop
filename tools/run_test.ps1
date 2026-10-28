@@ -1,4 +1,4 @@
-# Runs the test copy with the freshly built DLL for N seconds, then kills it and checks that the
+﻿# Runs the test copy with the freshly built DLL for N seconds, then kills it and checks that the
 # owner's save folder is byte-identical. Exit 0 = run ok and saves unchanged.
 # Usage: .\run_test.ps1 -Seconds 45 [-Bot script.txt] [-Shots 10,20] [-OutDir dir]
 #        [-SaveDir <steam userdata\<id>\367500>] [-GameDir J:\coop-test\DDDA]
@@ -57,6 +57,8 @@ $bridgeSent = $BridgeScripts.Count -eq 0
 $bridgeOut = Join-Path $GameDir "bridge_out.txt"
 Remove-Item $bridgeOut -ErrorAction SilentlyContinue
 $pending = [System.Collections.Generic.List[double]]::new(); $Shots | ForEach-Object { $pending.Add($_) }
+# COOP_SHOT_EVERY=<s> (environment): also a shot every <s> seconds once in game (from 90 s), for screenshot reviews
+if ($env:COOP_SHOT_EVERY) { for ($t = 90.0; $t -lt $Seconds; $t += [double]$env:COOP_SHOT_EVERY) { if (-not $pending.Contains($t)) { $pending.Add($t) } } }
 while (((Get-Date) - $start).TotalSeconds -lt $Seconds -and -not $p.HasExited) {
     Start-Sleep -Milliseconds 250
     if (Test-Path $stopFile) { "STOP file found"; break }

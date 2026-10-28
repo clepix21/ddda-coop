@@ -1,0 +1,2 @@
+# Area lead suite: guest 2 leaves 25 s after guest 1 (both blocked each other in the tunnel at (-871, -2267))
+wait 25000

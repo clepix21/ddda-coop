@@ -378,6 +378,12 @@ void run_line(const char *line)
     } else if (sscanf(line, "grabtest %u", &slot) == 1) { // grabtest <pawn>: the Arisen holds it (forced actions)
         action_queue_grab(int(slot));
         _snprintf(g_current, sizeof g_current, "grabtest %u", slot);
+    } else if (sscanf(line, "flags273c %u", &slot) == 1) { // flags273c <who>: +0x273C, +0x31EA of the Arisen (0) or a pawn
+        uintptr_t ch = slot == 0 ? possess_arisen() : possess_pawn_ptr(int(slot) - 1);
+        if (ch)
+            logf("bridge: flags273c %u: +0x273C %08X +0x2740 %08X +0x31EA %u action %s", slot, game::at<uint32_t>(ch, 0x273C),
+                 game::at<uint32_t>(ch, 0x2740), game::at<uint8_t>(ch, 0x31EA), action_name(ch));
+        _snprintf(g_current, sizeof g_current, "flags273c %u", slot);
     } else if (strncmp(line, "actname", 7) == 0) { // the current action of the Arisen and the pawns
         for (int p = -1; p < kPawns; ++p) {
             uintptr_t ch = p < 0 ? possess_arisen() : possess_pawn_ptr(p);

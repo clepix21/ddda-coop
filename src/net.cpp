@@ -394,6 +394,13 @@ void shared_take(int i, const CharState &c, bool here)
             g_rp_at[i] = t | 1;
         }
     }
+    if (!c.valid) {
+        // a state without a character (its game missed a beat): the last one stays. Taking it made a
+        // parked pawn "here" for a frame, at no place, and the host's Arisen fell out of the map with
+        // it (area lead suite 2026-10-28 15:24)
+        LeaveCriticalSection(&g_cap_lock);
+        return;
+    }
     g_rp[i] = c;
     g_rp[i].valid = c.valid && here;
     g_rp_away[i] = c.valid && !here;
@@ -512,6 +519,14 @@ uintptr_t slot_character(int slot)
 }
 
 bool shared_party_down(int i);          // below
+
+// An action that holds something (grab start, a hold, the lift actions): +0x38F0 keeps its last
+// target after a hold ends, and a guest reported "holding the host" while waiting (area lead suite
+// 2026-10-28 15:24: the host's Arisen was tied to a parked pawn and fell out of the map)
+bool hold_action(int a)
+{
+    return a == 0x39 || a == 0xA9 || a == 0xE3 || (a >= 0x3B && a <= 0x6F) || a == 0xDB || a == 0xE5;
+}
 int enemy_share_id(uintptr_t em);       // below: an enemy as the group's leader numbers it
 uintptr_t enemy_from_share_id(int id);
 
@@ -536,7 +551,7 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     static bool held_player[kParty] = {};
     static int tries[kParty] = {}; // aimed grabs at a monster for this hold (each one moves it a little)
     DWORD t = GetTickCount();
-    int want = s.hold_slot >= 0 ? s.hold_slot : s.hold_enemy >= 0 ? 0x100 + s.hold_enemy : -1;
+    int want = !hold_action(s.action) ? -1 : s.hold_slot >= 0 ? s.hold_slot : s.hold_enemy >= 0 ? 0x100 + s.hold_enemy : -1;
     if (want < 0) {
         // let go in the holder's world: the links set here go, and a held player stands up if its
         // release action is still running 1.2 s later (it stayed in DmgHagaijimeEnd for 10 s)
@@ -570,6 +585,12 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     }
     bool player = want < 0x100;
     uintptr_t held = player ? slot_character(want) : enemy_from_share_id(want - 0x100);
+    if (held && held != ch) { // only within reach: never tie a character to a pawn somewhere else
+        float rx = game::at<float>(held, 0x40) - game::at<float>(ch, 0x40), ry = game::at<float>(held, 0x44) - game::at<float>(ch, 0x44),
+              rz = game::at<float>(held, 0x48) - game::at<float>(ch, 0x48);
+        if (!(rx * rx + ry * ry + rz * rz < 300.f * 300.f))
+            held = 0;
+    }
     static DWORD next_why[kParty] = {};
     bool tell = !next_why[i] || int(t - next_why[i]) >= 0;
     if (!held || held == ch) {
@@ -690,10 +711,10 @@ void shared_down_look(uintptr_t ch, int i)
             logf("net: shared: party %d (down) left the near-death action for %s: put back", i, action_name(ch));
         next[i] = (now + 500) | 1;
         forced[i] = true;
-        action_set(ch, 0x80);
+        action_lie_down(ch);
     } else if (!down && lying && forced[i]) {
         forced[i] = false;
-        action_set(ch, 0);
+        action_stand_up(ch);
     } else if (!down && strstr(action_name(ch), "Dead") && (!next[i] || int(now - next[i]) >= 0)) {
         // a pawn showing a player who is up must not stay dead here (one was killed by spiders on
         // the host before its hits were blocked): the dead flag off, standing again
@@ -763,18 +784,9 @@ void shared_apply_transform(uintptr_t ch, int i)
             }
         }
         was_parked[i] = true;
-        // a parked pawn falls the whole time, and a long fall killed it (cPlActDmgDownDead while its
-        // player was elsewhere, test 2026-10-28 10:39): the fall restarts from a stand every second
-        static DWORD next_unfall[kParty] = {};
-        const char *act = action_name(ch);
-        if ((strstr(act, "Fall") || strstr(act, "Dead")) && (!next_unfall[i] || int(GetTickCount() - next_unfall[i]) >= 0)) {
-            next_unfall[i] = (GetTickCount() + 1000) | 1;
-            uintptr_t e = game::at<uintptr_t>(ch, 0x1D18) ? game::at<uintptr_t>(game::at<uintptr_t>(ch, 0x1D18), 0) : 0;
-            if (e)
-                game::at<uint32_t>(e, 0x110) &= ~1u;
-            using SetAction_t = void(__thiscall *)(uintptr_t, int); // quietly: no log line every second
-            reinterpret_cast<SetAction_t>(game::at<uintptr_t>(game::at<uintptr_t>(ch, 0), 0x210))(ch, 0);
-        }
+        // a parked pawn falls the whole time; the fall check (actions.cpp) no longer kills it there.
+        // Restarting its fall from a stand every second let the game bring an unused pawn back next
+        // to the Arisen, upside down in the air (exp suite shot 2026-10-28 15:1x): not done
         uintptr_t me = possess_arisen();
         bool at_door = elsewhere && last_stage[i] >= 0 && last_stage[i] == my_stage();
         if (me) {
@@ -2076,7 +2088,7 @@ void net_capture(uintptr_t ch, int i)
     if (g_shared && i == 0) { // its action, and what it holds (shared_grab_look)
         s.action = int16_t(game::at<int32_t>(ch, 0x2DD4));
         s.hold_kind = int8_t(game::at<int32_t>(ch, 0x3938));
-        uintptr_t held = game::at<uintptr_t>(ch, 0x38F0);
+        uintptr_t held = hold_action(s.action) ? game::at<uintptr_t>(ch, 0x38F0) : 0;
         for (int p = 0; held && p < kPawns; ++p)
             if (possess_pawn_ptr(p) == held)
                 s.hold_slot = int8_t(party_to_slot(1 + p));

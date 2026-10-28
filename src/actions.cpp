@@ -40,6 +40,57 @@ void action_set(uintptr_t ch, int number)
     logf("actions: %p action %s -> %s (number 0x%X)", (void *)ch, before, action_name(ch), unsigned(number));
 }
 
+// Up from the near-death action (0x80): the flags the game sets with it (FUN_00B60870: +0x273C |= 0x20,
+// +0x31EA = 1) go too, else the skull stayed over a pawn standing again (revive suite shot, 230 s).
+namespace {
+uintptr_t hp_entry(uintptr_t ch)
+{
+    uintptr_t h = game::at<uintptr_t>(ch, 0x1D18);
+    return h ? game::at<uintptr_t>(h, 0) : 0;
+}
+struct Before {
+    uintptr_t ch;
+    uint32_t flags; // HP entry +0x110 before the near-death action
+};
+Before g_before[8] = {};
+} // namespace
+
+// Into the near-death action (0x80), remembering the HP entry's flags first.
+void action_lie_down(uintptr_t ch)
+{
+    uintptr_t e = hp_entry(ch);
+    Before *slot = nullptr;
+    for (Before &b : g_before)
+        if (b.ch == ch || (!slot && !b.ch))
+            slot = &b;
+    if (slot && slot->ch != ch && e) {
+        *slot = Before{ch, game::at<uint32_t>(e, 0x110)};
+        logf("actions: %p lies down, HP entry flags %08X", (void *)ch, slot->flags);
+    }
+    action_set(ch, 0x80);
+}
+
+void action_stand_up(uintptr_t ch)
+{
+    uintptr_t e = hp_entry(ch);
+    for (Before &b : g_before)
+        if (b.ch == ch) {
+            if (e) {
+                logf("actions: %p stands up, HP entry flags %08X (before: %08X), +0x273C %08X, +0x31EA %u", (void *)ch,
+                     game::at<uint32_t>(e, 0x110), b.flags, game::at<uint32_t>(ch, 0x273C), game::at<uint8_t>(ch, 0x31EA));
+                game::at<uint32_t>(e, 0x110) = b.flags;
+            }
+            b = Before{};
+        }
+    game::at<uint32_t>(ch, 0x273C) &= ~0x20u;
+    game::at<uint8_t>(ch, 0x31EA) = 0;
+    // Known: on a pawn the skull next to its name stays after this (the game's own "pawn down" state).
+    // Not cleared by: these two flags, the HP entry's flags (+0x110, 0 before and after), bit 0x00100000
+    // of +0x2364/+0x236C/+0x2374 (set by the near-death action, cleared: no change), action 0x1D
+    // (cPlActDmgStandUp); action 0xB5 (cPlActStatusRecover) crashed the game at 0x00B0F9E9.
+    action_set(ch, 0);
+}
+
 void action_queue(int who, int number) { InterlockedExchange(&g_req, LONG(((who + 1) << 16) | (number & 0xFFFF))); }
 
 namespace {
@@ -63,7 +114,11 @@ void action_tick(uintptr_t arisen)
         return;
     int who = (r >> 16) - 1, number = r & 0xFFFF;
     uintptr_t ch = who == 0 ? arisen : possess_pawn_ptr(who - 1);
-    if (ch)
+    if (ch && number == 0x80)
+        action_lie_down(ch);
+    else if (ch && number == 0xFFFF) // tests: act <who> FFFF = stand up the mod's way
+        action_stand_up(ch);
+    else if (ch)
         action_set(ch, number);
 }
 

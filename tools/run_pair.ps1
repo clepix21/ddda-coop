@@ -1,4 +1,4 @@
-# Runs two copies of the test install side by side (host = DDDA, guest = DDDA2), each with its
+﻿# Runs two copies of the test install side by side (host = DDDA, guest = DDDA2), each with its
 # own bot script and coop.ini lines, for N seconds or until <OutDir>\STOP exists. Checks that the
 # owner's save folder is byte-identical afterwards. Tests only: forces block_saves, debug_log
 # and multi_instance on both copies.
@@ -89,6 +89,8 @@ foreach ($s in $sides) {
 }
 $guestSide = $sides[1]; $restartAt = 0
 $pending = [System.Collections.Generic.List[double]]::new(); $Shots | ForEach-Object { $pending.Add($_) }
+# COOP_SHOT_EVERY=<s> (environment): also a shot every <s> seconds once in game (from 90 s), for screenshot reviews
+if ($env:COOP_SHOT_EVERY) { for ($t = 90.0; $t -lt $Seconds; $t += [double]$env:COOP_SHOT_EVERY) { if (-not $pending.Contains($t)) { $pending.Add($t) } } }
 while (((Get-Date) - $start).TotalSeconds -lt $Seconds) {
     Start-Sleep -Milliseconds 250
     if (Test-Path $stopFile) { "STOP file found"; break }

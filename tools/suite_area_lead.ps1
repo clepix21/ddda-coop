@@ -18,7 +18,7 @@ $guest = $common + @("role=guest", "bridge=1", "test_save=J:\coop-test\saves\gue
 $route = Join-Path $tests "route_guild_to_underground.txt"
 $run = & (Join-Path $tools "run_pair.ps1") -Seconds 380 -OutDir $out -Shots 300, 340 -GuestSavesFromRole `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "shared_guest_load.txt") `
-    -Guest2Bot (Join-Path $tests "shared_guest_load.txt") -GuestBridge @($route) -Guest2Bridge @($route) `
+    -Guest2Bot (Join-Path $tests "shared_guest_load.txt") -GuestBridge @($route) -Guest2Bridge @((Join-Path $tests "wait_25s.txt"), $route) `
     -HostIni ($common + @("role=host", "bridge=1") + $hostNet) -GuestIni ($guest + $g1Net) -Guest2Ini ($guest + $g2Net) 2>$null
 $run | ForEach-Object { "   $_" }
 $g1 = Get-Content (Join-Path $out "guest.log"); $g2 = Get-Content (Join-Path $out "guest2.log"); $h = Get-Content (Join-Path $out "host.log")

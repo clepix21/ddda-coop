@@ -198,7 +198,7 @@ void revive_game_tick(uintptr_t arisen)
     if (g_down && !g_get_up && (!next_look || int(now - next_look) >= 0)) {
         next_look = (now + 500) | 1;
         if (strcmp(action_name(arisen), "cPlActCmcNeardeath") != 0)
-            action_set(arisen, 0x80);
+            action_lie_down(arisen);
     }
     LONG how = g_get_up;
     if (!how)
@@ -222,6 +222,6 @@ void revive_game_tick(uintptr_t arisen)
     InterlockedExchange(&g_get_up, 0);
     InterlockedExchange(&g_down, 0);
     if (strcmp(action_name(arisen), "cPlActCmcNeardeath") == 0)
-        action_set(arisen, 0); // stand up
+        action_stand_up(arisen);
     logf("revive: up again (%s)", how == 1 ? "helped" : "next to another player");
 }
