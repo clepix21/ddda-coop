@@ -2819,6 +2819,16 @@ int net_guest_my_pawn()
 
 bool net_shared() { return g_shared; }
 
+bool net_hidden_pawn_ptr(uintptr_t ch)
+{
+    if (!g_shared || g_role == NET_OFF || !ch)
+        return false;
+    for (int p = 0; p < kPawns; ++p)
+        if (ch == possess_pawn_ptr(p))
+            return g_rp_hidden[1 + p];
+    return false;
+}
+
 bool net_puppet_ptr(uintptr_t ch)
 {
     if (!g_shared || g_role == NET_OFF || !ch)

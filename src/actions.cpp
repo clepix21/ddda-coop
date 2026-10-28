@@ -7,6 +7,9 @@
 // character is restored, and for 0x80 also sets ch+0x273C |= 0x20 and ch+0x31EA = 1.
 #include <windows.h>
 
+#include <cstring>
+#include <tuple>
+
 #include "MinHook.h"
 #include "game.h"
 #include "mod.h"
@@ -138,8 +141,73 @@ void __stdcall hk_fall_check(uintptr_t ch, char flag)
 }
 } // namespace
 
+// Hidden pawns sleep: a hired pawn no player uses (shared world, kept out of sight under the Arisen)
+// still had its AI, which starts actions without the command object (it cast cPlActWpnWandShield
+// twice while parked, test 2026-10-28). The two action changers, vtable slots 0x210 (FUN_00B540B0,
+// thiscall(ch, number), `ret 4`) and 0x214 (FUN_00B6B270, thiscall(ch, number, 16 more), `ret 0x44`),
+// refuse such a pawn anything but standing, moving, falling and being hit.
+namespace {
+using Set210_t = void(__fastcall *)(uintptr_t, void *, int);
+using Set214_t = void(__fastcall *)(uintptr_t, void *, int, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+                                    uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+Set210_t g_set210_orig = nullptr;
+Set214_t g_set214_orig = nullptr;
+volatile LONG g_refused = 0;
+
+// The class name of action number n (the table at 0x01866C48, 0x44-byte entries, MtDTI first).
+const char *action_class(int n)
+{
+    if (n < 0 || n > 0x201)
+        return "";
+    uintptr_t dti = game::at<uintptr_t>(0x01866C48 + uintptr_t(n) * 0x44, 0);
+    const char *name = dti ? game::at<const char *>(dti, 4) : nullptr;
+    return name && mem_readable(name, 1) ? name : "";
+}
+
+bool sleeping_may(int n)
+{
+    if (n == 0 || n == 1 || n == 2) // wait, walk, run
+        return true;
+    const char *c = action_class(n);
+    return strstr(c, "Fall") || strstr(c, "Land") || strstr(c, "Wait") || strstr(c, "Walk") || strstr(c, "Run") ||
+           strncmp(c, "cPlActDmg", 9) == 0 || strstr(c, "Dead") || strstr(c, "Neardeath");
+}
+
+bool refuse(uintptr_t ch, int n)
+{
+    if (!net_hidden_pawn_ptr(ch) || sleeping_may(n))
+        return false;
+    LONG k = InterlockedIncrement(&g_refused);
+    if (k <= 20 || k % 100 == 0)
+        logf("actions: a hidden pawn %p asked for %s (0x%X): refused (%ld so far)", (void *)ch, action_class(n), unsigned(n), k);
+    return true;
+}
+
+void __fastcall hk_set210(uintptr_t ch, void *edx, int n)
+{
+    if (!refuse(ch, n))
+        g_set210_orig(ch, edx, n);
+}
+
+void __fastcall hk_set214(uintptr_t ch, void *edx, int n, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
+                          uint32_t g, uint32_t h, uint32_t i, uint32_t j, uint32_t k, uint32_t l, uint32_t m, uint32_t o, uint32_t p)
+{
+    if (!refuse(ch, n))
+        g_set214_orig(ch, edx, n, a, b, c, d, e, f, g, h, i, j, k, l, m, o, p);
+}
+} // namespace
+
 bool actions_install()
 {
+    for (auto [addr, hook, orig] : {std::tuple<uintptr_t, void *, void **>{0x00B540B0, reinterpret_cast<void *>(&hk_set210),
+                                                                            reinterpret_cast<void **>(&g_set210_orig)},
+                                    std::tuple<uintptr_t, void *, void **>{0x00B6B270, reinterpret_cast<void *>(&hk_set214),
+                                                                            reinterpret_cast<void **>(&g_set214_orig)}}) {
+        MH_STATUS st = MH_CreateHook(reinterpret_cast<void *>(addr), hook, orig);
+        if (st == MH_OK)
+            st = MH_EnableHook(reinterpret_cast<void *>(addr));
+        logf("actions: hook SetAction %08X: %s", unsigned(addr), MH_StatusToString(st));
+    }
     void *target = reinterpret_cast<void *>(0x00B78BF0);
     MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void *>(&hk_fall_check), reinterpret_cast<void **>(&g_fall_orig));
     if (st == MH_OK)

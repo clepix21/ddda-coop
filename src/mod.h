@@ -94,7 +94,8 @@ void action_queue(int who, int number);      // tests: 0 = the Arisen, 1..3 = pa
 void action_tick(uintptr_t arisen);
 void action_queue_grab(int pawn);
 bool actions_install();                       // the fall check skips the pawns showing players
-bool net_puppet_ptr(uintptr_t ch);            // net.cpp: a pawn showing another player (shared world)            // tests: the Arisen holds that pawn (0xA9 / 0xAA)          // game thread
+bool net_puppet_ptr(uintptr_t ch);
+bool net_hidden_pawn_ptr(uintptr_t ch);       // net.cpp: a hired pawn no player uses (shared world)            // net.cpp: a pawn showing another player (shared world)            // tests: the Arisen holds that pawn (0xA9 / 0xAA)          // game thread
 void quest_live_queue(uint32_t id);        // quest_sync.cpp: tests, add a quest to the journal live
 void quest_live_tick();                    // game thread
 int quest_live_count();
