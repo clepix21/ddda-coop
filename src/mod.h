@@ -90,7 +90,9 @@ const char *action_name(uintptr_t ch);       // actions.cpp: the class of a char
 void action_set(uintptr_t ch, int number);   // game thread: change it (vtable slot 0x210)
 void action_queue(int who, int number);      // tests: 0 = the Arisen, 1..3 = pawn 0..2
 void action_tick(uintptr_t arisen);
-void action_queue_grab(int pawn);            // tests: the Arisen holds that pawn (0xA9 / 0xAA)          // game thread
+void action_queue_grab(int pawn);
+bool actions_install();                       // the fall check skips the pawns showing players
+bool net_puppet_ptr(uintptr_t ch);            // net.cpp: a pawn showing another player (shared world)            // tests: the Arisen holds that pawn (0xA9 / 0xAA)          // game thread
 void quest_live_queue(uint32_t id);        // quest_sync.cpp: tests, add a quest to the journal live
 void quest_live_tick();                    // game thread
 int quest_live_count();

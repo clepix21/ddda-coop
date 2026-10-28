@@ -61,6 +61,7 @@ static DWORD WINAPI pad_thread(LPVOID)
     stages_install();
     talk_install();
     rift_install();
+    actions_install();
     pads_install(possess_p2_pad());
     if (cfg_role() == NET_HOST) // guests 1-3 drive pawns from pad slots 1-3 (the game only uses pads it saw from the start)
         for (unsigned slot = 1; slot < 4; ++slot)

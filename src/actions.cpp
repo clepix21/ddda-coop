@@ -7,6 +7,7 @@
 // character is restored, and for 0x80 also sets ch+0x273C |= 0x20 and ch+0x31EA = 1.
 #include <windows.h>
 
+#include "MinHook.h"
 #include "game.h"
 #include "mod.h"
 
@@ -64,4 +65,30 @@ void action_tick(uintptr_t arisen)
     uintptr_t ch = who == 0 ? arisen : possess_pawn_ptr(who - 1);
     if (ch)
         action_set(ch, number);
+}
+
+// The fall check FUN_00B78BF0 (__stdcall(ch, flag), `ret 8`, from the characters' update) hurts a
+// character by its height through FUN_00888DA0 (another HP change than the hit one enemies.cpp
+// hooks). A pawn showing a player in another area waits out of sight off the floor and it was killed
+// there (write watch on its dead flag, 2026-10-28 11:32): such pawns skip the check, their place is
+// the network's.
+namespace {
+using FallCheck_t = void(__stdcall *)(uintptr_t, char);
+FallCheck_t g_fall_orig = nullptr;
+void __stdcall hk_fall_check(uintptr_t ch, char flag)
+{
+    if (net_puppet_ptr(ch))
+        return;
+    g_fall_orig(ch, flag);
+}
+} // namespace
+
+bool actions_install()
+{
+    void *target = reinterpret_cast<void *>(0x00B78BF0);
+    MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void *>(&hk_fall_check), reinterpret_cast<void **>(&g_fall_orig));
+    if (st == MH_OK)
+        st = MH_EnableHook(target);
+    logf("actions: hook FallCheck 00B78BF0: %s", MH_StatusToString(st));
+    return st == MH_OK;
 }

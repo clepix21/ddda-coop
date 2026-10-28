@@ -99,6 +99,8 @@ struct CharState {
     float hp, hp_max;               // [[ch+0x1D18]]+8, +0xC (hp_max 0 = unknown)
     int16_t action;                 // shared world: its action number (ch+0x2DD4, actions.cpp)
     int8_t hold_slot;               // holding another player (action 0xA9): that player's place, else -1
+    int16_t hold_enemy;             // holding an enemy: its number in the group leader's table, else -1
+    int8_t hold_kind;               // ch+0x3938 (lift kind)
 };
 struct StageState {
     int32_t stage, point;           // current stage and entry point ([0x018FA4BC]+0x34 / +0x44)
@@ -310,7 +312,10 @@ struct QuestBlob {
     uint32_t in_crc = 0;
 } g_qb[4];
 CRITICAL_SECTION g_qb_lock;
-constexpr float kParkDepth = 3000.f; // that far under the local Arisen
+// that far under the local Arisen (out of sight). Parked 3000 u above instead, the host's kills in the
+// underground stopped (shared exp suite 4/6 twice, 6/6 under, same code otherwise; 2026-10-28): kept
+// under. The pawns parked there died of the fall check (actions.cpp now skips them).
+constexpr float kParkHeight = 3000.f;
 
 // host: presses/releases seen since the last send, per party member
 volatile LONG g_acc_press[kParty] = {}, g_acc_release[kParty] = {};
@@ -506,33 +511,56 @@ uintptr_t slot_character(int slot)
     return 0;
 }
 
-// Game thread: another player holding a third one from behind (RT on a person, action 0xA9 with the
-// held character at ch+0x38F0, the held one in 0xAA) is rebuilt here: the pawn showing the holder
-// holds the character showing the held one (this player's own Arisen when it is the one held). In
-// the other worlds the holder's pawn starts a grab (RT reaches it) but a pawn's grab does not catch a
-// player's Arisen (pair test 2026-10-28), so the hold is set the way a grab ends: target, then both
-// actions. Afterwards the holder's replayed RT keeps it and its release ends it, as in its world.
+bool shared_party_down(int i);          // below
+int enemy_share_id(uintptr_t em);       // below: an enemy as the group's leader numbers it
+uintptr_t enemy_from_share_id(int id);
+
+// Game thread: another player holding something (RT: a player from behind, 0xA9 with the held one
+// in 0xAA; a small monster lifted, 0x5F then the lift actions; ...; the held one at ch+0x38F0, the
+// lift kind at +0x3938) is rebuilt here on the pawn showing it: the held one is this world's
+// character for that player, or this world's copy of that enemy (the group leader's numbering,
+// enemy_share_id). In the other worlds the holder's pawn starts a grab (RT reaches it) but a pawn's
+// grab does not catch a player's Arisen (pair test 2026-10-28), and a monster may stand elsewhere, so
+// the hold is set the way a grab ends: target and kind, the holder's action, the held one's links
+// (+0x2104 and +0x30 = holder, seen on a held pawn and on a lifted uEm9000). Afterwards the holder's
+// replayed RT keeps it and its release ends it, as in its world.
 void shared_grab_look(uintptr_t ch, int i, const CharState &s)
 {
-    static int applied[kParty] = {-1, -1, -1, -1};
+    static int applied[kParty] = {-1, -1, -1, -1}; // held here: 0..3 a player, 0x100 + id an enemy
     static DWORD again[kParty] = {}, released[kParty] = {};
     static uintptr_t held_by[kParty] = {}, old_2104[kParty] = {}, old_30[kParty] = {};
+    // a lifted monster also points at its holder at +0x2B98, +0x5CA4 and +0x60E4 (pointer scan of a
+    // uEm9000 lifted by the Arisen, 2026-10-28)
+    static constexpr uintptr_t kEmLinks[3] = {0x2B98, 0x5CA4, 0x60E4};
+    static uintptr_t old_em[kParty][3] = {};
+    static bool held_player[kParty] = {};
+    static int tries[kParty] = {}; // aimed grabs at a monster for this hold (each one moves it a little)
     DWORD t = GetTickCount();
-    if (s.action != 0xA9 || s.hold_slot < 0) {
-        // let go in the holder's world: the links set here go, and the held one stands up if its
+    int want = s.hold_slot >= 0 ? s.hold_slot : s.hold_enemy >= 0 ? 0x100 + s.hold_enemy : -1;
+    if (want < 0) {
+        // let go in the holder's world: the links set here go, and a held player stands up if its
         // release action is still running 1.2 s later (it stayed in DmgHagaijimeEnd for 10 s)
+        if (applied[i] >= 0 && held_by[i] && !held_player[i]) {
+            uintptr_t h = held_by[i];
+            for (int k = 0; k < 3; ++k)
+                if (game::at<uintptr_t>(h, kEmLinks[k]) == ch)
+                    game::at<uintptr_t>(h, kEmLinks[k]) = old_em[i][k];
+        }
         if (applied[i] >= 0 && held_by[i]) {
             uintptr_t h = held_by[i];
             if (game::at<uintptr_t>(h, 0x2104) == ch)
                 game::at<uintptr_t>(h, 0x2104) = old_2104[i];
             if (game::at<uintptr_t>(h, 0x30) == ch)
                 game::at<uintptr_t>(h, 0x30) = old_30[i]; // 0 made the Arisen fall through the floor
+            if (game::at<uintptr_t>(ch, 0x38F0) == h)
+                game::at<uintptr_t>(ch, 0x38F0) = 0;
             released[i] = t | 1;
         }
         applied[i] = -1;
+        tries[i] = 0;
         if (released[i] && int(t - released[i]) > 1200) {
             uintptr_t h = held_by[i];
-            int32_t a = h ? game::at<int32_t>(h, 0x2DD4) : 0;
+            int32_t a = h && held_player[i] ? game::at<int32_t>(h, 0x2DD4) : 0;
             if (h && (a == 0xAA || a == 0xAB))
                 action_set(h, 0);
             released[i] = 0;
@@ -540,36 +568,86 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
         }
         return;
     }
-    uintptr_t held = slot_character(s.hold_slot);
-    if (!held || held == ch)
+    bool player = want < 0x100;
+    uintptr_t held = player ? slot_character(want) : enemy_from_share_id(want - 0x100);
+    static DWORD next_why[kParty] = {};
+    bool tell = !next_why[i] || int(t - next_why[i]) >= 0;
+    if (!held || held == ch) {
+        if (tell) {
+            next_why[i] = (t + 2000) | 1;
+            logf("net: shared: party %d holds %s %d in its world: not found here", i, player ? "player" : "enemy",
+                 player ? want : want - 0x100);
+        }
         return;
-    DWORD now = GetTickCount();
-    if (applied[i] == s.hold_slot) {
+    }
+    // never on a pawn that is down, dead or being hit here: forcing a lift on a dead one
+    // (cPlActDmgCrumbleDead) crashed the host at 0x00B11C7B
+    const char *now_act = action_name(ch);
+    if (shared_party_down(i) || strstr(now_act, "Dead") || strstr(now_act, "Neardeath") || strncmp(now_act, "cPlActDmg", 9) == 0) {
+        if (tell) {
+            next_why[i] = (t + 2000) | 1;
+            logf("net: shared: party %d holds something in its world: not here, the pawn is in %s", i, now_act);
+        }
+        return;
+    }
+    if (applied[i] == want) {
         // still held in the holder's world: put the hold back when it ended here (it ended after
         // 1.5 s on the held player's own Arisen while the holder kept RT held)
-        bool holding = game::at<int32_t>(ch, 0x2DD4) == 0xA9 && game::at<int32_t>(held, 0x2DD4) == 0xAA;
-        if (holding || int(now - again[i]) < 1000)
+        bool holding = game::at<uintptr_t>(ch, 0x38F0) == held &&
+                       (player ? game::at<uintptr_t>(held, 0x2104) == ch && (s.action != 0xA9 || game::at<int32_t>(held, 0x2DD4) == 0xAA)
+                               : strstr(action_name(ch), "Lift") != nullptr); // a monster: lifted by the game's own catch
+        static DWORD next_log[kParty] = {};
+        if (!next_log[i] || int(t - next_log[i]) >= 0) { // tests: does the held one follow the pawn here?
+            next_log[i] = (t + 1000) | 1;
+            float dx = game::at<float>(held, 0x40) - game::at<float>(ch, 0x40), dy = game::at<float>(held, 0x44) - game::at<float>(ch, 0x44),
+                  dz = game::at<float>(held, 0x48) - game::at<float>(ch, 0x48);
+            logf("net: shared: party %d holding %s %d: %s, %.0f u from the pawn (height %+.0f), pawn in %s", i,
+                 player ? "player" : "enemy", player ? want : want - 0x100, holding ? "held" : "lost",
+                 std::sqrt(dx * dx + dz * dz), dy, action_name(ch));
+        }
+        if (holding || int(t - again[i]) < 1000 || (!player && tries[i] >= 3))
             return;
     }
-    again[i] = now | 1;
+    again[i] = t | 1;
     if (held_by[i] != held) { // what the held one pointed at before the hold
         old_2104[i] = game::at<uintptr_t>(held, 0x2104) == ch ? 0 : game::at<uintptr_t>(held, 0x2104);
         old_30[i] = game::at<uintptr_t>(held, 0x30) == ch ? 0 : game::at<uintptr_t>(held, 0x30);
-        logf("net: shared: player %d held: +0x2104 was %08X, +0x30 was %08X", int(s.hold_slot), unsigned(old_2104[i]),
-             unsigned(old_30[i]));
+        if (!player)
+            for (int k = 0; k < 3; ++k)
+                old_em[i][k] = game::at<uintptr_t>(held, kEmLinks[k]) == ch ? 0 : game::at<uintptr_t>(held, kEmLinks[k]);
     }
-    applied[i] = s.hold_slot;
+    applied[i] = want;
     held_by[i] = held;
+    held_player[i] = player;
     released[i] = 0;
     game::at<uintptr_t>(ch, 0x38F0) = held;
-    action_set(ch, 0xA9);
-    action_set(held, 0xAA);
-    // during a real hold the held one points at its holder at +0x2104 and +0x30 (both cleared on
-    // release; pointer scan of a hold in the guest's world, 2026-10-28); without them the forced
-    // hold ended after a second
+    game::at<int32_t>(ch, 0x3938) = s.hold_kind;
+    if (!player) {
+        // a monster: the game's own catch, from a grab start aimed at it. Forcing the lift (the
+        // holder's action, the monster's links +0x2104, +0x30, and even +0x2B98, +0x5CA4, +0x60E4
+        // as in a real lift) gave NaN places and killed the pawn. It stood 60-68 u from the pawn
+        // here, out of a grab's reach: brought to 25 u first, on the same bearing
+        float dx = game::at<float>(held, 0x40) - game::at<float>(ch, 0x40), dz = game::at<float>(held, 0x48) - game::at<float>(ch, 0x48);
+        float d = std::sqrt(dx * dx + dz * dz);
+        if (d > 25.f && d < 400.f) {
+            float to[3] = {game::at<float>(ch, 0x40) + dx / d * 25.f, game::at<float>(held, 0x44), game::at<float>(ch, 0x48) + dz / d * 25.f};
+            memcpy(reinterpret_cast<void *>(held + 0x40), to, 12);
+            for (uintptr_t off : kPosCopies)
+                memcpy(reinterpret_cast<void *>(held + off), to, 12);
+        }
+        action_set(ch, 0x39);
+        ++tries[i];
+        logf("net: shared: party %d (player %d) grabs enemy %d: grab started at it here (try %d)", i, party_to_slot(i),
+             want - 0x100, tries[i]);
+        return;
+    }
+    action_set(ch, s.action);
+    if (s.action == 0xA9)
+        action_set(held, 0xAA);
     game::at<uintptr_t>(held, 0x2104) = ch;
     game::at<uintptr_t>(held, 0x30) = ch;
-    logf("net: shared: party %d (player %d) holds player %d: hold rebuilt here", i, party_to_slot(i), int(s.hold_slot));
+    logf("net: shared: party %d (player %d) holds %s %d (action 0x%X, kind %d): hold rebuilt here", i, party_to_slot(i),
+         player ? "player" : "enemy", player ? want : want - 0x100, unsigned(s.action), int(s.hold_kind));
 }
 
 // Local party index i shows a player who is down (revive.cpp): the host's peers, or the SNAP's down[].
@@ -615,6 +693,15 @@ void shared_down_look(uintptr_t ch, int i)
         action_set(ch, 0x80);
     } else if (!down && lying && forced[i]) {
         forced[i] = false;
+        action_set(ch, 0);
+    } else if (!down && strstr(action_name(ch), "Dead") && (!next[i] || int(now - next[i]) >= 0)) {
+        // a pawn showing a player who is up must not stay dead here (one was killed by spiders on
+        // the host before its hits were blocked): the dead flag off, standing again
+        next[i] = (now + 1000) | 1;
+        uintptr_t e = game::at<uintptr_t>(ch, 0x1D18) ? game::at<uintptr_t>(game::at<uintptr_t>(ch, 0x1D18), 0) : 0;
+        if (e)
+            game::at<uint32_t>(e, 0x110) &= ~1u;
+        logf("net: shared: party %d shows a player who is up but was in %s here: standing again", i, action_name(ch));
         action_set(ch, 0);
     }
 }
@@ -664,14 +751,37 @@ void shared_apply_transform(uintptr_t ch, int i)
         memcpy(last_here[i], s.pos, sizeof last_here[i]);
         last_stage[i] = my_stage();
     }
+    static bool was_parked[kParty] = {};
     if (away) { // parked out of sight
+        static bool watched = false; // tests (test_watch_dead=1): who kills a parked pawn
+        if (!watched && !g_rp_hidden[i] && early_flag("test_watch_dead")) {
+            uintptr_t e = game::at<uintptr_t>(ch, 0x1D18) ? game::at<uintptr_t>(game::at<uintptr_t>(ch, 0x1D18), 0) : 0;
+            if (e) {
+                watched = true;
+                logf("net: shared: watching party %d's HP entry %08X (+0x110 dead flag, +8 HP)", i, unsigned(e));
+                watch_start(e + 0x110, 6, 0);
+            }
+        }
+        was_parked[i] = true;
+        // a parked pawn falls the whole time, and a long fall killed it (cPlActDmgDownDead while its
+        // player was elsewhere, test 2026-10-28 10:39): the fall restarts from a stand every second
+        static DWORD next_unfall[kParty] = {};
+        const char *act = action_name(ch);
+        if ((strstr(act, "Fall") || strstr(act, "Dead")) && (!next_unfall[i] || int(GetTickCount() - next_unfall[i]) >= 0)) {
+            next_unfall[i] = (GetTickCount() + 1000) | 1;
+            uintptr_t e = game::at<uintptr_t>(ch, 0x1D18) ? game::at<uintptr_t>(game::at<uintptr_t>(ch, 0x1D18), 0) : 0;
+            if (e)
+                game::at<uint32_t>(e, 0x110) &= ~1u;
+            using SetAction_t = void(__thiscall *)(uintptr_t, int); // quietly: no log line every second
+            reinterpret_cast<SetAction_t>(game::at<uintptr_t>(game::at<uintptr_t>(ch, 0), 0x210))(ch, 0);
+        }
         uintptr_t me = possess_arisen();
         bool at_door = elsewhere && last_stage[i] >= 0 && last_stage[i] == my_stage();
         if (me) {
-            float park[3] = {game::at<float>(me, 0x40), game::at<float>(me, 0x44) - kParkDepth, game::at<float>(me, 0x48)};
+            float park[3] = {game::at<float>(me, 0x40), game::at<float>(me, 0x44) - kParkHeight, game::at<float>(me, 0x48)};
             if (at_door) {
                 park[0] = last_here[i][0];
-                park[1] = last_here[i][1] - kParkDepth;
+                park[1] = last_here[i][1] - kParkHeight;
                 park[2] = last_here[i][2];
             }
             memcpy(pos, park, sizeof park);
@@ -685,6 +795,20 @@ void shared_apply_transform(uintptr_t ch, int i)
                  at_door ? ", under the last place it was seen here" : "");
         }
         return;
+    }
+    if (was_parked[i]) {
+        // back from under the ground: a parked pawn falls the whole time (cPlActDmgFallHeight), and
+        // put back on the floor it died of that fall (cPlActDmgDownDead, test 2026-10-28 10:04):
+        // the fall is cancelled first, and its dead flag cleared
+        was_parked[i] = false;
+        memcpy(pos, s.pos, 12);
+        for (uintptr_t off : kPosCopies)
+            memcpy(reinterpret_cast<void *>(ch + off), s.pos, 12);
+        uintptr_t e = game::at<uintptr_t>(ch, 0x1D18) ? game::at<uintptr_t>(game::at<uintptr_t>(ch, 0x1D18), 0) : 0;
+        if (e)
+            game::at<uint32_t>(e, 0x110) &= ~1u;
+        logf("net: shared: party %d back in this area (was %s): its fall cancelled", i, action_name(ch));
+        action_set(ch, 0);
     }
     // where that player is now: its last place, moved on at its speed for the age of that state plus
     // the time it took to come (about 60 ms), at most 0.3 s ahead; ground height as received
@@ -1353,6 +1477,53 @@ void send_enemies(DWORD now)
         send_raw(&m, int(sizeof(Header) + 1 + m.count * sizeof(EnemyState)));
 }
 
+// An enemy of this world by the number the group's leader gives it (its own enemy table slot; a
+// follower's enemies follow the leader's slots, g_follow): the same number in every world of a group.
+bool lead_self() { return g_role == NET_HOST || (g_shared && int(g_lead) == net_my_slot()); }
+
+int enemy_share_id(uintptr_t em)
+{
+    if (!g_enemy_ready || !em)
+        return -1;
+    if (lead_self()) {
+        EnemySlot list[128];
+        int n = enemies_snapshot(list, 128);
+        for (int k = 0; k < n; ++k)
+            if (list[k].ptr == em)
+                return list[k].index;
+        return -1;
+    }
+    EnterCriticalSection(&g_enemy_lock);
+    int id = -1;
+    for (int k = 0; k < kEnemySlots && id < 0; ++k)
+        if (g_follow[k].ptr == em && g_follow[k].host_slot >= 0)
+            id = g_follow[k].host_slot;
+    LeaveCriticalSection(&g_enemy_lock);
+    return id;
+}
+
+uintptr_t enemy_from_share_id(int id)
+{
+    if (!g_enemy_ready || id < 0 || id >= kEnemySlots)
+        return 0;
+    if (lead_self()) {
+        EnemySlot list[128];
+        int n = enemies_snapshot(list, 128);
+        for (int k = 0; k < n; ++k)
+            if (list[k].index == id) // dead ones too: a body can be lifted
+                return list[k].ptr;
+        return 0;
+    }
+    EnterCriticalSection(&g_enemy_lock);
+    uintptr_t em = 0;
+    DWORD now = GetTickCount();
+    for (int k = 0; k < kEnemySlots && !em; ++k)
+        if (g_follow[k].host_slot == id && now - g_follow[k].last < 1000)
+            em = g_follow[k].ptr;
+    LeaveCriticalSection(&g_enemy_lock);
+    return em;
+}
+
 // Shared world, guest, net thread (~30/s): who leads this guest's group. When the leader changes the
 // enemy table starts over with the new leader's pages (or this guest's own enemies when it leads).
 void area_lead_update()
@@ -1901,12 +2072,16 @@ void net_capture(uintptr_t ch, int i)
     CharState s = {};
     capture_state(ch, s);
     s.hold_slot = -1;
-    if (g_shared && i == 0) { // its action, and whom it holds (shared_grab_look)
+    s.hold_enemy = -1;
+    if (g_shared && i == 0) { // its action, and what it holds (shared_grab_look)
         s.action = int16_t(game::at<int32_t>(ch, 0x2DD4));
-        uintptr_t held = s.action == 0xA9 ? game::at<uintptr_t>(ch, 0x38F0) : 0;
+        s.hold_kind = int8_t(game::at<int32_t>(ch, 0x3938));
+        uintptr_t held = game::at<uintptr_t>(ch, 0x38F0);
         for (int p = 0; held && p < kPawns; ++p)
             if (possess_pawn_ptr(p) == held)
                 s.hold_slot = int8_t(party_to_slot(1 + p));
+        if (held && s.hold_slot < 0)
+            s.hold_enemy = int16_t(enemy_share_id(held));
     }
     EnterCriticalSection(&g_cap_lock);
     g_cap[i] = s;
@@ -2504,6 +2679,10 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         return pending_death;
     }
     f.unpaired_since = 0;
+    if (g_shared && game::at<uintptr_t>(em, 0x2104)) { // held or lifted by someone here: it goes with its hands
+        LeaveCriticalSection(&g_enemy_lock);
+        return pending_death;
+    }
     EnemyState s = g_enemy_state[f.host_slot];
     float *pos = reinterpret_cast<float *>(em + 0x40);
     float dx = s.pos[0] - pos[0], dy = s.pos[1] - pos[1], dz = s.pos[2] - pos[2];
@@ -2585,6 +2764,12 @@ int enemy_net_follow(int local_slot)
 // Hits on the guest's puppets (the Arisen and the main pawn) are dropped too: their HP is the host's.
 bool enemy_net_block_damage(uintptr_t ch)
 {
+    // shared world, any role: a pawn showing another player takes no hits here (its HP is that
+    // player's; on the host a downed guest's pawn was killed by spiders: cPlActDmgCrumbleDead)
+    if (g_shared && g_role != NET_OFF)
+        for (int p = 0; p < kPawns; ++p)
+            if (ch == possess_pawn_ptr(p) && net_puppet(1 + p))
+                return true;
     if (g_role != NET_GUEST || !g_enemy_ready || net_guest_roaming())
         return false;
     bool block = false;
@@ -2621,6 +2806,16 @@ int net_guest_my_pawn()
 }
 
 bool net_shared() { return g_shared; }
+
+bool net_puppet_ptr(uintptr_t ch)
+{
+    if (!g_shared || g_role == NET_OFF || !ch)
+        return false;
+    for (int p = 0; p < kPawns; ++p)
+        if (ch == possess_pawn_ptr(p) && net_puppet(1 + p))
+            return true;
+    return false;
+}
 
 // Shared world, guest: another player's game runs the enemies around it (its kills come from there).
 bool net_enemy_follower()
