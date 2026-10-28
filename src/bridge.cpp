@@ -104,6 +104,14 @@ void run_line(const char *line)
                 logf("bridge: egoto #%u %s at (%.0f, %.0f)", slot, list[k].name, x, z);
             }
         _snprintf(g_current, sizeof g_current, "egoto #%u", slot);
+    } else if (sscanf(line, "pawngoto %u %f %u", &slot, &r, &timeout) == 3) { // pawngoto <pawn> <r> <ms>: walk to a pawn
+        if (uintptr_t ch = possess_pawn_ptr(int(slot))) {
+            x = game::at<float>(ch, 0x40);
+            z = game::at<float>(ch, 0x48);
+            g_goto = {true, x, z, r, GetTickCount() + timeout, 0, 0, GetTickCount() + 600, 0, 0, 0};
+            logf("bridge: pawngoto %u at (%.0f, %.0f)", slot, x, z);
+        }
+        _snprintf(g_current, sizeof g_current, "pawngoto %u", slot);
     } else if (sscanf(line, "enear %f %u", &r, &timeout) == 2) {
         // enear <r> <ms> [max]: walk to the nearest living enemy within max u (default 1000; a far
         // one led the Arisen off a ledge, 2026-10-27 11:46) (tests that need kills)
@@ -381,8 +389,9 @@ void run_line(const char *line)
     } else if (sscanf(line, "flags273c %u", &slot) == 1) { // flags273c <who>: +0x273C, +0x31EA of the Arisen (0) or a pawn
         uintptr_t ch = slot == 0 ? possess_arisen() : possess_pawn_ptr(int(slot) - 1);
         if (ch)
-            logf("bridge: flags273c %u: +0x273C %08X +0x2740 %08X +0x31EA %u action %s", slot, game::at<uint32_t>(ch, 0x273C),
-                 game::at<uint32_t>(ch, 0x2740), game::at<uint8_t>(ch, 0x31EA), action_name(ch));
+            logf("bridge: flags273c %u: +0x273C %08X +0x2740 %08X +0x31EA %u action %s at %.0f %.0f", slot, game::at<uint32_t>(ch, 0x273C),
+                 game::at<uint32_t>(ch, 0x2740), game::at<uint8_t>(ch, 0x31EA), action_name(ch), game::at<float>(ch, 0x40),
+                 game::at<float>(ch, 0x48));
         _snprintf(g_current, sizeof g_current, "flags273c %u", slot);
     } else if (strncmp(line, "actname", 7) == 0) { // the current action of the Arisen and the pawns
         for (int p = -1; p < kPawns; ++p) {

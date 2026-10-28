@@ -51,9 +51,12 @@ uintptr_t hp_entry(uintptr_t ch)
     uintptr_t h = game::at<uintptr_t>(ch, 0x1D18);
     return h ? game::at<uintptr_t>(h, 0) : 0;
 }
+// pawn fields the near-death action changes and leaves changed (object dumps before / after, 2026-10-28)
+constexpr uintptr_t kKept[] = {0x3C0, 0x1BAC, 0x251C, 0x2A20, 0x4C20};
 struct Before {
     uintptr_t ch;
     uint32_t flags; // HP entry +0x110 before the near-death action
+    uint32_t kept[sizeof kKept / sizeof kKept[0]];
 };
 Before g_before[8] = {};
 } // namespace
@@ -67,7 +70,9 @@ void action_lie_down(uintptr_t ch)
         if (b.ch == ch || (!slot && !b.ch))
             slot = &b;
     if (slot && slot->ch != ch && e) {
-        *slot = Before{ch, game::at<uint32_t>(e, 0x110)};
+        *slot = Before{ch, game::at<uint32_t>(e, 0x110), {}};
+        for (size_t k = 0; k < sizeof kKept / sizeof kKept[0]; ++k)
+            slot->kept[k] = game::at<uint32_t>(ch, kKept[k]);
         logf("actions: %p lies down, HP entry flags %08X", (void *)ch, slot->flags);
     }
     action_set(ch, 0x80);
@@ -83,6 +88,12 @@ void action_stand_up(uintptr_t ch)
                      game::at<uint32_t>(e, 0x110), b.flags, game::at<uint32_t>(ch, 0x273C), game::at<uint8_t>(ch, 0x31EA));
                 game::at<uint32_t>(e, 0x110) = b.flags;
             }
+            if (early_flag("test_skull_restore"))
+                for (size_t k = 0; k < sizeof kKept / sizeof kKept[0]; ++k) {
+                    logf("actions:   +0x%X %08X -> %08X (as before lying down)", unsigned(kKept[k]), game::at<uint32_t>(ch, kKept[k]),
+                         b.kept[k]);
+                    game::at<uint32_t>(ch, kKept[k]) = b.kept[k];
+                }
             b = Before{};
         }
     game::at<uint32_t>(ch, 0x273C) &= ~0x20u;

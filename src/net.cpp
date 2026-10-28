@@ -704,17 +704,20 @@ void shared_down_look(uintptr_t ch, int i)
     static DWORD next[kParty] = {};
     static bool forced[kParty] = {};
     DWORD now = GetTickCount();
+    // the pawn lies "asleep" (0xB7 cPlActDmgSleep), not in the pawn's near-death action: that one starts
+    // the game's own pawn-down state, whose skull stayed next to the name once its player was up
+    // (screenshot review 2026-10-28). It wakes on its own after 2-5 s: put back while the player is
+    // down; up with 0xB8 cPlActDmgSleepEnd.
     bool down = shared_party_down(i);
-    bool lying = strcmp(action_name(ch), "cPlActCmcNeardeath") == 0;
+    bool lying = strcmp(action_name(ch), "cPlActDmgSleep") == 0;
     if (down && !lying && (!next[i] || int(now - next[i]) >= 0)) {
-        if (forced[i])
-            logf("net: shared: party %d (down) left the near-death action for %s: put back", i, action_name(ch));
         next[i] = (now + 500) | 1;
         forced[i] = true;
-        action_lie_down(ch);
-    } else if (!down && lying && forced[i]) {
+        action_set(ch, 0xB7);
+    } else if (!down && forced[i]) {
         forced[i] = false;
-        action_stand_up(ch);
+        if (lying)
+            action_set(ch, 0xB8);
     } else if (!down && strstr(action_name(ch), "Dead") && (!next[i] || int(now - next[i]) >= 0)) {
         // a pawn showing a player who is up must not stay dead here (one was killed by spiders on
         // the host before its hits were blocked): the dead flag off, standing again
