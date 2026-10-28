@@ -220,8 +220,33 @@ void __stdcall hk_msg_update(uintptr_t ctrl)
 }
 } // namespace
 
+// The save icon ("Enregistrement en cours. N'éteignez pas votre ordinateur.") during the mod's own
+// snapshots: uGUISaveIcon's update (vtable slot 9, FUN_006DEC80, __fastcall(icon)) scales its +0x14
+// by +0x24C each frame; 0 there for 8 s after a mod snapshot request. The save itself is untouched.
+namespace {
+using IconUpdate_t = void(__fastcall *)(uintptr_t);
+IconUpdate_t g_icon_orig = nullptr;
+volatile LONG g_quiet_until = 0;
+void __fastcall hk_icon_update(uintptr_t icon)
+{
+    LONG until = g_quiet_until;
+    if (until && int(GetTickCount() - DWORD(until)) < 0)
+        game::at<float>(icon, 0x24C) = 0.f;
+    g_icon_orig(icon);
+}
+} // namespace
+
+void actions_quiet_save() { InterlockedExchange(&g_quiet_until, LONG((GetTickCount() + 8000) | 1)); }
+
 bool actions_install()
 {
+    {
+        void *t = reinterpret_cast<void *>(0x006DEC80);
+        MH_STATUS st = MH_CreateHook(t, reinterpret_cast<void *>(&hk_icon_update), reinterpret_cast<void **>(&g_icon_orig));
+        if (st == MH_OK)
+            st = MH_EnableHook(t);
+        logf("actions: hook SaveIconUpdate 006DEC80: %s", MH_StatusToString(st));
+    }
     {
         void *t = reinterpret_cast<void *>(0x005AADC0);
         MH_STATUS st = MH_CreateHook(t, reinterpret_cast<void *>(&hk_msg_update), reinterpret_cast<void **>(&g_msg_orig));

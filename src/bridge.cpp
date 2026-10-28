@@ -815,6 +815,9 @@ void run_line(const char *line)
         if (uintptr_t gs = game::at<uintptr_t>(game::kGameMain, 0))
             InterlockedOr(reinterpret_cast<volatile LONG *>(gs + 0xB8840 + ms / 32 * 4), LONG(1u << (ms % 32)));
         _snprintf(g_current, sizeof g_current, "gsflag %u", ms);
+    } else if (strncmp(line, "quietsave", 9) == 0) { // the next save shows no save icon (tests)
+        actions_quiet_save();
+        strcpy(g_current, "quietsave");
     } else if (strncmp(line, "savereq ", 8) == 0) {
         // savereq <mode hex> <slot>: a request to the save/load machine [0x018FA518], written the
         // way the game's menu does it (FUN_00532110), only when the machine is idle (+0x648 = 0)

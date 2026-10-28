@@ -44,6 +44,8 @@ bool machine_request(uint8_t mode, uint8_t slot)
     uintptr_t sm = machine();
     if (!sm || game::at<uint8_t>(sm, 0x648) != 0)
         return false;
+    if (mode == 7) // the mod's own snapshots (quests, a player joining): no "Enregistrement en cours"
+        actions_quiet_save();
     game::at<int32_t>(sm, 0xA44) = -1;
     game::at<int32_t>(sm, 0xA48) = -1;
     game::at<uint8_t>(sm, 0x638) = slot;
