@@ -197,8 +197,38 @@ void __fastcall hk_set214(uintptr_t ch, void *edx, int n, uint32_t a, uint32_t b
 }
 } // namespace
 
+// A pawn showing a player says no pawn lines ("Ah, il en est donc ainsi..." from the guest's pawn on the
+// host, screenshot review 2026-10-28). FUN_005AADC0 (__stdcall(ctrl), `ret 4`) is the per-pawn message
+// controller's update: ctrl+4 -> +4 is its character, and the lines it hands to sAIMessageCtrl
+// ([0x018D9270], by mCmcId) wait at ctrl+0x8C, count at ctrl+0x10C. That count is emptied first for
+// such pawns (and for the hidden ones).
+namespace {
+using MsgUpdate_t = void(__stdcall *)(uintptr_t);
+MsgUpdate_t g_msg_orig = nullptr;
+volatile LONG g_muted = 0;
+void __stdcall hk_msg_update(uintptr_t ctrl)
+{
+    uintptr_t owner = ctrl ? game::at<uintptr_t>(ctrl, 4) : 0;
+    uintptr_t ch = owner ? game::at<uintptr_t>(owner, 4) : 0;
+    if (ch && (net_puppet_ptr(ch) || net_hidden_pawn_ptr(ch)) && game::at<uint32_t>(ctrl, 0x10C)) {
+        game::at<uint32_t>(ctrl, 0x10C) = 0;
+        LONG k = InterlockedIncrement(&g_muted);
+        if (k <= 5 || k % 50 == 0)
+            logf("actions: pawn %p shows a player: its pawn line dropped (%ld so far)", (void *)ch, k);
+    }
+    g_msg_orig(ctrl);
+}
+} // namespace
+
 bool actions_install()
 {
+    {
+        void *t = reinterpret_cast<void *>(0x005AADC0);
+        MH_STATUS st = MH_CreateHook(t, reinterpret_cast<void *>(&hk_msg_update), reinterpret_cast<void **>(&g_msg_orig));
+        if (st == MH_OK)
+            st = MH_EnableHook(t);
+        logf("actions: hook PawnMessageUpdate 005AADC0: %s", MH_StatusToString(st));
+    }
     for (auto [addr, hook, orig] : {std::tuple<uintptr_t, void *, void **>{0x00B540B0, reinterpret_cast<void *>(&hk_set210),
                                                                             reinterpret_cast<void **>(&g_set210_orig)},
                                     std::tuple<uintptr_t, void *, void **>{0x00B6B270, reinterpret_cast<void *>(&hk_set214),
