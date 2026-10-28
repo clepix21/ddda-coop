@@ -375,10 +375,18 @@ void run_line(const char *line)
         if (sscanf(line + 4, "%u %x", &who, &number) == 2)
             action_queue(int(who), int(number));
         _snprintf(g_current, sizeof g_current, "act %u %X", who, number);
+    } else if (sscanf(line, "grabtest %u", &slot) == 1) { // grabtest <pawn>: the Arisen holds it (forced actions)
+        action_queue_grab(int(slot));
+        _snprintf(g_current, sizeof g_current, "grabtest %u", slot);
     } else if (strncmp(line, "actname", 7) == 0) { // the current action of the Arisen and the pawns
-        logf("bridge: actname arisen %s", action_name(possess_arisen()));
-        for (int p = 0; p < kPawns; ++p)
-            logf("bridge: actname pawn %d %s", p, action_name(possess_pawn_ptr(p)));
+        for (int p = -1; p < kPawns; ++p) {
+            uintptr_t ch = p < 0 ? possess_arisen() : possess_pawn_ptr(p);
+            if (!ch)
+                continue;
+            logf("bridge: actname %s %d %s no %X (+2DD0 %08X +2DD4 %08X +2DDC %08X) lift %08X kind %d", p < 0 ? "arisen" : "pawn", p,
+                 action_name(ch), game::at<uint32_t>(ch, 0x2DD8), game::at<uint32_t>(ch, 0x2DD0), game::at<uint32_t>(ch, 0x2DD4),
+                 game::at<uint32_t>(ch, 0x2DDC), game::at<uint32_t>(ch, 0x38F0), game::at<int32_t>(ch, 0x3938));
+        }
         strcpy(g_current, "actname");
     } else if (strncmp(line, "questadd ", 9) == 0) { // questadd <id hex>: FUN_00484D90 on the game thread (tests)
         unsigned id = 0;

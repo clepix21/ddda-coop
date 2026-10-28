@@ -41,9 +41,22 @@ void action_set(uintptr_t ch, int number)
 
 void action_queue(int who, int number) { InterlockedExchange(&g_req, LONG(((who + 1) << 16) | (number & 0xFFFF))); }
 
+namespace {
+volatile LONG g_grab_req = 0; // tests: 1 + pawn the Arisen holds
+}
+void action_queue_grab(int pawn) { InterlockedExchange(&g_grab_req, 1 + pawn); }
+
 // Game thread, from the Arisen's update.
 void action_tick(uintptr_t arisen)
 {
+    if (LONG g = InterlockedExchange(&g_grab_req, 0)) { // tests: the Arisen holds pawn g - 1
+        uintptr_t held = possess_pawn_ptr(int(g) - 1);
+        if (held) {
+            game::at<uintptr_t>(arisen, 0x38F0) = held;
+            action_set(arisen, 0xA9);
+            action_set(held, 0xAA);
+        }
+    }
     LONG r = InterlockedExchange(&g_req, 0);
     if (!r)
         return;

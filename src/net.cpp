@@ -97,6 +97,8 @@ struct CharState {
     uint8_t cmd[kCmdCopyLen];      // command object +0x0C..+0x5F (sticks, move state, buttons)
     uint8_t cmd_extra[kCmdExtraLen]; // command object +0x88..+0x8F
     float hp, hp_max;               // [[ch+0x1D18]]+8, +0xC (hp_max 0 = unknown)
+    int16_t action;                 // shared world: its action number (ch+0x2DD4, actions.cpp)
+    int8_t hold_slot;               // holding another player (action 0xA9): that player's place, else -1
 };
 struct StageState {
     int32_t stage, point;           // current stage and entry point ([0x018FA4BC]+0x34 / +0x44)
@@ -466,6 +468,110 @@ void shared_apply_commands(uintptr_t ch, int i)
     game::at<uint32_t>(cmd, 0x34) = release;
 }
 
+// Local party index i (1..3, a pawn) shows which player (place 0 = host, 1 + guest), -1 = none.
+int party_to_slot(int i)
+{
+    if (i < 1 || i >= kParty)
+        return -1;
+    if (g_role == NET_HOST) {
+        for (int k = 0; k < kMaxPeers; ++k)
+            if (g_peers[k].used && g_peers[k].pawn == i - 1)
+                return 1 + k;
+        return -1;
+    }
+    if (!g_have_snap)
+        return -1;
+    EnterCriticalSection(&g_snap_lock);
+    int slot = -1, me = g_snap.my_pawn;
+    if (i == 1 + me)
+        slot = 0;
+    else
+        for (int s = 1; s < 4; ++s)
+            if (g_snap.pawn_of[s] == i - 1)
+                slot = s;
+    LeaveCriticalSection(&g_snap_lock);
+    return slot;
+}
+
+// The character showing player `slot` in this world: its own Arisen, or the pawn showing it.
+uintptr_t slot_character(int slot)
+{
+    if (slot < 0)
+        return 0;
+    if (slot == net_my_slot())
+        return possess_arisen();
+    for (int i = 1; i < kParty; ++i)
+        if (party_to_slot(i) == slot)
+            return possess_pawn_ptr(i - 1);
+    return 0;
+}
+
+// Game thread: another player holding a third one from behind (RT on a person, action 0xA9 with the
+// held character at ch+0x38F0, the held one in 0xAA) is rebuilt here: the pawn showing the holder
+// holds the character showing the held one (this player's own Arisen when it is the one held). In
+// the other worlds the holder's pawn starts a grab (RT reaches it) but a pawn's grab does not catch a
+// player's Arisen (pair test 2026-10-28), so the hold is set the way a grab ends: target, then both
+// actions. Afterwards the holder's replayed RT keeps it and its release ends it, as in its world.
+void shared_grab_look(uintptr_t ch, int i, const CharState &s)
+{
+    static int applied[kParty] = {-1, -1, -1, -1};
+    static DWORD again[kParty] = {}, released[kParty] = {};
+    static uintptr_t held_by[kParty] = {}, old_2104[kParty] = {}, old_30[kParty] = {};
+    DWORD t = GetTickCount();
+    if (s.action != 0xA9 || s.hold_slot < 0) {
+        // let go in the holder's world: the links set here go, and the held one stands up if its
+        // release action is still running 1.2 s later (it stayed in DmgHagaijimeEnd for 10 s)
+        if (applied[i] >= 0 && held_by[i]) {
+            uintptr_t h = held_by[i];
+            if (game::at<uintptr_t>(h, 0x2104) == ch)
+                game::at<uintptr_t>(h, 0x2104) = old_2104[i];
+            if (game::at<uintptr_t>(h, 0x30) == ch)
+                game::at<uintptr_t>(h, 0x30) = old_30[i]; // 0 made the Arisen fall through the floor
+            released[i] = t | 1;
+        }
+        applied[i] = -1;
+        if (released[i] && int(t - released[i]) > 1200) {
+            uintptr_t h = held_by[i];
+            int32_t a = h ? game::at<int32_t>(h, 0x2DD4) : 0;
+            if (h && (a == 0xAA || a == 0xAB))
+                action_set(h, 0);
+            released[i] = 0;
+            held_by[i] = 0;
+        }
+        return;
+    }
+    uintptr_t held = slot_character(s.hold_slot);
+    if (!held || held == ch)
+        return;
+    DWORD now = GetTickCount();
+    if (applied[i] == s.hold_slot) {
+        // still held in the holder's world: put the hold back when it ended here (it ended after
+        // 1.5 s on the held player's own Arisen while the holder kept RT held)
+        bool holding = game::at<int32_t>(ch, 0x2DD4) == 0xA9 && game::at<int32_t>(held, 0x2DD4) == 0xAA;
+        if (holding || int(now - again[i]) < 1000)
+            return;
+    }
+    again[i] = now | 1;
+    if (held_by[i] != held) { // what the held one pointed at before the hold
+        old_2104[i] = game::at<uintptr_t>(held, 0x2104) == ch ? 0 : game::at<uintptr_t>(held, 0x2104);
+        old_30[i] = game::at<uintptr_t>(held, 0x30) == ch ? 0 : game::at<uintptr_t>(held, 0x30);
+        logf("net: shared: player %d held: +0x2104 was %08X, +0x30 was %08X", int(s.hold_slot), unsigned(old_2104[i]),
+             unsigned(old_30[i]));
+    }
+    applied[i] = s.hold_slot;
+    held_by[i] = held;
+    released[i] = 0;
+    game::at<uintptr_t>(ch, 0x38F0) = held;
+    action_set(ch, 0xA9);
+    action_set(held, 0xAA);
+    // during a real hold the held one points at its holder at +0x2104 and +0x30 (both cleared on
+    // release; pointer scan of a hold in the guest's world, 2026-10-28); without them the forced
+    // hold ended after a second
+    game::at<uintptr_t>(held, 0x2104) = ch;
+    game::at<uintptr_t>(held, 0x30) = ch;
+    logf("net: shared: party %d (player %d) holds player %d: hold rebuilt here", i, party_to_slot(i), int(s.hold_slot));
+}
+
 // Local party index i shows a player who is down (revive.cpp): the host's peers, or the SNAP's down[].
 bool shared_party_down(int i)
 {
@@ -539,6 +645,10 @@ void shared_apply_transform(uintptr_t ch, int i)
     EnterCriticalSection(&g_cap_lock);
     CharState s = g_rp[i];
     bool away = g_rp_away[i] || g_rp_hidden[i];
+    LeaveCriticalSection(&g_cap_lock);
+    if (!away)
+        shared_grab_look(ch, i, s);
+    EnterCriticalSection(&g_cap_lock);
     float vel[3];
     memcpy(vel, g_rp_vel[i], sizeof vel);
     float age = g_rp_at[i] ? (GetTickCount() - g_rp_at[i]) / 1000.f : 0.f;
@@ -1773,6 +1883,14 @@ void net_capture(uintptr_t ch, int i)
         return;
     CharState s = {};
     capture_state(ch, s);
+    s.hold_slot = -1;
+    if (g_shared && i == 0) { // its action, and whom it holds (shared_grab_look)
+        s.action = int16_t(game::at<int32_t>(ch, 0x2DD4));
+        uintptr_t held = s.action == 0xA9 ? game::at<uintptr_t>(ch, 0x38F0) : 0;
+        for (int p = 0; held && p < kPawns; ++p)
+            if (possess_pawn_ptr(p) == held)
+                s.hold_slot = int8_t(party_to_slot(1 + p));
+    }
     EnterCriticalSection(&g_cap_lock);
     g_cap[i] = s;
     g_cap_tick[i] = GetTickCount() | 1;
