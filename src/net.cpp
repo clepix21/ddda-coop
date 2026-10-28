@@ -539,6 +539,22 @@ uintptr_t enemy_from_share_id(int id);
 // the hold is set the way a grab ends: target and kind, the holder's action, the held one's links
 // (+0x2104 and +0x30 = holder, seen on a held pawn and on a lifted uEm9000). Afterwards the holder's
 // replayed RT keeps it and its release ends it, as in its world.
+// In front of a character at distance d: its facing from the quaternion at +0x50 (x, y, z, w), the
+// rotated +z axis (GRAB_FRONT_SIGN=-1 in coop.ini flips it, tests).
+void place_in_front(uintptr_t ch, uintptr_t other, float d)
+{
+    float qx = game::at<float>(ch, 0x50), qy = game::at<float>(ch, 0x54), qz = game::at<float>(ch, 0x58), qw = game::at<float>(ch, 0x5C);
+    float fx = 2.f * (qx * qz + qw * qy), fz = 1.f - 2.f * (qx * qx + qy * qy);
+    float n = std::sqrt(fx * fx + fz * fz);
+    if (!(n > 0.01f))
+        return;
+    static const float sign = early_flag("grab_front_flip") ? -1.f : 1.f;
+    float to[3] = {game::at<float>(ch, 0x40) + sign * fx / n * d, game::at<float>(other, 0x44), game::at<float>(ch, 0x48) + sign * fz / n * d};
+    memcpy(reinterpret_cast<void *>(other + 0x40), to, 12);
+    for (uintptr_t off : kPosCopies)
+        memcpy(reinterpret_cast<void *>(other + off), to, 12);
+}
+
 void shared_grab_look(uintptr_t ch, int i, const CharState &s)
 {
     static int applied[kParty] = {-1, -1, -1, -1}; // held here: 0..3 a player, 0x100 + id an enemy
@@ -550,6 +566,14 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     static uintptr_t old_em[kParty][3] = {};
     static bool held_player[kParty] = {};
     static int tries[kParty] = {}; // aimed grabs at a monster for this hold (each one moves it a little)
+    static uintptr_t pinned[kParty] = {}; // the monster kept in front of the pawn while its grab starts
+    static DWORD pinned_until[kParty] = {};
+    if (pinned[i] && int(GetTickCount() - pinned_until[i]) < 0) {
+        if (game::at<uintptr_t>(ch, 0x38F0) == pinned[i] && strcmp(action_name(ch), "cPlActGrabStart") == 0)
+            place_in_front(ch, pinned[i], 30.f);
+        else
+            pinned[i] = 0;
+    }
     DWORD t = GetTickCount();
     int want = !hold_action(s.action) ? -1 : s.hold_slot >= 0 ? s.hold_slot : s.hold_enemy >= 0 ? 0x100 + s.hold_enemy : -1;
     if (want < 0) {
@@ -648,14 +672,11 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
         // holder's action, the monster's links +0x2104, +0x30, and even +0x2B98, +0x5CA4, +0x60E4
         // as in a real lift) gave NaN places and killed the pawn. It stood 60-68 u from the pawn
         // here, out of a grab's reach: brought to 25 u first, on the same bearing
-        float dx = game::at<float>(held, 0x40) - game::at<float>(ch, 0x40), dz = game::at<float>(held, 0x48) - game::at<float>(ch, 0x48);
-        float d = std::sqrt(dx * dx + dz * dz);
-        if (d > 25.f && d < 400.f) {
-            float to[3] = {game::at<float>(ch, 0x40) + dx / d * 25.f, game::at<float>(held, 0x44), game::at<float>(ch, 0x48) + dz / d * 25.f};
-            memcpy(reinterpret_cast<void *>(held + 0x40), to, 12);
-            for (uintptr_t off : kPosCopies)
-                memcpy(reinterpret_cast<void *>(held + off), to, 12);
-        }
+        // pushed back to 47-59 u by the bodies when brought to 25 u on its bearing, and maybe not in front:
+        // now 30 u in front of the pawn's facing, and kept there for 0.4 s while the grab starts
+        place_in_front(ch, held, 30.f);
+        pinned[i] = held;
+        pinned_until[i] = (GetTickCount() + 400) | 1;
         action_set(ch, 0x39);
         ++tries[i];
         logf("net: shared: party %d (player %d) grabs enemy %d: grab started at it here (try %d)", i, party_to_slot(i),
@@ -758,6 +779,8 @@ void shared_apply_transform(uintptr_t ch, int i)
     bool away = g_rp_away[i] || g_rp_hidden[i];
     bool elsewhere = g_rp_away[i] && !g_rp_hidden[i]; // a player in another area (not an unused pawn)
     LeaveCriticalSection(&g_cap_lock);
+    if (!s.valid && !away)
+        return; // a player with no state yet (just connected): its pawn is left where it is
     if (!away)
         shared_grab_look(ch, i, s);
     EnterCriticalSection(&g_cap_lock);
@@ -2854,6 +2877,11 @@ bool net_puppet(int i)
 {
     if (!g_shared || i < 1 || i >= kParty)
         return false;
+    // a pawn given to a connected player stays that player's, news or not: while a guest loaded an area it
+    // sent no character for seconds, its pawn on the host went back to plain AI, the fall check ran on
+    // it under the ground and it died (cPlActDmgDownDead, dead flag watch 2026-10-28 19:46)
+    if (party_to_slot(i) >= 0)
+        return true;
     EnterCriticalSection(&g_cap_lock);
     // 2 s without news before the pawn goes back to its AI: over the internet a player's states came in
     // bursts and its pawn walked off on its own meanwhile (first real test)

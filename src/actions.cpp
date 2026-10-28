@@ -249,8 +249,42 @@ void __fastcall hk_icon_update(uintptr_t icon)
 
 void actions_quiet_save() { InterlockedExchange(&g_quiet_until, LONG((GetTickCount() + 8000) | 1)); }
 
+// The other HP change, FUN_00888DA0 (EAX = character, stack: float change, int, char; `ret 12`; 49
+// callers: falls, landings, ...): a pawn showing a player, or a hidden one, loses no HP through it.
+// After the fall check was skipped, a pawn parked under the ground for minutes still died when its
+// player came back (cPlActDmgDownDead, monster grab test 2026-10-28 19:28).
+extern "C" bool __cdecl actions_hp_filter(uintptr_t ch, float change) asm("actions_hp_filter");
+extern "C" void *g_hp_orig asm("g_hp_orig");
+void *g_hp_orig = nullptr;
+extern "C" bool __cdecl actions_hp_filter(uintptr_t ch, float change)
+{
+    return change < 0.f && (net_puppet_ptr(ch) || net_hidden_pawn_ptr(ch));
+}
+extern "C" __attribute__((naked)) void actions_hp_thunk() asm("actions_hp_thunk");
+extern "C" __attribute__((naked)) void actions_hp_thunk()
+{
+    asm volatile("pushl %eax\n\t"
+                 "pushl 8(%esp)\n\t" // the change (first stack argument, past the pushed EAX)
+                 "pushl %eax\n\t"
+                 "call actions_hp_filter\n\t"
+                 "addl $8, %esp\n\t"
+                 "testb %al, %al\n\t"
+                 "popl %eax\n\t"
+                 "jnz 1f\n\t"
+                 "jmp *g_hp_orig\n"
+                 "1:\n\t"
+                 "ret $12\n\t");;
+}
+
 bool actions_install()
 {
+    {
+        void *t = reinterpret_cast<void *>(0x00888DA0);
+        MH_STATUS st = MH_CreateHook(t, reinterpret_cast<void *>(&actions_hp_thunk), &g_hp_orig);
+        if (st == MH_OK)
+            st = MH_EnableHook(t);
+        logf("actions: hook HpChange 00888DA0: %s", MH_StatusToString(st));
+    }
     {
         void *t = reinterpret_cast<void *>(0x006DEC80);
         MH_STATUS st = MH_CreateHook(t, reinterpret_cast<void *>(&hk_icon_update), reinterpret_cast<void **>(&g_icon_orig));
