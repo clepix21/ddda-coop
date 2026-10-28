@@ -645,6 +645,7 @@ void shared_apply_transform(uintptr_t ch, int i)
     EnterCriticalSection(&g_cap_lock);
     CharState s = g_rp[i];
     bool away = g_rp_away[i] || g_rp_hidden[i];
+    bool elsewhere = g_rp_away[i] && !g_rp_hidden[i]; // a player in another area (not an unused pawn)
     LeaveCriticalSection(&g_cap_lock);
     if (!away)
         shared_grab_look(ch, i, s);
@@ -654,10 +655,25 @@ void shared_apply_transform(uintptr_t ch, int i)
     float age = g_rp_at[i] ? (GetTickCount() - g_rp_at[i]) / 1000.f : 0.f;
     LeaveCriticalSection(&g_cap_lock);
     float *pos = reinterpret_cast<float *>(ch + 0x40);
-    if (away) { // parked under the local Arisen, out of sight
+    // the last place each player was seen in this area: when it goes to another area its pawn waits
+    // under that place (usually the door it took), so its arrow on the map ("Carte" shows the pawns)
+    // tells where it went; an unused pawn, or a player never seen here, waits under this Arisen
+    static float last_here[kParty][3] = {};
+    static int32_t last_stage[kParty] = {-1, -1, -1, -1};
+    if (!away) {
+        memcpy(last_here[i], s.pos, sizeof last_here[i]);
+        last_stage[i] = my_stage();
+    }
+    if (away) { // parked out of sight
         uintptr_t me = possess_arisen();
+        bool at_door = elsewhere && last_stage[i] >= 0 && last_stage[i] == my_stage();
         if (me) {
             float park[3] = {game::at<float>(me, 0x40), game::at<float>(me, 0x44) - kParkDepth, game::at<float>(me, 0x48)};
+            if (at_door) {
+                park[0] = last_here[i][0];
+                park[1] = last_here[i][1] - kParkDepth;
+                park[2] = last_here[i][2];
+            }
             memcpy(pos, park, sizeof park);
             for (uintptr_t off : kPosCopies)
                 memcpy(reinterpret_cast<void *>(ch + off), park, 12);
@@ -665,7 +681,8 @@ void shared_apply_transform(uintptr_t ch, int i)
         static DWORD next_park_log[kParty] = {};
         if (!next_park_log[i] || int(GetTickCount() - next_park_log[i]) >= 0) {
             next_park_log[i] = GetTickCount() + 5000;
-            logf("net: shared: party %d shows a player in another area: kept out of sight at y %.0f", i, pos[1]);
+            logf("net: shared: party %d shows a player in another area: kept out of sight at y %.0f%s", i, pos[1],
+                 at_door ? ", under the last place it was seen here" : "");
         }
         return;
     }
