@@ -15,6 +15,11 @@
 // one-PC stand-in had tested the accept-before-request way, 2026-10-27). Friends' rich presence is
 // requested every 10 s, and the friends seen in the game are logged when that list changes.
 //
+// A session that went quiet (no packet from that friend for 6 s, after it had talked): its state is
+// logged and the session closed, at most every 20 s per friend; the next packets open a fresh one.
+// First real test (2026-10-27 23:05): both guests and the host stopped hearing each other at the same
+// moment while all three kept sending, and the link only came back 2.5 min later.
+//
 // Only the net thread calls into this file.
 #include <windows.h>
 
@@ -74,6 +79,10 @@ bool fill_real()
         return false;
     g_f.RequestFriendRichPresence = reinterpret_cast<decltype(g_f.RequestFriendRichPresence)>(
         reinterpret_cast<void *>(GetProcAddress(m, "SteamAPI_ISteamFriends_RequestFriendRichPresence")));
+    g_f.CloseP2PSessionWithUser = reinterpret_cast<decltype(g_f.CloseP2PSessionWithUser)>(
+        reinterpret_cast<void *>(GetProcAddress(m, "SteamAPI_ISteamNetworking_CloseP2PSessionWithUser")));
+    g_f.GetP2PSessionState = reinterpret_cast<decltype(g_f.GetP2PSessionState)>(
+        reinterpret_cast<void *>(GetProcAddress(m, "SteamAPI_ISteamNetworking_GetP2PSessionState")));
     g_f.net = net();
     g_f.user = user();
     g_f.friends = friends();
@@ -98,6 +107,55 @@ template <class Fn> void for_each_candidate(Fn fn)
         uint64_t id = g_f.GetFriendByIndex(g_f.friends, i, kFriendFlagImmediate);
         if (id && in_our_game(id))
             fn(id);
+    }
+}
+
+// Friends heard from: when last, and when their session was last reset.
+struct Heard {
+    uint64_t id;
+    DWORD last_rx, last_reset;
+};
+Heard g_heard[8] = {};
+constexpr DWORD kQuietMs = 6000, kResetEveryMs = 20000;
+
+void heard_from(uint64_t id)
+{
+    Heard *slot = nullptr, *free_slot = nullptr;
+    for (Heard &h : g_heard) {
+        if (h.id == id)
+            slot = &h;
+        else if (!h.id && !free_slot)
+            free_slot = &h;
+    }
+    if (!slot)
+        slot = free_slot ? free_slot : &g_heard[0];
+    if (slot->id != id)
+        *slot = Heard{id, 0, 0};
+    slot->last_rx = GetTickCount() | 1;
+}
+
+// A friend that talked and went quiet: log its session, close it so the next send starts afresh.
+void reset_quiet_sessions()
+{
+    DWORD now = GetTickCount();
+    for (Heard &h : g_heard) {
+        if (!h.id || !h.last_rx || int(now - h.last_rx) < int(kQuietMs))
+            continue;
+        if (h.last_reset && int(now - h.last_reset) < int(kResetEveryMs))
+            continue;
+        h.last_reset = now | 1;
+        P2PSessionState st = {};
+        bool known = g_f.GetP2PSessionState && g_f.GetP2PSessionState(g_f.net, h.id, &st);
+        if (known)
+            logf("steam: friend ...%04u quiet for %lu ms: session active %u, connecting %u, error %u, relay %u, "
+                 "%d packets queued; closed, the next packets open a new one",
+                 short_id(h.id), now - h.last_rx, st.active, st.connecting, st.error, st.using_relay, st.packets_queued);
+        else
+            logf("steam: friend ...%04u quiet for %lu ms: no session state; closed, the next packets open a new one",
+                 short_id(h.id), now - h.last_rx);
+        if (g_f.CloseP2PSessionWithUser)
+            g_f.CloseP2PSessionWithUser(g_f.net, h.id);
+        g_f.AcceptP2PSessionWithUser(g_f.net, h.id);
     }
 }
 
@@ -154,6 +212,7 @@ void link_steam_tick()
             logf("steam: friends in Dragon's Dogma:%s", list.empty() ? " none" : list.c_str());
         }
     }
+    reset_quiet_sessions();
     if (g_role == NET_HOST) {
         for_each_candidate([](uint64_t id) {
             g_f.AcceptP2PSessionWithUser(g_f.net, id);
@@ -206,6 +265,7 @@ int link_steam_recv(void *buf, int cap, uint64_t *from_out)
         if (!g_f.ReadP2PPacket(g_f.net, buf, uint32_t(cap), &got, &from, kChannel))
             return -1;
         if (g_role == NET_HOST || from == g_peer) {
+            heard_from(from);
             *from_out = from;
             return int(got);
         }

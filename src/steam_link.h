@@ -12,6 +12,12 @@ struct FriendGameInfo {
     uint16_t port, query_port;
     uint64_t lobby;
 };
+struct P2PSessionState {
+    uint8_t active, connecting, error, using_relay;
+    int32_t bytes_queued, packets_queued;
+    uint32_t remote_ip;
+    uint16_t remote_port;
+};
 #pragma pack(pop)
 
 struct SteamFns {
@@ -28,6 +34,8 @@ struct SteamFns {
     const char *(*GetFriendRichPresence)(void *friends, uint64_t user, const char *key) = nullptr;
     bool (*SetRichPresence)(void *friends, const char *key, const char *value) = nullptr;
     void (*RequestFriendRichPresence)(void *friends, uint64_t user) = nullptr; // optional (may be missing)
+    bool (*CloseP2PSessionWithUser)(void *net, uint64_t user) = nullptr;                  // optional
+    bool (*GetP2PSessionState)(void *net, uint64_t user, P2PSessionState *state) = nullptr; // optional
 };
 
 // steam_mock.cpp: tests only. Two copies on one PC with fake accounts, packets over localhost UDP.
