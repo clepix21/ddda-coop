@@ -11,6 +11,12 @@
 // 4 s; it stays where it was. Nothing happens when the state is the one this world already has.
 #include <windows.h>
 
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <vector>
+
 #include "game.h"
 #include "mod.h"
 
@@ -33,7 +39,54 @@ CRITICAL_SECTION g_lock;
 volatile LONG g_ready = 0;
 std::string g_pending;          // another world's quest state to take
 uint32_t g_pending_crc = 0;
+constexpr uintptr_t kQuestManager = 0x018FA4F0, kGetOrCreateQuest = 0x00484D90, kStartQuest = 0x0078D6D0;
+constexpr int kLiveMax = 16;
+uint32_t g_live_ids[kLiveMax] = {}; // quests to add on the game thread (g_lock)
+int g_live_n = 0;
+std::vector<uint32_t> g_journal;   // this world's journal, copied on the game thread (g_lock)
+bool g_journal_known = false;
 constexpr DWORD kQuietMs = 5000, kStepMs = 20000;
+
+std::vector<uint32_t> state_quest_ids(const std::string &state)
+{
+    std::vector<uint32_t> ids;
+    size_t a = state.find("name=\"mQuestData\""), b = state.find("name=\"mQuestSubData\"", a);
+    if (a == std::string::npos)
+        return ids;
+    const std::string key = "name=\"mQuestID\" value=\"";
+    for (size_t p = state.find(key, a); p != std::string::npos && (b == std::string::npos || p < b);
+         p = state.find(key, p + 1)) {
+        long v = strtol(state.c_str() + p + key.size(), nullptr, 10);
+        if (v != -1)
+            ids.push_back(uint32_t(v));
+    }
+    return ids;
+}
+
+// Another world's quest state that only adds quests to this world's journal: those quests are added
+// live (no reload). Returns false when anything else differs (a quest finished or gone): reload.
+bool try_live(const std::string &theirs)
+{
+    std::vector<uint32_t> want = state_quest_ids(theirs), have;
+    EnterCriticalSection(&g_lock);
+    bool known = g_journal_known;
+    have = g_journal;
+    LeaveCriticalSection(&g_lock);
+    if (!known || want.empty())
+        return false;
+    for (uint32_t h : have)
+        if (std::find(want.begin(), want.end(), h) == want.end())
+            return false; // a quest this world has and the other has not
+    int added = 0;
+    for (uint32_t w : want)
+        if (std::find(have.begin(), have.end(), w) == have.end()) {
+            quest_live_queue(w);
+            ++added;
+        }
+    logf("quests: the other player's quest list adds %d quest(s) to this world's %u: added live, no reload", added,
+         unsigned(have.size()));
+    return true;
+}
 
 void go(Step s, DWORD now)
 {
@@ -88,6 +141,20 @@ void quest_sync_tick()
         LONG dirty = g_dirty_at;
         if (!quiet)
             return;
+        if (pending) { // only new quests: added live
+            EnterCriticalSection(&g_lock);
+            std::string theirs = g_pending;
+            uint32_t crc = g_pending_crc;
+            LeaveCriticalSection(&g_lock);
+            if (try_live(theirs)) {
+                g_last_crc = crc;
+                g_my_list = save_quest_list_crc(theirs);
+                EnterCriticalSection(&g_lock);
+                g_pending.clear();
+                LeaveCriticalSection(&g_lock);
+                return;
+            }
+        }
         if (pending || (dirty && int(now - DWORD(dirty)) > int(kQuietMs))) {
             storage_own_raw(file, g_own_before);
             if (save_machine_request(7, 0)) {
@@ -199,3 +266,67 @@ void quest_sync_tick()
 }
 
 bool quest_sync_busy() { return g_step != IDLE; }
+
+// Live quest list (study, 2026-10-28): sQuestManager [0x018FA4F0] keeps the journal as an MtArray at
+// +0x128 (count +0x12C, capacity +0x130, items +0x138: quest objects, id at +0x30). Accepting a quest
+// in quest.sav wrote the count from FUN_00484CD0, called by FUN_00484D90(manager, id) (__stdcall,
+// `ret 8`; a cdecl call crashed the game): "get or create": returns the quest when listed, else
+// creates it (0x138 bytes), loads its resources and appends it. id = (quest number << 16) |
+// sub-number (0x350000 there). The quest scripts' "start quest" orders (FUN_0078FBB0 cases 0xE and
+// 0x1F) then run FUN_0078D6D0 (EDX = quest): quest+0x2C |= 2 and FUN_00487500 (ECX = manager).
+
+void quest_live_queue(uint32_t id)
+{
+    EnterCriticalSection(&g_lock);
+    if (g_live_n < kLiveMax)
+        g_live_ids[g_live_n++] = id;
+    LeaveCriticalSection(&g_lock);
+}
+
+int quest_live_count()
+{
+    uintptr_t qm = game::at<uintptr_t>(kQuestManager, 0);
+    return qm ? int(game::at<uint32_t>(qm, 0x12C)) : -1;
+}
+
+// Game thread, every frame of the Arisen: add the queued quests, then copy the journal's ids.
+void quest_live_tick()
+{
+    if (!g_ready)
+        return;
+    uintptr_t qm = game::at<uintptr_t>(kQuestManager, 0);
+    uint32_t ids[kLiveMax];
+    EnterCriticalSection(&g_lock);
+    int n = qm ? g_live_n : 0;
+    memcpy(ids, g_live_ids, sizeof ids);
+    if (qm)
+        g_live_n = 0;
+    LeaveCriticalSection(&g_lock);
+    for (int k = 0; k < n; ++k) {
+        int before = quest_live_count();
+        using GetOrCreate_t = uintptr_t(__stdcall *)(uintptr_t, int32_t);
+        uintptr_t q = reinterpret_cast<GetOrCreate_t>(kGetOrCreateQuest)(qm, int32_t(ids[k]));
+        uint32_t flags_before = q ? game::at<uint32_t>(q, 0x2C) : 0;
+        if (q) {
+            uintptr_t fn = kStartQuest, quest = q;
+            asm volatile("call *%%ecx"
+                         : "+c"(fn), "+d"(quest)
+                         :
+                         : "eax", "memory", "cc");
+        }
+        logf("quests: live add %08X: quest object %p, flags %08X -> %08X, journal %d -> %d", unsigned(ids[k]),
+             (void *)q, flags_before, q ? game::at<uint32_t>(q, 0x2C) : 0, before, quest_live_count());
+    }
+    std::vector<uint32_t> j;
+    if (qm) {
+        uint32_t count = game::at<uint32_t>(qm, 0x12C);
+        uintptr_t items = game::at<uintptr_t>(qm, 0x138);
+        for (uint32_t k = 0; items && k < count && k < 256; ++k)
+            if (uintptr_t q = game::at<uintptr_t>(items, k * 4))
+                j.push_back(game::at<uint32_t>(q, 0x30));
+    }
+    EnterCriticalSection(&g_lock);
+    g_journal.swap(j);
+    g_journal_known = qm != 0;
+    LeaveCriticalSection(&g_lock);
+}

@@ -370,6 +370,21 @@ void run_line(const char *line)
                 watch_start(p + off, long(count), 0);
         }
         _snprintf(g_current, sizeof g_current, "watchpa %s +%X +%X", who, poff, off);
+    } else if (strncmp(line, "questadd ", 9) == 0) { // questadd <id hex>: FUN_00484D90 on the game thread (tests)
+        unsigned id = 0;
+        if (sscanf(line + 9, "%x", &id) == 1)
+            quest_live_queue(id);
+        logf("bridge: questadd %08X (journal %d)", id, quest_live_count());
+        _snprintf(g_current, sizeof g_current, "questadd %08X", id);
+    } else if (strncmp(line, "watchg ", 7) == 0) { // watchg <global hex> <offset hex> <count>: every change at [global]+offset
+        unsigned g = 0, off = 0, count = 20;
+        uintptr_t addr = 0;
+        if (sscanf(line + 7, "%x %x %u", &g, &off, &count) >= 2 && game::at<uintptr_t>(g, 0)) {
+            addr = game::at<uintptr_t>(g, 0) + off;
+            logf("bridge: watchg [%08X]+%X = %08X: %u", g, off, unsigned(addr), game::at<uint32_t>(addr, 0));
+            watch_start(addr, long(count), 0);
+        }
+        _snprintf(g_current, sizeof g_current, "watchg %08X+%X", g, off);
     } else if (strncmp(line, "watcha ", 7) == 0) { // watcha <address hex> <count>: every change there
         unsigned addr = 0, count = 20;
         if (sscanf(line + 7, "%x %u", &addr, &count) >= 1 && mem_readable((void *)uintptr_t(addr), 4)) {

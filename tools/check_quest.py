@@ -34,8 +34,9 @@ for run, taker, other in (("host", "host", "guest"), ("guest", "guest", "host"))
     t, o = lines(f"{out}/{run}/{taker}.log"), lines(f"{out}/{run}/{other}.log")
     sent = [ln for ln in t if "quest state" in ln and "sent to the other players" in ln]
     check(bool(sent), f"{run} takes the quest: its quest state was sent")
-    got = [ln for ln in o if "reloaded with the other player's quest state" in ln]
-    check(bool(got), f"{run} takes the quest: the {other}'s world reloaded with it")
+    got = [ln for ln in o if "reloaded with the other player's quest state" in ln or "added live, no reload" in ln]
+    live = [ln for ln in o if "quests: live add 00350000" in ln]
+    check(bool(got), f"{run} takes the quest: the {other}'s world got it ({'live' if live else 'reload'})")
     snap = os.path.join(out, run, f"{other}_last.sav")
     check(os.path.exists(snap) and NEW in quests(snap), f"{run} takes the quest: the {other}'s next save holds quest {NEW:#x}")
     pos = [(m[1], m[2]) for ln in o for m in [re.search(r"shared: me at \((-?\d+), (-?\d+)\)", ln)] if m]

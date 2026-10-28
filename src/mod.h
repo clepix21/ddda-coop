@@ -86,6 +86,9 @@ struct LootEv { uint16_t item, count; uint32_t flags; };
 void loot_net_mine(std::vector<LootEv> &out, uint32_t from_seq, int max); // this player's pickups from seq
 uint32_t loot_mine_count();
 void loot_net_apply(const LootEv &e);       // net thread: another player's pickup, applied on the game thread
+void quest_live_queue(uint32_t id);        // quest_sync.cpp: tests, add a quest to the journal live
+void quest_live_tick();                    // game thread
+int quest_live_count();
 void loot_apply_queued();                   // game thread
 // flags.cpp: shared world, quest and world flags
 #pragma pack(push, 1)
