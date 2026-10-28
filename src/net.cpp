@@ -345,9 +345,20 @@ CRITICAL_SECTION g_cap_lock;
 CharState g_cap[kParty] = {};
 DWORD g_cap_tick[kParty] = {};
 
+// A pawn is hidden once nobody used it for 3 s: on a guest the host's main pawn went hidden and back
+// several times a second whenever one of its states came late (special deaths test, 2026-10-29),
+// so the pawn showing a player vanished and fell each time.
 void shared_set_hidden(int i, bool hidden)
 {
     if (i < 1 || i >= kParty)
+        return;
+    static DWORD unused_since[kParty] = {};
+    DWORD now = GetTickCount();
+    if (!hidden)
+        unused_since[i] = 0;
+    else if (!unused_since[i])
+        unused_since[i] = now | 1;
+    if (hidden && !g_rp_hidden[i] && int(now - unused_since[i]) < 3000)
         return;
     EnterCriticalSection(&g_cap_lock);
     if (g_rp_hidden[i] != hidden)
