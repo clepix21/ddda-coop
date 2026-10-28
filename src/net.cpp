@@ -1509,7 +1509,7 @@ DWORD WINAPI net_thread(LPVOID)
                     if (taken[1])
                         m.ch[1].valid = 0; // the main pawn shows a guest (4 players)
                     for (Peer &p : g_peers)
-                        if (p.used && p.pawn >= 0 && p.pstate_tick && now - p.pstate_tick < 500) {
+                        if (p.used && p.pawn >= 0 && p.pstate_tick && now - p.pstate_tick < 2000) { // 2 s: states come in bursts over the internet
                             m.ch[1 + p.pawn] = p.pstate;
                             m.stage_of[1 + p.pawn] = p.pstage;
                             memset(p.pstate.cmd + (0x2C - kCmdCopyFrom), 0, 4); // a press is relayed once
@@ -2304,7 +2304,9 @@ bool net_puppet(int i)
     if (!g_shared || i < 1 || i >= kParty)
         return false;
     EnterCriticalSection(&g_cap_lock);
-    bool on = (g_rp[i].valid || g_rp_away[i] || g_rp_hidden[i]) && g_rp_tick[i] && GetTickCount() - g_rp_tick[i] < 500;
+    // 2 s without news before the pawn goes back to its AI: over the internet a player's states came in
+    // bursts and its pawn walked off on its own meanwhile (first real test)
+    bool on = (g_rp[i].valid || g_rp_away[i] || g_rp_hidden[i]) && g_rp_tick[i] && GetTickCount() - g_rp_tick[i] < 2000;
     LeaveCriticalSection(&g_cap_lock);
     return on;
 }
