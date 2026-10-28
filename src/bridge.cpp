@@ -727,6 +727,9 @@ void run_line(const char *line)
             }
         }
         _snprintf(g_current, sizeof g_current, "php %s", who);
+    } else if (sscanf(line, "pawnkill %u", &slot) == 1) { // pawnkill <pawn>: that pawn's HP 0 and dead flag
+        enemies_queue_pawn_kill(int(slot));
+        _snprintf(g_current, sizeof g_current, "pawnkill %u", slot);
     } else if (strncmp(line, "pkill", 5) == 0) { // pkill: the Arisen's dead flag (tests)
         enemies_queue_arisen_kill();
         strcpy(g_current, "pkill");

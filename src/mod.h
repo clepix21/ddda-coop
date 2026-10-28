@@ -225,6 +225,7 @@ bool enemies_install();
 float *enemies_hp(uintptr_t ch);
 void enemies_queue_arisen_damage(float dmg); // tests: the game's damage function, on the game thread
 void enemies_run_queued(uintptr_t arisen);
+void enemies_queue_pawn_kill(int pawn);     // tests: a pawn's HP 0 and dead flag, on the game thread
 void enemies_queue_arisen_kill();           // tests: the Arisen's dead flag, on the game thread  // possess_pre (game thread), for the Arisen // [[ch+0x1D18]]+8: {current HP, max HP}, or null
 void enemies_on_finalize(uintptr_t em);
 int enemies_snapshot(EnemySlot *out, int cap);

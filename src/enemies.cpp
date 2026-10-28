@@ -64,6 +64,8 @@ volatile LONG g_queued_damage = 0; // float bits, 0 = none
 volatile LONG g_queued_kill = 0;
 
 void enemies_queue_arisen_kill() { InterlockedExchange(&g_queued_kill, 1); }
+volatile LONG g_queued_pawn_kill = 0; // tests: 1 + pawn index
+void enemies_queue_pawn_kill(int pawn) { InterlockedExchange(&g_queued_pawn_kill, 1 + pawn); }
 
 void enemies_queue_arisen_damage(float dmg)
 {
@@ -79,6 +81,15 @@ void enemies_run_queued(uintptr_t arisen)
         game::at<float>(e, 8) = 0.f;
         game::at<uint32_t>(e, 0x110) |= 1; // the dead flag FUN_0076E7C0 consumes
         logf("enemies: test kill of the Arisen (HP entry %08X)", unsigned(e));
+    }
+    if (LONG pk = InterlockedExchange(&g_queued_pawn_kill, 0)) { // tests: a pawn's HP 0 and dead flag
+        uintptr_t ch = possess_pawn_ptr(int(pk) - 1);
+        if (ch && enemies_hp(ch)) {
+            uintptr_t e = game::at<uintptr_t>(game::at<uintptr_t>(ch, 0x1D18), 0);
+            game::at<float>(e, 8) = 0.f;
+            game::at<uint32_t>(e, 0x110) |= 1;
+            logf("enemies: test kill of pawn %ld (HP entry %08X)", pk - 1, unsigned(e));
+        }
     }
     LONG bits = InterlockedExchange(&g_queued_damage, 0);
     if (!bits || !arisen || !enemies_hp(arisen))
