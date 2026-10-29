@@ -141,8 +141,13 @@ bool roam_world_from_host(const std::vector<uint8_t> &host, std::vector<uint8_t>
     if (!save_unpack(host, xml, head) || !storage_guest_character(own_char))
         return false;
     std::string name = save_character_name(own_char);
-    int pawn = -1;
-    for (int p = 0; p < kPawns && pawn < 0; ++p) {
+    // the pawn the host gave this guest first: two players with one name (three-copy test, 2026-10-29)
+    // had the host's Arisen put on the other guest's pawn by the name search alone
+    int pawn = -1, given = net_guest_my_pawn();
+    std::string on_given;
+    if (given >= 0 && save_character(xml, given, on_given) && save_character_name(on_given) == name)
+        pawn = given;
+    for (int p = 0; p < kPawns && pawn < 0 && given < 0; ++p) { // by name only while no pawn is given
         std::string ch;
         if (save_character(xml, p, ch) && save_character_name(ch) == name)
             pawn = p;
