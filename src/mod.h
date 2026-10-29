@@ -128,7 +128,14 @@ bool revive_helping();                             // B held next to a downed pl
 bool revive_on_damage(uintptr_t ch, float *dmg);  // game thread, the damage hook
 std::string roam_pawn_name(int p);               // roam.cpp, guest: the name on pawn p of its world
 bool net_old_peer();                             // net.cpp: a player with an older mod was heard
-void overlay_install();                           // overlay.cpp: the "mod active" badge on the title screen
+void overlay_install();
+// prof.cpp: the mod's own time inside the game's frame (debug_log=1: a "perf:" line every 10 s)
+enum PerfPart { PERF_PRE, PERF_POST, PERF_FINAL, PERF_BADGE, PERF_LOG, PERF_ACTIONS, PERF_ENEMY, PERF_PLACE, PERF_WAIT, PERF_NETEN, PERF_HP, PERF_N };
+int64_t perf_now();
+void perf_add(int part, int64_t since);
+void perf_frame();
+void perf_skip(); // an enemy sync skipped for a frame (its lock busy)
+void perf_start();                           // overlay.cpp: the "mod active" badge on the title screen
 bool revive_on_fatal(uintptr_t ch, const char *why, bool move_back); // game thread: a death that is not a blow
 void revive_tick();                               // net thread
 void revive_helped();                             // net thread

@@ -17,6 +17,7 @@ void logf(const char *fmt, ...)
 {
     if (!g_log)
         return;
+    int64_t t0 = perf_now();
     EnterCriticalSection(&g_log_lock);
     SYSTEMTIME t;
     GetLocalTime(&t);
@@ -28,6 +29,7 @@ void logf(const char *fmt, ...)
     fputc('\n', g_log);
     fflush(g_log);
     LeaveCriticalSection(&g_log_lock);
+    perf_add(PERF_LOG, t0);
 }
 
 // Only build 2364871's exe is supported: its offsets are what we reverse engineered.
@@ -63,6 +65,7 @@ static DWORD WINAPI pad_thread(LPVOID)
     rift_install();
     actions_install();
     overlay_install();
+    perf_start();
     pads_install(possess_p2_pad());
     if (cfg_role() == NET_HOST) // guests 1-3 drive pawns from pad slots 1-3 (the game only uses pads it saw from the start)
         for (unsigned slot = 1; slot < 4; ++slot)

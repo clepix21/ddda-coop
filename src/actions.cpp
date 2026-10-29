@@ -226,7 +226,10 @@ bool refuse(uintptr_t ch, int n)
 
 void __fastcall hk_set210(uintptr_t ch, void *edx, int n)
 {
-    if (!refuse(ch, n))
+    int64_t t0 = perf_now();
+    bool no = refuse(ch, n);
+    perf_add(PERF_ACTIONS, t0);
+    if (!no)
         g_set210_orig(ch, edx, n);
 }
 

@@ -109,12 +109,29 @@ void enemies_run_queued(uintptr_t arisen)
                  : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7");
 }
 
+// Committed, readable memory. The regions VirtualQuery gave are kept 250 ms per thread: it takes the
+// process's address-space lock, and the game's worker threads calling it each frame for every enemy
+// (enemies_hp: three checks) spent 0.5-0.8 ms per call there (perf:, 2026-10-29).
 bool mem_readable(const void *p, size_t n)
 {
+    struct Region {
+        uintptr_t lo, hi;
+        DWORD until;
+    };
+    static thread_local Region kept[8] = {};
+    static thread_local int next = 0;
+    uintptr_t a = reinterpret_cast<uintptr_t>(p);
+    DWORD now = GetTickCount();
+    for (const Region &r : kept)
+        if (a >= r.lo && a + n <= r.hi && int(r.until - now) > 0)
+            return true;
     MEMORY_BASIC_INFORMATION mbi;
     if (!VirtualQuery(p, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
         return false;
-    return reinterpret_cast<uintptr_t>(p) + n <= reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+    uintptr_t lo = reinterpret_cast<uintptr_t>(mbi.BaseAddress), hi = lo + mbi.RegionSize;
+    kept[next] = {lo, hi, now + 250};
+    next = (next + 1) % 8;
+    return a + n <= hi;
 }
 
 namespace {
@@ -150,7 +167,11 @@ void enemies_on_finalize(uintptr_t em)
     if (!g_ready)
         return;
     DWORD now = GetTickCount();
+    // The game finalizes enemies on up to 7 worker threads at once (2026-10-29): they queue on this lock
+    // (a spinning one, enemies_install). Skipping the sync when it was busy skipped 7 of 8 enemies a frame.
+    int64_t tw = perf_now();
     EnterCriticalSection(&g_lock);
+    perf_add(PERF_WAIT, tw);
     int free_slot = -1, i = 0;
     uintptr_t death = 0;
     for (; i < kMax; ++i) {
@@ -192,7 +213,9 @@ void enemies_on_finalize(uintptr_t em)
                 logf("enemy: settled #%d %s at (%.0f, %.0f, %.0f)", i, s.name, s.spawn[0], s.spawn[1], s.spawn[2]);
             }
         }
+        int64_t tn = perf_now();
         death = enemy_net_after_finalize(g_slots[i], i);
+        perf_add(PERF_NETEN, tn);
     }
     LeaveCriticalSection(&g_lock);
     if (death) // a death the guest's sync asked for, run outside the table lock
@@ -201,7 +224,15 @@ void enemies_on_finalize(uintptr_t em)
 
 // [[ch+0x1D18]]+8: current HP, then max HP (null when the character has no HP entry). uPlayerBase
 // copies the same value into cPlayerInfo+0x29C each frame (FUN_00B63F70), which is how it was found.
+float *enemies_hp_raw(uintptr_t ch);
 float *enemies_hp(uintptr_t ch)
+{
+    int64_t t = perf_now();
+    float *r = enemies_hp_raw(ch);
+    perf_add(PERF_HP, t);
+    return r;
+}
+float *enemies_hp_raw(uintptr_t ch)
 {
     if (!ch || !readable(reinterpret_cast<void *>(ch + 0x1D0C), 0x10) || !game::at<uintptr_t>(ch, 0x1D0C))
         return nullptr;
@@ -216,7 +247,9 @@ float *enemies_hp(uintptr_t ch)
 
 bool enemies_install()
 {
-    InitializeCriticalSection(&g_lock);
+    // locks the game threads take each frame spin a little before sleeping: a sleep and wake-up cost them
+    // milliseconds when the game's worker threads (up to 7 finalizing enemies) met there (perf:, 2026-10-29)
+    InitializeCriticalSectionAndSpinCount(&g_lock, 20000);
     InterlockedExchange(&g_ready, 1);
     void *dmg = reinterpret_cast<void *>(game::kApplyDamage);
     MH_STATUS st = MH_CreateHook(dmg, reinterpret_cast<void *>(&enemies_damage_thunk), &g_damage_orig);

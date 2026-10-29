@@ -276,8 +276,11 @@ HRESULT WINAPI hk_present(IDirect3DDevice9 *dev, const RECT *src, const RECT *ds
         told = true;
         logf("overlay: the device's Present is called (device %p)", (void *)dev);
     }
+    int64_t t0 = perf_now();
     if (badge_on())
         draw_badge(dev);
+    perf_add(PERF_BADGE, t0);
+    perf_frame();
     return g_present_orig(dev, src, dst, wnd, dirty);
 }
 
@@ -290,8 +293,12 @@ HRESULT WINAPI hk_swap_present(IDirect3DSwapChain9 *sc, const RECT *src, const R
             told = true;
             logf("overlay: the swap chain's Present is called (device %p)", (void *)dev);
         }
+        int64_t t0 = perf_now();
         if (badge_on())
             draw_badge(dev);
+        perf_add(PERF_BADGE, t0);
+        if (!g_present_orig) // the device's own Present counts the frames when it is taken
+            perf_frame();
         dev->Release();
     }
     return g_swap_present_orig(sc, src, dst, wnd, dirty, flags);

@@ -30,16 +30,24 @@ FinalizeTransform_t g_orig_finalize = nullptr;
 void __fastcall hk_finalize(uintptr_t ch)
 {
     g_orig_finalize(ch);
+    struct Count {
+        int64_t t = perf_now();
+        ~Count() { perf_add(PERF_FINAL, t); }
+    } count;
     if (__builtin_return_address(0) == reinterpret_cast<void *>(game::kEnemyFinalizeRet)) {
+        int64_t te = perf_now();
         enemies_on_finalize(ch);
+        perf_add(PERF_ENEMY, te);
         return;
     }
     if (net_role() != NET_GUEST && !net_shared())
         return;
     int idx = party_index(ch);
     if (idx >= 0) {
+        int64_t tp = perf_now();
         net_apply_transform(ch, idx);
         net_guest_camera();
+        perf_add(PERF_PLACE, tp);
     }
 }
 
@@ -88,8 +96,15 @@ const char *class_name(uintptr_t vt)
 void __fastcall hk_update(uintptr_t ch)
 {
     uint8_t *copy = nullptr;
+    int64_t t0 = perf_now();
     int who = possess_pre(ch, &copy);
+    perf_add(PERF_PRE, t0);
     g_orig(ch);
+    int64_t t1 = perf_now();
+    struct After { // every return below counts as the time after the game's update
+        int64_t t;
+        ~After() { perf_add(PERF_POST, t); }
+    } after{t1};
     if (who)
         possess_post(who, copy);
     if (who && (net_role() == NET_GUEST || net_shared()))

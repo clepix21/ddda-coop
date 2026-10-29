@@ -2358,7 +2358,7 @@ uintptr_t current_stage_area()
 
 void net_start(NetRole role, const char *peer, int port)
 {
-    InitializeCriticalSection(&g_cap_lock); // before g_role: net_capture runs once the role is set
+    InitializeCriticalSectionAndSpinCount(&g_cap_lock, 20000); // before g_role: net_capture runs once the role is set; spins (enemies_install)
     g_shared = early_flag("shared_world");
     InitializeCriticalSection(&g_qb_lock);
     g_loot_my_session = (GetTickCount() ^ (GetCurrentProcessId() << 16)) | 1;
@@ -2377,8 +2377,8 @@ void net_start(NetRole role, const char *peer, int port)
     }
     if (role == NET_HOST)
         logf("net: pawn order for guests 1-3: %d, %d, %d", g_pawn_order[0], g_pawn_order[1], g_pawn_order[2]);
-    InitializeCriticalSection(&g_snap_lock);
-    InitializeCriticalSection(&g_enemy_lock);
+    InitializeCriticalSectionAndSpinCount(&g_snap_lock, 20000); // spinning: see enemies_install
+    InitializeCriticalSectionAndSpinCount(&g_enemy_lock, 20000);
     InterlockedExchange(&g_enemy_ready, 1);
     char tp[16] = "udp"; // dist/coop.ini says transport=steam; tests never reach real Steam by default
     cfg_str("transport", tp, sizeof tp);
@@ -2870,7 +2870,9 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         LeaveCriticalSection(&g_enemy_lock);
         return pending_death;
     }
+    int64_t tw = perf_now();
     EnterCriticalSection(&g_enemy_lock);
+    perf_add(PERF_WAIT, tw);
     Follow &f = g_follow[i];
     if (f.first_seen != slot.first_seen) // a new enemy in this local slot
         f = {slot.first_seen, -1, now, em, 0, false, 0, 0}; // never 0: int(now - 0) < 0 after 24.8 days of uptime
