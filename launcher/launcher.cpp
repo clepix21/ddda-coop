@@ -564,7 +564,10 @@ void on_log_line(const std::string &l)
         g_host_found = true;
     if (has("waiting for Steam") && !g_steam_wait_since)
         g_steam_wait_since = GetTickCount() | 1;
-    if (has("unsupported DDDA.exe")) {
+    if (has("a player has an older version of the mod")) {
+        add_event(L"Un joueur a une autre version du mod : vous ne vous voyez pas. Prenez tous le même paquet.");
+        set_state(L"Un joueur a une autre version du mod.", kBad);
+    } else if (has("unsupported DDDA.exe")) {
         add_event(L"Version du jeu non prise en charge : le mod s'est désactivé.");
         set_state(L"Mod désactivé : version du jeu non prise en charge.", kBad);
     } else if (has("waiting for Steam")) {

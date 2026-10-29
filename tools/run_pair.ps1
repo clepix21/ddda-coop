@@ -19,6 +19,8 @@ param(
     [string]$HostWindow = "0,0,1920,1080",       # middle screen (primary)
     [string]$GuestWindow = "-1920,0,1920,1080",  # left screen
     [string]$Dll = "$PSScriptRoot\..\build\dinput8.dll",
+    # tests: the guests run another build (an older mod: the version check)
+    [string]$GuestDll = "",
     [switch]$AllowRealSteam,
     [double]$RestartGuestAt = 0,   # seconds; 0 = never
     [double]$RestartDelay = 15,
@@ -68,7 +70,7 @@ function Start-Side($s, $el) {
     $d = $s.Dir
     # private files: delete first so a hard link is never written through
     foreach ($f in "dinput8.dll", "coop.ini", "bot.txt", "coop.log", "bridge_in.txt", "bridge_out.txt") { Remove-Item (Join-Path $d $f) -ErrorAction SilentlyContinue }
-    Copy-Item $Dll $d
+    Copy-Item $(if ($GuestDll -and $s.Name -like "guest*") { $GuestDll } else { $Dll }) (Join-Path $d "dinput8.dll")
     $block = if ($GuestSavesFromRole -and $s.Name -like "guest*") { "block_saves=0" } else { "block_saves=1" }
     # a frozen copy of a save (default: the Pawn Guild one every route starts from), never the owner's
     $testSave = if (($s.Ini -join "`n") -match "(?m)^test_save=") { @() } else { @("test_save=J:\coop-test\saves\guild.sav") }

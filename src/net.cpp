@@ -78,7 +78,7 @@ constexpr uintptr_t kCmdExtraFrom = 0x88, kCmdExtraLen = 0x08;
 
 #pragma pack(push, 1)
 struct Header {
-    uint32_t magic; // 'DDCO'
+    uint32_t magic; // kMagic: 'DDC2'
     uint8_t type;
     uint32_t seq;
 };
@@ -226,7 +226,10 @@ struct SaveNeedMsg {
 };
 #pragma pack(pop)
 
-constexpr uint32_t kMagic = 0x4F434444;
+// The message format's version: 'DDC2' since 2026-10-29 (32-bit action numbers). Messages of the
+// format before ('DDCO') come from a player with an older mod: dropped, and said (the badge, the log).
+constexpr uint32_t kMagic = 0x32434444, kOldMagic = 0x4F434444;
+volatile LONG g_old_peer = 0;
 NetRole g_role = NET_OFF;
 SOCKET g_sock = INVALID_SOCKET;
 bool g_steam = false;
@@ -1160,6 +1163,8 @@ void receive_all()
         if (n < int(sizeof(Header)))
             continue;
         auto h = reinterpret_cast<const Header *>(buf);
+        if (h->magic == kOldMagic && !InterlockedExchange(&g_old_peer, 1))
+            logf("net: a player has an older version of the mod (its messages are not read): every player needs this one");
         if (h->magic != kMagic)
             continue;
         // which player sent it: the guest has one peer, its host
@@ -3138,3 +3143,6 @@ void net_quest_publish(const std::vector<uint8_t> &blob, uint32_t crc)
     g_qb[me].next = 0;
     LeaveCriticalSection(&g_qb_lock);
 }
+
+// overlay.cpp, launcher status: a player with an older mod tried to talk to this one.
+bool net_old_peer() { return g_old_peer != 0; }

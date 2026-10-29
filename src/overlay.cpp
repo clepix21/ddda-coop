@@ -79,6 +79,10 @@ bool badge_text(wchar_t *out, size_t cap)
     else
         _snwprintf(out, cap, L"DDDA Coop actif  ·  %ls%ls  ·  %d joueur%ls", who, net_shared() ? L", monde partagé" : L"",
                    players < 1 ? 1 : players, players > 1 ? L"s" : L"");
+    if (net_old_peer()) {
+        size_t len = wcslen(out);
+        _snwprintf(out + len, cap - len, L"  \u00b7  un joueur a une autre version du mod !");
+    }
     out[cap - 1] = 0;
     return true;
 }
