@@ -109,10 +109,20 @@ void enemies_run_queued(uintptr_t arisen)
                  : "memory", "cc", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7");
 }
 
-// Committed, readable memory. The regions VirtualQuery gave are kept 250 ms per thread: it takes the
-// process's address-space lock, and the game's worker threads calling it each frame for every enemy
-// (enemies_hp: three checks) spent 0.5-0.8 ms per call there (perf:, 2026-10-29).
 bool mem_readable(const void *p, size_t n)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(p, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+        return false;
+    return reinterpret_cast<uintptr_t>(p) + n <= reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+}
+
+// The same for the live characters this file reads every frame (class, HP entry), with the regions
+// VirtualQuery gave kept 250 ms per thread: it takes the process's address-space lock, and the game's
+// worker threads calling it for every enemy (enemies_hp: three checks) spent 0.5-0.8 ms per call
+// there (perf:, 2026-10-29). Not for scans: a region freed meanwhile still passes (a bridge scan with
+// the cache in mem_readable read freed memory, shared exp suite 2026-10-29).
+bool live_readable(const void *p, size_t n)
 {
     struct Region {
         uintptr_t lo, hi;
@@ -141,7 +151,7 @@ EnemySlot g_slots[kMax];
 CRITICAL_SECTION g_lock;
 volatile LONG g_ready = 0;
 
-bool readable(const void *p, size_t n) { return mem_readable(p, n); }
+bool readable(const void *p, size_t n) { return live_readable(p, n); }
 
 // "uEm0400" etc., or "?" when the vtable does not look like an MT Framework one.
 const char *class_of(uintptr_t obj)

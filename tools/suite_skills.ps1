@@ -2,16 +2,18 @@
 # both copies start is logged (test_log_actions=1), with screenshots. The guest's pawn showing the host
 # must play each of them. Prints PASS/FAIL lines and a summary.
 # -Mage: the host plays a sorcerer (guild_sorcerer.sav, tools/save_swap.py) and casts spells.
-param([ValidateSet("udp", "mock")][string]$Transport = "udp", [switch]$Mage)
+# -HostSave <file>: another caster for -Mage (guild_mage.sav: Marcus, mage, support spells).
+param([ValidateSet("udp", "mock")][string]$Transport = "udp", [switch]$Mage,
+    [string]$HostSave = "J:\coop-test\saves\guild_sorcerer.sav")
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
-$out = "J:\coop-test\re\runs\skills_$Transport$(if ($Mage) { '_mage' })"
+$out = "J:\coop-test\re\runs\skills_$Transport$(if ($Mage) { '_' + [IO.Path]::GetFileNameWithoutExtension($HostSave) })"
 $hostNet = @("transport=udp"); $guestNet = @("transport=udp", "peer=127.0.0.1")
 $shots = @(); for ($t = 104.0; $t -le 140; $t += 2) { $shots += $t }
 $run = & (Join-Path $tools "run_pair.ps1") -Seconds 220 -OutDir $out -Shots $shots -GuestSavesFromRole `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "bot_load_game_p2.txt") `
     -HostBridge @((Join-Path $tests $(if ($Mage) { "skills_mage_host.txt" } else { "skills_host.txt" }))) -GuestBridge @((Join-Path $tests "skills_guest.txt")) `
-    -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "shared_world=1", "test_log_actions=1") + $(if ($Mage) { @("test_save=J:\coop-test\saves\guild_sorcerer.sav") } else { @() }) + $hostNet) `
+    -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "shared_world=1", "test_log_actions=1") + $(if ($Mage) { @("test_save=$HostSave") } else { @() }) + $hostNet) `
     -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "shared_world=1", "test_log_actions=1", "test_save=J:\coop-test\saves\guest_arisen.sav") + $guestNet) 2>$null
 $run | ForEach-Object { "   $_" }
 $checks = @(python -I (Join-Path $tools "check_skills.py") $out)

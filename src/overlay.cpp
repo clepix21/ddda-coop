@@ -414,7 +414,10 @@ int device_candidates(uintptr_t *out, int cap)
         from = upto;
     }
     std::stable_sort(out, out + n, [&](uintptr_t x, uintptr_t y) {
-        return !d3d.has(game::at<uintptr_t>(x, 0)) && d3d.has(game::at<uintptr_t>(y, 0));
+        uint32_t vx = 0, vy = 0; // through peek: a candidate may be freed meanwhile (a direct read here
+        peek(x, &vx, 4);         // or in install_thread closed a game copy at start, quest suite 2026-10-29)
+        peek(y, &vy, 4);
+        return !d3d.has(vx) && d3d.has(vy);
     });
     return n;
 }
@@ -454,11 +457,15 @@ DWORD WINAPI install_thread(LPVOID)
         uintptr_t cand[16];
         int n = device_candidates(cand, 16);
         for (int c = 0; c < n; ++c) {
-            uintptr_t vt = game::at<uintptr_t>(cand[c], 0);
+            uint32_t vt = 0;
+            if (!peek(cand[c], &vt, 4) || vt < 0x10000)
+                continue;
             if (rejected.count(vt))
                 continue;
-            void **slot = reinterpret_cast<void **>(vt) + kEndSceneSlot;
-            void *orig = *slot;
+            void **slot = reinterpret_cast<void **>(uintptr_t(vt)) + kEndSceneSlot;
+            void *orig = nullptr;
+            if (!peek(uintptr_t(slot), &orig, 4) || !orig)
+                continue;
             g_spy_orig = orig;
             g_spy_this = cand[c];
             InterlockedExchange(&g_spy_verdict, 0);

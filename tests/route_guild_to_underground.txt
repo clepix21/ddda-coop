@@ -15,6 +15,22 @@ pad 0 2000 0 0 0 0 0 0 150
 wait 1500
 pad 0 2000 0 0 0 0 0 0 150
 wait 10000
+# it did not always open (about 1 run in 3 stayed in front of it, lift suite 2026-10-29): twice more
+# unless the underground (stage 600) is loaded already
+ifstage 600 skip 6
+goto 570 -413 30 8000
+goto 733 -394 20 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 1500
+pad 0 2000 0 0 0 0 0 0 150
+wait 10000
+ifstage 600 skip 6
+goto 570 -413 30 8000
+goto 733 -394 20 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 1500
+pad 0 2000 0 0 0 0 0 0 150
+wait 10000
 goto 700 900 80 30000
 goto 1500 1700 80 15000
 goto 2745 3500 80 20000

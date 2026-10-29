@@ -972,6 +972,16 @@ void run_line(const char *line)
             logf("bridge: savereq refused (machine %08X busy or bad args)", unsigned(sm));
         }
         _snprintf(g_current, sizeof g_current, "savereq");
+    } else if (strncmp(line, "ifstage ", 8) == 0) {
+        // ifstage <stage> skip <n>: in that stage already, the next n lines are skipped (a route's
+        // retries of the iron gate, which did not always open at the first press)
+        int st = -1;
+        unsigned n = 0, skipped = 0;
+        if (sscanf(line + 8, "%d skip %u", &st, &n) == 2 && net_my_stage() == st)
+            for (; skipped < n && (g_qhead + 1) % 256 != g_qtail; ++skipped)
+                g_qhead = (g_qhead + 1) % 256;
+        logf("bridge: ifstage %d (here %d): %u line(s) skipped", st, int(net_my_stage()), skipped);
+        _snprintf(g_current, sizeof g_current, "ifstage %d", st);
     } else if (sscanf(line, "wait %u", &ms) == 1) {
         g_busy_until = GetTickCount() + ms;
         _snprintf(g_current, sizeof g_current, "wait %u ms", ms);
