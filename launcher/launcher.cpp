@@ -16,6 +16,7 @@
 #include <shlobj.h>
 #include <tlhelp32.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -35,7 +36,7 @@ const char kOurMarker[] = "ddda-pawn-coop loaded"; // a string only our dinput8.
 enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
     ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP,
-    ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
+    ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_BACKUP_LIST, ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
 };
 // the screens, in the sidebar's order
 enum Page { PAGE_PLAY, PAGE_SALON, PAGE_SAVES, PAGE_SETTINGS, PAGE_LOG, PAGE_COUNT };
@@ -44,7 +45,8 @@ const wchar_t *const kPageNames[PAGE_COUNT] = {L"Jouer", L"Salon", L"Sauvegardes
 const wchar_t *const kPageIcons[PAGE_COUNT] = {L"\uE768", L"\uE716", L"\uE74E", L"\uE713", L"\uE8FD"};
 int g_page = PAGE_PLAY;
 uint64_t g_self_steam = 0; // this player's Steam id, from the mod (the host's code)
-HWND g_code_edit = nullptr, g_copy_code = nullptr, g_code_clear = nullptr;
+HWND g_code_edit = nullptr, g_copy_code = nullptr, g_code_clear = nullptr, g_backup_list = nullptr;
+std::vector<std::wstring> g_backup_dirs; // the backup list's folders, newest first
 
 // The host's code: its Steam account number (the low 32 bits of its Steam id) in Crockford's base 32,
 // 7 characters shown "ABC-DEFG". The guest's launcher turns it back into peer_steamid= for the mod.
@@ -356,12 +358,49 @@ void add_event(const std::wstring &text)
     int i = int(SendMessageW(g_events, LB_ADDSTRING, 0, LPARAM((stamp + text).c_str())));
     SendMessageW(g_events, LB_SETITEMDATA, i, LPARAM(event_kind(text)));
     SendMessageW(g_events, LB_SETTOPINDEX, i, 0);
+    if (g_page == PAGE_LOG) {
+        ShowWindow(g_events, SW_SHOW);
+        InvalidateRect(g_wnd, nullptr, FALSE); // the counts
+    }
     if (event_kind(text) >= 2 && g_page != PAGE_LOG) { // a warning or an error: a dot on the journal's icon
         g_log_unseen = true;
         if (HWND nav = GetDlgItem(g_wnd, ID_NAV + PAGE_LOG))
             InvalidateRect(nav, nullptr, FALSE);
     }
     layout_events();
+}
+
+// A backup copy's row: a save icon, the date, the newest marked.
+void draw_backup(const DRAWITEMSTRUCT *d)
+{
+    if (d->itemID == UINT(-1))
+        return;
+    bool sel = d->itemState & ODS_SELECTED;
+    RECT r = d->rcItem;
+    FillRect(d->hDC, &r, g_card_brush);
+    RECT row = r;
+    InflateRect(&row, -px(4), -px(2));
+    if (sel)
+        theme::round_rect(d->hDC, row, px(theme::kRadiusSmall), theme::kSurfaceHover, theme::kAccent);
+    wchar_t text[128] = L"";
+    SendMessageW(d->hwndItem, LB_GETTEXT, d->itemID, LPARAM(text));
+    SetBkMode(d->hDC, TRANSPARENT);
+    RECT t = row;
+    t.left += px(12);
+    SetTextColor(d->hDC, kMuted);
+    HGDIOBJ old = SelectObject(d->hDC, g_small_icon);
+    DrawTextW(d->hDC, L"\uE74E", -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    SelectObject(d->hDC, g_font);
+    t.left += px(26);
+    SetTextColor(d->hDC, kText);
+    DrawTextW(d->hDC, text, -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    if (d->itemID == 0) {
+        SetTextColor(d->hDC, kMuted);
+        RECT n = row;
+        n.right -= px(12);
+        DrawTextW(d->hDC, L"la plus récente", -1, &n, DT_RIGHT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    }
+    SelectObject(d->hDC, old);
 }
 
 void draw_event(const DRAWITEMSTRUCT *d)
@@ -575,6 +614,40 @@ void show_backup_note()
         SetWindowTextW(g_backup_note, text.c_str());
 }
 
+// The backup copies (Documents\\DDDA Coop\\Sauvegardes\\<date>), newest first, in the Sauvegardes screen.
+void refresh_backups()
+{
+    if (!g_backup_list)
+        return;
+    std::wstring root = documents_dir() + L"\\DDDA Coop\\Sauvegardes";
+    std::vector<std::wstring> names;
+    WIN32_FIND_DATAW fd;
+    HANDLE f = FindFirstFileW((root + L"\\*").c_str(), &fd);
+    if (f != INVALID_HANDLE_VALUE) {
+        do
+            if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && fd.cFileName[0] != L'.')
+                names.push_back(fd.cFileName);
+        while (FindNextFileW(f, &fd));
+        FindClose(f);
+    }
+    std::sort(names.rbegin(), names.rend()); // "2026-10-29_22-07-26": the name sorts by date
+    g_backup_dirs.clear();
+    SendMessageW(g_backup_list, LB_RESETCONTENT, 0, 0);
+    for (const std::wstring &n : names) {
+        int y = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+        std::wstring shown = n;
+        if (swscanf(n.c_str(), L"%d-%d-%d_%d-%d-%d", &y, &mo, &d, &h, &mi, &se) == 6) {
+            wchar_t t[64];
+            swprintf(t, 64, L"%02d/%02d/%04d  %02d:%02d:%02d", d, mo, y, h, mi, se);
+            shown = t;
+        }
+        g_backup_dirs.push_back(root + L"\\" + n);
+        SendMessageW(g_backup_list, LB_ADDSTRING, 0, LPARAM(shown.c_str()));
+    }
+    if (!names.empty())
+        SendMessageW(g_backup_list, LB_SETCURSEL, 0, 0);
+}
+
 void note_backup(const std::wstring &where)
 {
     wchar_t when[32];
@@ -584,6 +657,7 @@ void note_backup(const std::wstring &where)
     WritePrivateProfileStringW(L"launcher", L"last_backup_time", when, settings_path().c_str());
     WritePrivateProfileStringW(L"launcher", L"last_backup", where.c_str(), settings_path().c_str());
     show_backup_note();
+    refresh_backups();
 }
 
 // The game's controls and the launcher's own, in a message box (screen readers read it); shown once by
@@ -663,6 +737,17 @@ void on_remove()
         return;
     }
     std::wstring dll = g_game_dir + L"\\dinput8.dll", ini = g_game_dir + L"\\coop.ini";
+    if (!exists(dll) && !exists(ini)) {
+        ask(L"Le mod n'est pas installé dans ce dossier.", MB_ICONINFORMATION);
+        return;
+    }
+    // always confirmed, "Non" by default (owner's direction, 2026-10-29)
+    if (ask((L"Retirer DDDA Coop de ce dossier ?\n\n" + g_game_dir +
+                L"\n\nLe jeu redémarrera en solo normal. Tes sauvegardes ne sont pas touchées ; tu pourras réinstaller le mod "
+                L"en relançant depuis cette fenêtre.")
+                .c_str(),
+            MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
+        return;
     if (exists(dll) && !our_dll(dll)) {
         ask(L"Le dinput8.dll du dossier du jeu n'est pas celui de DDDA Coop : je n'y touche pas.", MB_ICONWARNING);
         return;
@@ -1258,7 +1343,7 @@ void hover_step(HWND parent)
         KillTimer(parent, kHoverTimer);
 }
 
-enum ButtonKind { BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_NAV, BTN_ROLE, BTN_SWITCH };
+enum ButtonKind { BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_NAV, BTN_ROLE, BTN_SWITCH, BTN_DANGER };
 // the role cards: icon (Segoe MDL2 Assets), title, short description
 struct RoleCard {
     const wchar_t *icon, *title, *text;
@@ -1385,6 +1470,10 @@ void draw_button(const DRAWITEMSTRUCT *d)
         fill = theme::mix(theme::kAccent, theme::kAccentHover, pressed ? 0.4f : hv);
     } else if (kind == BTN_GHOST) {
         fill = theme::mix(theme::kBg, theme::kSurfaceHover, pressed ? 1.f : hv);
+    } else if (kind == BTN_DANGER) { // red words and outline, a red tint under the pointer
+        fill = theme::mix(theme::kSurface, theme::kBad, pressed ? 0.28f : 0.06f + 0.14f * hv);
+        border = theme::mix(theme::kBorder, theme::kBad, 0.7f);
+        text = theme::kBad;
     } else {
         fill = theme::mix(theme::kSurfaceRaised, theme::kSurfaceHover, pressed ? 1.f : hv);
         border = theme::kBorder;
@@ -1439,7 +1528,7 @@ ButtonKind kind_of(int id)
         return BTN_ROLE;
     if (id == ID_OWN_CHAR || id == ID_KEEP || id == ID_DEBUG)
         return BTN_SWITCH;
-    return id == ID_LAUNCH ? BTN_PRIMARY : id == ID_EVENTS_TOGGLE ? BTN_GHOST : BTN_SECONDARY;
+    return id == ID_LAUNCH ? BTN_PRIMARY : id == ID_REMOVE ? BTN_DANGER : id == ID_EVENTS_TOGGLE ? BTN_GHOST : BTN_SECONDARY;
 }
 
 // Layout in 96-dpi units, scaled by px(): a thin sidebar of icons (the five screens) and one screen at a
@@ -1469,6 +1558,8 @@ void show_page(int page)
     for (int k = 0; k < PAGE_COUNT; ++k)
         if (HWND nav = GetDlgItem(g_wnd, ID_NAV + k))
             InvalidateRect(nav, nullptr, FALSE);
+    if (page == PAGE_LOG && SendMessageW(g_events, LB_GETCOUNT, 0, 0) == 0)
+        ShowWindow(g_events, SW_HIDE); // empty: the card says so
     update_controls(); // the guest's options stay hidden unless its card is chosen
     InvalidateRect(g_wnd, nullptr, TRUE);
 }
@@ -1542,10 +1633,16 @@ void build_window()
              L"Une copie de secours de tes sauvegardes Steam de Dragon's Dogma est faite à chaque lancement. Tu peux en faire une "
              L"tout de suite.",
              0, L, 76, W, 44, 0));
-    add(make(L"BUTTON", L"Copier mes s&auvegardes", BS_PUSHBUTTON | WS_TABSTOP, L, 132, 230, 40, ID_BACKUP));
-    add(make(L"BUTTON", L"&Ouvrir le dossier", BS_PUSHBUTTON | WS_TABSTOP, L + 242, 132, 180, 40, ID_OPEN_BACKUPS));
-    g_backup_note = add(make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_PATHELLIPSIS, L, 188, W, 22, 0));
+    add(make(L"BUTTON", L"Copier mes s&auvegardes", BS_PUSHBUTTON | WS_TABSTOP, L, 126, 230, 40, ID_BACKUP));
+    add(make(L"BUTTON", L"&Ouvrir le dossier", BS_PUSHBUTTON | WS_TABSTOP, L + 242, 126, 180, 40, ID_OPEN_BACKUPS));
+    g_backup_note = add(make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_PATHELLIPSIS, L, 178, W, 22, 0));
     show_backup_note();
+    add(make(L"STATIC", L"Copies de secours (double-clic : ouvrir)", 0, L, 214, W, 22, 0, g_bold));
+    g_backup_list = add(make(L"LISTBOX", L"Copies de secours", WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOTIFY |
+                                                                 LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
+                             L + 1, 244, W - 2, kH - 244 - 28, ID_BACKUP_LIST));
+    SetWindowTheme(g_backup_list, L"DarkMode_Explorer", nullptr); // dark scroll bars (Windows 10 1809+)
+    refresh_backups();
 
     // ---- Paramètres ----
     g_building = PAGE_SETTINGS;
@@ -1555,14 +1652,20 @@ void build_window()
     g_version = add(make(L"STATIC", L"", 0, L, 140, W, 22, 0));
     g_debug = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 176, W, 32, ID_DEBUG));
     g_switches.push_back({g_debug, true, L"&Journal détaillé (utile pour signaler un problème)"});
-    add(make(L"STATIC", L"Zone sensible", 0, L, 236, W, 22, 0, g_bold));
-    add(make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L, 264, 180, 40, ID_REMOVE));
+    // the sensitive part in a card of its own (painted), red-tinted
+    add(make(L"STATIC", L"Zone sensible", 0, L + 18, 248, W - 36, 22, 0, g_bold));
+    add(make(L"STATIC",
+             L"Retire dinput8.dll et coop.ini du dossier du jeu : le jeu redémarre en solo normal. Tes sauvegardes ne sont pas "
+             L"touchées. Une confirmation est demandée.",
+             0, L + 18, 274, W - 36 - 200, 44, 0));
+    add(make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L + W - 18 - 180, 272, 180, 40, ID_REMOVE));
 
     // ---- Journal ----
     g_building = PAGE_LOG;
-    g_events = add(make(L"LISTBOX", L"", WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL | LBS_OWNERDRAWFIXED |
-                                            LBS_HASSTRINGS,
-                        L, 76, W, kH - 76 - 76, ID_EVENTS));
+    g_events = add(make(L"LISTBOX", L"Journal", WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL | LBS_OWNERDRAWFIXED |
+                                                   LBS_HASSTRINGS,
+                        L + 8, 110, W - 16, kH - 110 - 84, ID_EVENTS));
+    SetWindowTheme(g_events, L"DarkMode_Explorer", nullptr);
     add(make(L"BUTTON", L"E&xporter le journal", BS_PUSHBUTTON | WS_TABSTOP, L, kH - 60, 200, 40, ID_EXPORT));
 
     std::wstring role = setting(L"role", L"host"); // the last role chosen
@@ -1653,13 +1756,51 @@ void paint(HWND h)
                 DrawTextW(dc, L"Seul : pas de connexion.", -1, &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
             }
         }
-        if (g_page == PAGE_SETTINGS) { // the sensitive part apart, under a line
-            HPEN pen = CreatePen(PS_SOLID, 1, theme::kBorder);
-            HGDIOBJ op = SelectObject(dc, pen);
-            MoveToEx(dc, px(kX), px(222), nullptr);
-            LineTo(dc, px(kX + kCW), px(222));
-            SelectObject(dc, op);
-            DeleteObject(pen);
+        if (g_page == PAGE_SETTINGS) { // the sensitive part: a card with a red outline
+            RECT card = {px(kX), px(234), px(kX + kCW), px(330)};
+            theme::round_rect(dc, card, px(theme::kRadiusCard), theme::mix(kCard, kBad, 0.05f), theme::mix(theme::kBorder, kBad, 0.55f));
+        }
+        if (g_page == PAGE_SAVES) { // the copies' list in a card
+            RECT card = {px(kX - 1), px(240), px(kX + kCW + 1), px(kH - 24)};
+            theme::round_rect(dc, card, px(theme::kRadiusSmall + 2), kCard, theme::kBorder);
+            if (g_backup_dirs.empty()) {
+                SelectObject(dc, g_font);
+                SetTextColor(dc, kMuted);
+                RECT e = card;
+                DrawTextW(dc, L"Aucune copie pour l'instant.", -1, &e, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+            }
+        }
+        if (g_page == PAGE_LOG) { // the counts by kind, then the events in a card
+            int n = int(SendMessageW(g_events, LB_GETCOUNT, 0, 0)), warn = 0, bad = 0;
+            for (int i = 0; i < n; ++i) {
+                int kind = int(SendMessageW(g_events, LB_GETITEMDATA, i, 0)) & 3;
+                warn += kind == 2;
+                bad += kind == 3;
+            }
+            SelectObject(dc, g_font);
+            std::wstring counts = std::to_wstring(n) + (n > 1 ? L" événements" : L" événement");
+            SetTextColor(dc, kMuted);
+            RECT c = {px(kX), px(74), px(kX + kCW), px(98)};
+            DrawTextW(dc, counts.c_str(), -1, &c, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            SIZE cs = {};
+            GetTextExtentPoint32W(dc, counts.c_str(), int(counts.size()), &cs);
+            c.left += cs.cx + px(16);
+            std::wstring w = L"\u26A0 " + std::to_wstring(warn) + (warn > 1 ? L" avertissements" : L" avertissement");
+            SetTextColor(dc, warn ? kWarn : kMuted);
+            DrawTextW(dc, w.c_str(), -1, &c, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            GetTextExtentPoint32W(dc, w.c_str(), int(w.size()), &cs);
+            c.left += cs.cx + px(16);
+            std::wstring e = L"\u2716 " + std::to_wstring(bad) + (bad > 1 ? L" erreurs" : L" erreur");
+            SetTextColor(dc, bad ? kBad : kMuted);
+            DrawTextW(dc, e.c_str(), -1, &c, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            RECT card = {px(kX), px(104), px(kX + kCW), px(kH - 74)};
+            theme::round_rect(dc, card, px(theme::kRadiusCard), kCard, theme::kBorder);
+            if (n == 0) {
+                SetTextColor(dc, kMuted);
+                RECT ec = card;
+                DrawTextW(dc, L"Rien pour l'instant : les événements arrivent au lancement du jeu.", -1, &ec,
+                          DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+            }
         }
     }
     SelectObject(dc, old);
@@ -1679,12 +1820,20 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         }
         return 0;
     case WM_MEASUREITEM:
+        if (w == ID_BACKUP_LIST) {
+            reinterpret_cast<MEASUREITEMSTRUCT *>(l)->itemHeight = UINT(px(30));
+            return TRUE;
+        }
         if (w == ID_EVENTS) {
             reinterpret_cast<MEASUREITEMSTRUCT *>(l)->itemHeight = UINT(px(20));
             return TRUE;
         }
         break;
     case WM_DRAWITEM:
+        if (w == ID_BACKUP_LIST) {
+            draw_backup(reinterpret_cast<const DRAWITEMSTRUCT *>(l));
+            return TRUE;
+        }
         if (w == ID_EVENTS) {
             draw_event(reinterpret_cast<const DRAWITEMSTRUCT *>(l));
             return TRUE;
@@ -1754,13 +1903,18 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
                 InvalidateRect(h, &card, FALSE);
             }
             break;
-        case ID_OPEN_BACKUPS: {
-            std::wstring dir = setting(L"last_backup", L"");
-            if (dir.empty() || !is_dir(dir))
+        case ID_OPEN_BACKUPS: { // the chosen copy, else the copies' folder
+            int i = int(SendMessageW(g_backup_list, LB_GETCURSEL, 0, 0));
+            std::wstring dir = i >= 0 && i < int(g_backup_dirs.size()) ? g_backup_dirs[size_t(i)] : documents_dir() + L"\\DDDA Coop\\Sauvegardes";
+            if (!is_dir(dir))
                 dir = documents_dir() + L"\\DDDA Coop";
             ShellExecuteW(g_wnd, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
             break;
         }
+        case ID_BACKUP_LIST:
+            if (HIWORD(w) == LBN_DBLCLK)
+                SendMessageW(h, WM_COMMAND, ID_OPEN_BACKUPS, 0);
+            break;
         case ID_EXPORT: on_export(); break;
         case ID_GAME_EDIT:
             if (HIWORD(w) == EN_KILLFOCUS && window_text(g_game_edit) != g_game_dir) {
@@ -1784,6 +1938,17 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
             SetTextColor(HDC(w), g_state_color);
             SetBkColor(HDC(w), theme::mix(theme::kSurface, g_state_color, 0.08f));
             return LRESULT(g_state_brush);
+        }
+        if (g_page == PAGE_SETTINGS) { // labels inside the sensitive card
+            RECT rc;
+            GetWindowRect(HWND(l), &rc);
+            MapWindowPoints(nullptr, h, reinterpret_cast<POINT *>(&rc), 2);
+            if (rc.top >= px(234) && rc.bottom <= px(330)) {
+                static HBRUSH danger = CreateSolidBrush(theme::mix(theme::kSurface, theme::kBad, 0.05f));
+                SetTextColor(HDC(w), rc.top < px(270) ? kText : kMuted);
+                SetBkColor(HDC(w), theme::mix(theme::kSurface, theme::kBad, 0.05f));
+                return LRESULT(danger);
+            }
         }
         SetTextColor(HDC(w), HWND(l) == g_version || HWND(l) == g_backup_note ? kMuted : kText);
         SetBkColor(HDC(w), kBg);
