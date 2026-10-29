@@ -62,6 +62,9 @@ Monde partagé (shared_world=1 dans coop.ini, le réglage de ce paquet)
 - Les compétences d'arme (RB + X/Y/B...) se voient chez les autres.
 - Les noms des menus sont corrigés ; les visages et le sexe des autres joueurs aussi (à confirmer
   entre vrais PC : nos tests n'ont qu'un seul visage).
+- La fenêtre DDDA-Coop.exe montre un salon : chaque joueur avec sa photo et son nom Steam, son perso,
+  sa zone, s'il est debout ou à terre et la qualité de sa connexion, plus le mode, le nombre de
+  joueurs et l'heure dans le monde.
 - Sur l'écran titre, dans le menu pause et sur la carte, un bandeau en haut à droite indique
   « DDDA Coop actif », ton rôle et le nombre de joueurs. no_badge=1 dans coop.ini le retire.
 - La Faille est fermée pendant le co-op (la pierre ne réagit plus). allow_rift=1 la rouvre.

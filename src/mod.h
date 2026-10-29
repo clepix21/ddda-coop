@@ -229,6 +229,8 @@ bool link_steam_send(const void *p, int n);                 // guest -> its host
 bool link_steam_send_to(uint64_t to, const void *p, int n); // host -> one guest
 int link_steam_recv(void *buf, int cap, uint64_t *from);
 unsigned link_steam_short(uint64_t id);                     // last 4 digits, for logs
+uint64_t link_steam_self();                                 // this player's Steam id (0 = no Steam link)
+bool link_steam_profile(uint64_t id, std::string &name, std::vector<uint8_t> &rgba, uint32_t &w, uint32_t &h);
 
 // enemies.cpp: live enemy table, fed by the transform finalize hook (calls from uEnemy slot 91).
 struct EnemySlot {

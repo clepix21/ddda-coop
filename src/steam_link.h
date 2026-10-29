@@ -36,6 +36,13 @@ struct SteamFns {
     void (*RequestFriendRichPresence)(void *friends, uint64_t user) = nullptr; // optional (may be missing)
     bool (*CloseP2PSessionWithUser)(void *net, uint64_t user) = nullptr;                  // optional
     bool (*GetP2PSessionState)(void *net, uint64_t user, P2PSessionState *state) = nullptr; // optional
+    // the launcher's salon (all optional): Steam names and avatars
+    void *utils = nullptr;
+    const char *(*GetPersonaName)(void *friends) = nullptr;
+    const char *(*GetFriendPersonaName)(void *friends, uint64_t user) = nullptr;
+    int (*GetMediumFriendAvatar)(void *friends, uint64_t user) = nullptr; // 0 none, -1 still loading
+    bool (*GetImageSize)(void *utils, int image, uint32_t *w, uint32_t *h) = nullptr;
+    bool (*GetImageRGBA)(void *utils, int image, uint8_t *dest, int size) = nullptr;
 };
 
 // steam_mock.cpp: tests only. Two copies on one PC with fake accounts, packets over localhost UDP.

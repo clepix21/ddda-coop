@@ -27,6 +27,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <type_traits>
+#include <vector>
 
 #include "mod.h"
 #include "steam_link.h"
@@ -83,6 +85,18 @@ bool fill_real()
         reinterpret_cast<void *>(GetProcAddress(m, "SteamAPI_ISteamNetworking_CloseP2PSessionWithUser")));
     g_f.GetP2PSessionState = reinterpret_cast<decltype(g_f.GetP2PSessionState)>(
         reinterpret_cast<void *>(GetProcAddress(m, "SteamAPI_ISteamNetworking_GetP2PSessionState")));
+    // the launcher's salon: names and avatars (missing ones only leave the salon without them)
+    auto opt = [&](const char *name, auto &out) {
+        out = reinterpret_cast<std::remove_reference_t<decltype(out)>>(reinterpret_cast<void *>(GetProcAddress(m, name)));
+    };
+    opt("SteamAPI_ISteamFriends_GetPersonaName", g_f.GetPersonaName);
+    opt("SteamAPI_ISteamFriends_GetFriendPersonaName", g_f.GetFriendPersonaName);
+    opt("SteamAPI_ISteamFriends_GetMediumFriendAvatar", g_f.GetMediumFriendAvatar);
+    opt("SteamAPI_ISteamUtils_GetImageSize", g_f.GetImageSize);
+    opt("SteamAPI_ISteamUtils_GetImageRGBA", g_f.GetImageRGBA);
+    Getter utils = nullptr;
+    opt("SteamUtils", utils);
+    g_f.utils = utils ? utils() : nullptr;
     g_f.net = net();
     g_f.user = user();
     g_f.friends = friends();
@@ -241,6 +255,30 @@ void link_steam_tick()
 }
 
 unsigned link_steam_short(uint64_t id) { return short_id(id); }
+
+uint64_t link_steam_self() { return g_ready ? g_self : 0; }
+
+// Net thread: a player's Steam name and medium avatar (64 x 64 RGBA) for the launcher's salon. The name
+// comes as soon as Steam knows it; the avatar may take a few calls (-1: Steam is still downloading it).
+bool link_steam_profile(uint64_t id, std::string &name, std::vector<uint8_t> &rgba, uint32_t &w, uint32_t &h)
+{
+    if (!g_ready || !id)
+        return false;
+    const char *n = id == g_self ? (g_f.GetPersonaName ? g_f.GetPersonaName(g_f.friends) : nullptr)
+                                 : (g_f.GetFriendPersonaName ? g_f.GetFriendPersonaName(g_f.friends, id) : nullptr);
+    name = n ? n : "";
+    rgba.clear();
+    w = h = 0;
+    if (!g_f.GetMediumFriendAvatar || !g_f.GetImageSize || !g_f.GetImageRGBA)
+        return !name.empty();
+    int img = g_f.GetMediumFriendAvatar(g_f.friends, id);
+    if (img > 0 && g_f.GetImageSize(g_f.utils, img, &w, &h) && w > 0 && h > 0 && w <= 256 && h <= 256) {
+        rgba.resize(size_t(w) * h * 4);
+        if (!g_f.GetImageRGBA(g_f.utils, img, rgba.data(), int(rgba.size())))
+            rgba.clear();
+    }
+    return !name.empty() || !rgba.empty();
+}
 
 // Guest: to its host. Host: to one guest.
 bool link_steam_send_to(uint64_t to, const void *p, int n)

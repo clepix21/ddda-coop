@@ -134,6 +134,7 @@ struct SnapMsg {
     uint32_t flags_got;       // and its world flag changes (flags.cpp)
     uint8_t down[4];          // shared world: player down, by place (revive.cpp)
     int8_t pawn_of[4];        // the pawn showing each guest (by place), -1 = none
+    uint64_t steam_of[4];     // each player's Steam id (by place), 0 = none or no Steam (the salon)
 };
 struct QuestChunkMsg { // shared world: the quest state of the player at `origin`, deflated, in pieces
     Header h;
@@ -228,9 +229,9 @@ struct SaveNeedMsg {
 #pragma pack(pop)
 
 // The message format's version: 'DDC2' since 2026-10-29 (32-bit action numbers), 'DDC3' (the held
-// monster's place). Messages of another format ('DDCO', 'DDC2'...) come from a player with another mod
+// monster's place), 'DDC4' (players' Steam ids in the SNAP, for the launcher's salon). Messages of another format ('DDCO', 'DDC2'...) come from a player with another mod
 // version: dropped, and said (the badge, the log).
-constexpr uint32_t kMagic = 0x33434444;
+constexpr uint32_t kMagic = 0x34434444;
 bool other_version(uint32_t magic) { return (magic & 0x00FFFFFF) == 0x00434444 && magic != kMagic; }
 volatile LONG g_old_peer = 0;
 NetRole g_role = NET_OFF;
@@ -1771,6 +1772,63 @@ void send_area_enemies(DWORD now)
 // Shared world, net thread, every second: coop_status.txt in the game folder for DDDA-Coop.exe's
 // "Joueurs" panel. One "player" line per place: slot, connected, present, down, stage, ms since its
 // last news (-1 = unknown), same area as this player, name (the guest's character on the host).
+// The salon's picture of player k (place) as coop_avatar_<k>.bmp next to coop_status.txt: a 32-bit
+// top-down BMP of the Steam avatar, written once per Steam id (and again while Steam still loads it);
+// no Steam id: the file goes. The Steam name comes back in `persona`.
+void salon_profile(int k, uint64_t id, std::string &persona)
+{
+    static uint64_t written[4] = {};
+    static std::string names[4];
+    static DWORD next_try[4] = {};
+    char path[32];
+    _snprintf(path, sizeof path, "coop_avatar_%d.bmp", k);
+    if (!id) {
+        if (written[k])
+            DeleteFileA(path);
+        written[k] = 0;
+        names[k].clear();
+        persona.clear();
+        return;
+    }
+    DWORD now = GetTickCount();
+    if (written[k] != id && (!next_try[k] || int(now - next_try[k]) >= 0)) {
+        next_try[k] = (now + 2000) | 1;
+        std::vector<uint8_t> rgba;
+        uint32_t w = 0, h = 0;
+        std::string name;
+        if (link_steam_profile(id, name, rgba, w, h)) {
+            names[k] = name;
+            if (!rgba.empty()) {
+                BITMAPFILEHEADER fh = {};
+                BITMAPINFOHEADER ih = {};
+                ih.biSize = sizeof ih;
+                ih.biWidth = LONG(w);
+                ih.biHeight = -LONG(h); // top-down
+                ih.biPlanes = 1;
+                ih.biBitCount = 32;
+                ih.biCompression = BI_RGB;
+                fh.bfType = 0x4D42;
+                fh.bfOffBits = sizeof fh + sizeof ih;
+                fh.bfSize = DWORD(fh.bfOffBits + rgba.size());
+                for (size_t i = 0; i + 3 < rgba.size(); i += 4)
+                    std::swap(rgba[i], rgba[i + 2]); // RGBA -> BGRA
+                char tmp[40];
+                _snprintf(tmp, sizeof tmp, "%s.tmp", path);
+                if (FILE *f = fopen(tmp, "wb")) {
+                    fwrite(&fh, sizeof fh, 1, f);
+                    fwrite(&ih, sizeof ih, 1, f);
+                    fwrite(rgba.data(), 1, rgba.size(), f);
+                    fclose(f);
+                    MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING);
+                    written[k] = id;
+                    logf("net: salon: player %d's Steam picture saved (%ux%u)", k, unsigned(w), unsigned(h));
+                }
+            }
+        }
+    }
+    persona = names[k];
+}
+
 void write_status(DWORD now)
 {
     std::string out = "version 1\n";
@@ -1829,6 +1887,32 @@ void write_status(DWORD now)
                   known && info.downed ? 1 : 0, known ? int(info.stage) : -1, ago, known && here >= 0 && info.stage == here ? 1 : 0,
                   name.c_str());
         out += line;
+    }
+    // the launcher's salon: the game (mode, the world's clock), each player's Steam name and avatar
+    uintptr_t gm = game::at<uintptr_t>(game::kGameMain, 0);
+    _snprintf(line, sizeof line, "game %s %s %d %d\n", g_shared ? "shared" : "classic", g_steam ? "steam" : "lan",
+              gm ? game::at<int32_t>(gm, game::kGsDay) : -1, gm ? game::at<int32_t>(gm, game::kGsDayMs) : -1);
+    out += line;
+    for (int k = 0; k < 4; ++k) {
+        uint64_t id = 0;
+        if (g_steam && g_role == NET_HOST)
+            id = k == 0 ? link_steam_self() : g_peers[k - 1].used ? g_peers[k - 1].steam : 0;
+        else if (g_steam && k == me)
+            id = link_steam_self();
+        else if (g_steam && g_have_snap) {
+            EnterCriticalSection(&g_snap_lock);
+            id = g_snap.steam_of[k];
+            LeaveCriticalSection(&g_snap_lock);
+        }
+        std::string persona;
+        salon_profile(k, id, persona);
+        for (char &c : persona)
+            if (c == '\n' || c == '\r')
+                c = ' ';
+        if (id) {
+            _snprintf(line, sizeof line, "steam %d %s\n", k, persona.c_str());
+            out += line;
+        }
     }
     if (FILE *f = fopen("coop_status.tmp", "wb")) {
         fwrite(out.data(), 1, out.size(), f);
@@ -2245,6 +2329,9 @@ DWORD WINAPI net_thread(LPVOID)
                         m.down[1 + q] = g_peers[q].used ? g_peers[q].downed : 0;
                         m.pawn_of[1 + q] = int8_t(g_peers[q].used ? g_peers[q].pawn : -1);
                     }
+                    m.steam_of[0] = g_steam ? link_steam_self() : 0;
+                    for (int q = 0; q < kMaxPeers; ++q)
+                        m.steam_of[1 + q] = g_steam && g_peers[q].used ? g_peers[q].steam : 0;
                     m.my_pawn = int8_t(peer.pawn);
                     m.char_crc = peer.char_crc;
                     send_to(peer, &m, sizeof m);

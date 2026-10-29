@@ -213,6 +213,43 @@ bool m_SetRP(void *, const char *key, const char *value)
     return true;
 }
 
+const char *m_PersonaName(void *)
+{
+    static char n[32];
+    snprintf(n, sizeof n, "Testeur %d", g_id);
+    return n;
+}
+const char *m_FriendPersonaName(void *, uint64_t user)
+{
+    static char n[32];
+    snprintf(n, sizeof n, "Testeur %d", int(user - kAccountBase));
+    return n;
+}
+int m_Avatar(void *, uint64_t user) { return int(user - kAccountBase); } // image handle = fake account
+bool m_ImageSize(void *, int, uint32_t *w, uint32_t *h)
+{
+    *w = *h = 64;
+    return true;
+}
+bool m_ImageRGBA(void *, int image, uint8_t *dest, int size)
+{
+    if (size < 64 * 64 * 4)
+        return false;
+    static const uint8_t colors[10][3] = {{120, 120, 120}, {180, 50, 50},  {50, 120, 190}, {60, 150, 80}, {200, 150, 40},
+                                          {130, 70, 170}, {40, 160, 160}, {200, 90, 130}, {110, 110, 40}, {90, 90, 200}};
+    const uint8_t *c = colors[image % 10];
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 64; ++x) {
+            uint8_t *p = dest + (y * 64 + x) * 4;
+            bool stripe = ((x + y) / 8) % 2 == 0; // diagonal stripes: a recognisable fake picture
+            p[0] = uint8_t(stripe ? c[0] : c[0] / 2);
+            p[1] = uint8_t(stripe ? c[1] : c[1] / 2);
+            p[2] = uint8_t(stripe ? c[2] : c[2] / 2);
+            p[3] = 255;
+        }
+    return true;
+}
+
 } // namespace
 
 bool steam_mock_fill(SteamFns &f)
@@ -262,5 +299,11 @@ bool steam_mock_fill(SteamFns &f)
     f.GetFriendGamePlayed = m_GamePlayed;
     f.GetFriendRichPresence = m_GetRP;
     f.SetRichPresence = m_SetRP;
+    f.utils = &g_id;
+    f.GetPersonaName = m_PersonaName;
+    f.GetFriendPersonaName = m_FriendPersonaName;
+    f.GetMediumFriendAvatar = m_Avatar;
+    f.GetImageSize = m_ImageSize;
+    f.GetImageRGBA = m_ImageRGBA;
     return true;
 }

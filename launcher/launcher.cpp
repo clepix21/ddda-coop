@@ -740,7 +740,48 @@ void check_watchers()
              kWarn);
 }
 
-// coop_status.txt (the mod, every second): one line per player.
+// The salon (coop_status.txt from the mod, every second): four seats, each player's Steam name and
+// picture (coop_avatar_<place>.bmp), character, area, state and link, and the game above them.
+struct Seat {
+    bool used = false, me = false, down = false;
+    std::wstring role, steam, character, zone, state, link;
+    COLORREF link_color = 0;
+};
+Seat g_seats[4];
+std::wstring g_salon_info = L"Le jeu n'est pas lancé.";
+HBITMAP g_avatar[4] = {};
+FILETIME g_avatar_time[4] = {};
+
+std::wstring widen_utf8(const std::string &s)
+{
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), int(s.size()), nullptr, 0);
+    std::wstring w(size_t(n > 0 ? n : 0), L'\0');
+    if (n > 0)
+        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), int(s.size()), &w[0], n);
+    return w;
+}
+
+// The seat's picture again when the mod wrote a newer one (or none any more).
+void load_avatar(int k, bool used)
+{
+    std::wstring path = g_game_dir + L"\\coop_avatar_" + std::to_wstring(k) + L".bmp";
+    WIN32_FILE_ATTRIBUTE_DATA a;
+    bool have = used && GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &a) &&
+                CompareFileTime(&a.ftLastWriteTime, &g_launch_time) >= 0;
+    if (!have) {
+        if (g_avatar[k])
+            DeleteObject(g_avatar[k]);
+        g_avatar[k] = nullptr;
+        return;
+    }
+    if (g_avatar[k] && CompareFileTime(&a.ftLastWriteTime, &g_avatar_time[k]) == 0)
+        return;
+    if (g_avatar[k])
+        DeleteObject(g_avatar[k]);
+    g_avatar[k] = HBITMAP(LoadImageW(nullptr, path.c_str(), IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION));
+    g_avatar_time[k] = a.ftLastWriteTime;
+}
+
 void update_players()
 {
     if (!g_players)
@@ -756,11 +797,11 @@ void update_players()
     n.LowPart = now_ft.dwLowDateTime, n.HighPart = now_ft.dwHighDateTime;
     w.LowPart = fresh ? a.ftLastWriteTime.dwLowDateTime : 0, w.HighPart = fresh ? a.ftLastWriteTime.dwHighDateTime : 0;
     bool stale = !fresh || n.QuadPart - w.QuadPart > 50000000ULL; // 5 s
-    int me = -1;
-    struct Row {
-        std::wstring who, zone, state, link;
-    };
-    std::vector<Row> rows;
+    int me = -1, count = 0;
+    bool host_role = false;
+    char mode[16] = "", link[16] = "";
+    int day = -1, day_ms = -1;
+    Seat seats[4];
     size_t at = 0;
     while (!stale && at < text.size()) {
         size_t nl = text.find('\n', at);
@@ -768,43 +809,177 @@ void update_players()
         at = nl == std::string::npos ? text.size() : nl + 1;
         int slot, conn, present, down, stage, same;
         long ago;
-        char name[128] = {};
+        char name[160] = {};
         if (sscanf(line.c_str(), "me %d", &me) == 1)
             continue;
-        if (sscanf(line.c_str(), "player %d %d %d %d %d %ld %d %127[^\n]", &slot, &conn, &present, &down, &stage, &ago, &same,
-                   name) < 7 || !conn)
+        if (line == "role host")
+            host_role = true;
+        if (sscanf(line.c_str(), "game %15s %15s %d %d", mode, link, &day, &day_ms) >= 2)
             continue;
-        Row r;
-        r.who = slot == 0 ? L"Hôte" : L"Invité " + std::to_wstring(slot);
-        if (name[0])
-            r.who += L" (" + widen(name) + L")";
-        if (slot == me)
-            r.who += L" \u2013 toi";
-        r.zone = slot == me ? L"Ta zone" : !present ? L"Inconnue" : same ? L"Même zone que toi"
-                                                                         : L"Autre zone (n° " + std::to_wstring(stage) + L")";
-        r.state = !present ? L"\u2013" : down ? L"\u26A0 À terre" : L"Debout";
-        r.link = slot == me ? L"\u2013" : ago < 0 ? L"Inconnue" : ago < 1500 ? L"Bonne" : ago < 5000 ? L"Lente"
-                                                                                                    : L"Coupée (" + std::to_wstring(ago / 1000) + L" s)";
-        rows.push_back(r);
+        if (sscanf(line.c_str(), "steam %d %159[^\n]", &slot, name) >= 1 && slot >= 0 && slot < 4) {
+            seats[slot].steam = widen_utf8(name);
+            continue;
+        }
+        if (sscanf(line.c_str(), "player %d %d %d %d %d %ld %d %159[^\n]", &slot, &conn, &present, &down, &stage, &ago, &same,
+                   name) < 7 || !conn || slot < 0 || slot >= 4)
+            continue;
+        Seat &r = seats[slot];
+        r.used = true;
+        ++count;
+        r.me = slot == me;
+        r.down = present && down;
+        r.role = slot == 0 ? L"HÔTE" : L"INVITÉ " + std::to_wstring(slot);
+        r.character = widen_utf8(name);
+        r.zone = r.me ? L"Ta zone" : !present ? L"Zone inconnue" : same ? L"Même zone que toi"
+                                                                        : L"Autre zone (n° " + std::to_wstring(stage) + L")";
+        r.state = !present ? L"" : down ? L"\u26A0 À terre" : L"Debout";
+        r.link = r.me ? L"Toi" : ago < 0 ? L"Connexion inconnue" : ago < 1500 ? L"Bonne connexion" : ago < 5000 ? L"Connexion lente"
+                                                                                                              : L"Coupée (" + std::to_wstring(ago / 1000) + L" s)";
+        r.link_color = r.me ? kInfo : ago < 0 ? kMuted : ago < 1500 ? kOk : ago < 5000 ? kWarn : kBad;
     }
-    SendMessageW(g_players, WM_SETREDRAW, FALSE, 0);
-    ListView_DeleteAllItems(g_players);
-    if (rows.empty()) {
-        LVITEMW it = {LVIF_TEXT};
-        it.pszText = const_cast<wchar_t *>(g_watching ? L"Personne pour l'instant (la liste se remplit en jeu)." : L"Le jeu n'est pas lancé.");
-        ListView_InsertItem(g_players, &it);
+    for (int k = 0; k < 4; ++k) {
+        if (!seats[k].used)
+            seats[k].steam.clear();
+        g_seats[k] = seats[k];
+        load_avatar(k, seats[k].used);
     }
-    for (size_t k = 0; k < rows.size(); ++k) {
-        LVITEMW it = {LVIF_TEXT};
-        it.iItem = int(k);
-        it.pszText = &rows[k].who[0];
-        ListView_InsertItem(g_players, &it);
-        ListView_SetItemText(g_players, int(k), 1, &rows[k].zone[0]);
-        ListView_SetItemText(g_players, int(k), 2, &rows[k].state[0]);
-        ListView_SetItemText(g_players, int(k), 3, &rows[k].link[0]);
+    if (!g_watching) {
+        g_salon_info = L"Le jeu n'est pas lancé.";
+    } else if (stale || !count) {
+        g_salon_info = L"Salon vide pour l'instant : il se remplit une fois en jeu.";
+    } else {
+        g_salon_info = std::wstring(strcmp(mode, "shared") == 0 ? L"Monde partagé" : L"Mode classique") +
+                       (strcmp(link, "steam") == 0 ? L" · Steam" : L" · réseau local") + L" · " + std::to_wstring(count) +
+                       L"/4 joueurs";
+        if (day >= 0 && day_ms >= 0) {
+            wchar_t t[64];
+            _snwprintf(t, 64, L" · jour %d, %02d:%02d", day, day_ms / 3600000 % 24, day_ms / 60000 % 60);
+            t[63] = 0;
+            g_salon_info += t;
+        }
+        g_salon_info += host_role ? L" · tu es l'hôte" : L" · tu es invité";
     }
-    SendMessageW(g_players, WM_SETREDRAW, TRUE, 0);
-    InvalidateRect(g_players, nullptr, TRUE);
+    // the same in words for screen readers (the salon draws itself)
+    std::wstring words = L"Salon. " + g_salon_info;
+    for (const Seat &r : g_seats)
+        if (r.used)
+            words += L". " + r.role + L" " + (r.steam.empty() ? r.character : r.steam) + L", " + r.zone + L", " + r.state + L", " +
+                     r.link;
+    SetWindowTextW(g_players, words.c_str());
+    InvalidateRect(g_players, nullptr, FALSE);
+}
+
+// The salon's painting: the game's line, then the four seats as cards (2 x 2).
+void paint_salon(HWND h, HDC dc)
+{
+    RECT rc;
+    GetClientRect(h, &rc);
+    HDC mem = CreateCompatibleDC(dc);
+    HBITMAP buf = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
+    HGDIOBJ old_buf = SelectObject(mem, buf);
+    FillRect(mem, &rc, g_bg_brush);
+    SetBkMode(mem, TRANSPARENT);
+    HGDIOBJ old_font = SelectObject(mem, g_font);
+    SetTextColor(mem, kMuted);
+    RECT info = {0, 0, rc.right, px(22)};
+    DrawTextW(mem, g_salon_info.c_str(), -1, &info, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+    int top = px(26), gap = px(8);
+    int cw = (rc.right - gap) / 2, ch = (rc.bottom - top - gap) / 2;
+    static const COLORREF seat_colors[4] = {RGB(122, 26, 26), RGB(30, 80, 150), RGB(24, 110, 48), RGB(110, 60, 140)};
+    for (int k = 0; k < 4; ++k) {
+        const Seat &r = g_seats[k];
+        RECT c = {(k % 2) * (cw + gap), top + (k / 2) * (ch + gap), 0, 0};
+        c.right = c.left + cw;
+        c.bottom = c.top + ch;
+        HPEN pen = CreatePen(r.used ? PS_SOLID : PS_DOT, 1, r.used ? (r.me ? kInfo : RGB(210, 214, 222)) : RGB(180, 184, 192));
+        HGDIOBJ old_pen = SelectObject(mem, pen);
+        HGDIOBJ old_brush = SelectObject(mem, r.used ? g_card_brush : g_bg_brush);
+        RoundRect(mem, c.left, c.top, c.right, c.bottom, px(10), px(10));
+        SelectObject(mem, old_brush);
+        SelectObject(mem, old_pen);
+        DeleteObject(pen);
+        int pad = px(10), av = px(48);
+        RECT pic = {c.left + pad, c.top + (ch - av) / 2, c.left + pad + av, c.top + (ch - av) / 2 + av};
+        if (!r.used) {
+            SetTextColor(mem, kMuted);
+            RECT t = c;
+            DrawTextW(mem, L"Place libre", -1, &t, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+            continue;
+        }
+        // the Steam picture in a circle, or the first letter on the seat's colour
+        HRGN clip = CreateEllipticRgn(pic.left, pic.top, pic.right + 1, pic.bottom + 1);
+        SelectClipRgn(mem, clip);
+        if (g_avatar[k]) {
+            HDC src = CreateCompatibleDC(mem);
+            HGDIOBJ old_src = SelectObject(src, g_avatar[k]);
+            BITMAP bm;
+            GetObject(g_avatar[k], sizeof bm, &bm);
+            SetStretchBltMode(mem, HALFTONE);
+            StretchBlt(mem, pic.left, pic.top, av, av, src, 0, 0, bm.bmWidth, bm.bmHeight, SRCCOPY);
+            SelectObject(src, old_src);
+            DeleteDC(src);
+        } else {
+            HBRUSH b = CreateSolidBrush(seat_colors[k]);
+            FillRect(mem, &pic, b);
+            DeleteObject(b);
+            std::wstring who = r.steam.empty() ? r.character : r.steam;
+            std::wstring letter = who.empty() ? std::to_wstring(k + 1) : who.substr(0, 1);
+            SelectObject(mem, g_head);
+            SetTextColor(mem, RGB(255, 255, 255));
+            RECT t = pic;
+            DrawTextW(mem, letter.c_str(), -1, &t, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        }
+        SelectClipRgn(mem, nullptr);
+        DeleteObject(clip);
+        // text: Steam name (bold), role and character, area and state, link
+        int x = pic.right + pad, lh = px(18);
+        RECT t = {x, c.top + px(6), c.right - pad, c.top + px(6) + lh};
+        SelectObject(mem, g_bold);
+        SetTextColor(mem, kText);
+        std::wstring title = (r.steam.empty() ? (r.character.empty() ? r.role : r.character) : r.steam) + (r.me ? L" (toi)" : L"");
+        DrawTextW(mem, title.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        OffsetRect(&t, 0, lh);
+        SelectObject(mem, g_font);
+        SetTextColor(mem, seat_colors[k]);
+        std::wstring line2 = r.role + (r.character.empty() ? L"" : L" · perso : " + r.character);
+        DrawTextW(mem, line2.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        OffsetRect(&t, 0, lh);
+        SetTextColor(mem, r.down ? kBad : kMuted);
+        std::wstring line3 = r.zone + (r.state.empty() ? L"" : L" · " + r.state);
+        DrawTextW(mem, line3.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        OffsetRect(&t, 0, lh);
+        HBRUSH dot = CreateSolidBrush(r.link_color);
+        HGDIOBJ old_dot = SelectObject(mem, dot);
+        HGDIOBJ old_np = SelectObject(mem, GetStockObject(NULL_PEN));
+        int d = px(8), dy = t.top + (lh - d) / 2;
+        Ellipse(mem, t.left, dy, t.left + d, dy + d);
+        SelectObject(mem, old_np);
+        SelectObject(mem, old_dot);
+        DeleteObject(dot);
+        RECT lt = t;
+        lt.left += d + px(6);
+        SetTextColor(mem, r.link_color);
+        DrawTextW(mem, r.link.c_str(), -1, &lt, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    }
+    SelectObject(mem, old_font);
+    BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+    SelectObject(mem, old_buf);
+    DeleteObject(buf);
+    DeleteDC(mem);
+}
+
+LRESULT CALLBACK salon_proc(HWND h, UINT m, WPARAM w, LPARAM l)
+{
+    if (m == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(h, &ps);
+        paint_salon(h, dc);
+        EndPaint(h, &ps);
+        return 0;
+    }
+    if (m == WM_ERASEBKGND)
+        return 1;
+    return DefWindowProcW(h, m, w, l);
 }
 
 // ---- window ----
@@ -864,26 +1039,16 @@ void build_window()
     set_state(L"Choisis ton rôle puis lance le jeu.", kMuted);
     y += 64;
 
-    make(L"STATIC", L"Joueurs", 0, L, y, W, 24, 0, g_head);
+    make(L"STATIC", L"Salon", 0, L, y, W, 24, 0, g_head);
     y += 28;
-    g_players = make(WC_LISTVIEWW, L"", LVS_REPORT | LVS_SINGLESEL | LVS_NOSORTHEADER | WS_BORDER | WS_TABSTOP, L, y, W, 104,
-                     ID_PLAYERS);
-    ListView_SetExtendedListViewStyle(g_players, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
-    const wchar_t *cols[] = {L"Joueur", L"Zone", L"État", L"Connexion"};
-    const int widths[] = {190, 150, 90, 110};
-    for (int c = 0; c < 4; ++c) {
-        LVCOLUMNW col = {LVCF_TEXT | LVCF_WIDTH};
-        col.pszText = const_cast<wchar_t *>(cols[c]);
-        col.cx = px(widths[c]);
-        ListView_InsertColumn(g_players, c, &col);
-    }
-    y += 112;
+    g_players = make(L"DDDACoopSalon", L"Salon", 0, L, y, W, 196, ID_PLAYERS);
+    y += 204;
 
     make(L"STATIC", L"Événements", 0, L, y, W, 24, 0, g_head);
     y += 28;
-    g_events = make(L"LISTBOX", L"", WS_BORDER | WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL, L, y, W, 96,
+    g_events = make(L"LISTBOX", L"", WS_BORDER | WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL, L, y, W, 72,
                     ID_EVENTS);
-    y += 104;
+    y += 80;
     make(L"BUTTON", L"Copier mes s&auvegardes", BS_PUSHBUTTON | WS_TABSTOP, L, y, 200, 32, ID_BACKUP);
     make(L"BUTTON", L"E&xporter le journal", BS_PUSHBUTTON | WS_TABSTOP, L + 210, y, 180, 32, ID_EXPORT);
     y += 42;
@@ -1033,6 +1198,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     g_bg_brush = CreateSolidBrush(kBg);
     g_card_brush = CreateSolidBrush(kCard);
 
+    WNDCLASSW sc = {};
+    sc.lpfnWndProc = salon_proc;
+    sc.hInstance = inst;
+    sc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    sc.lpszClassName = L"DDDACoopSalon";
+    RegisterClassW(&sc);
     WNDCLASSW wc = {};
     wc.lpfnWndProc = wnd_proc;
     wc.hInstance = inst;
@@ -1041,7 +1212,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     wc.hbrBackground = CreateSolidBrush(kBg);
     wc.lpszClassName = L"DDDACoopLauncher";
     RegisterClassW(&wc);
-    RECT r = {0, 0, MulDiv(600, g_dpi, 96), MulDiv(900, g_dpi, 96)};
+    RECT r = {0, 0, MulDiv(600, g_dpi, 96), MulDiv(1000, g_dpi, 96)};
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
     AdjustWindowRect(&r, style, FALSE);
     HWND h = CreateWindowW(wc.lpszClassName, kTitle, style, CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left,
