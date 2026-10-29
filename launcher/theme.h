@@ -9,6 +9,7 @@ namespace theme {
 
 // colours (sRGB)
 constexpr COLORREF kBg = RGB(0x16, 0x18, 0x1c);            // window background
+constexpr COLORREF kSidebar = RGB(0x11, 0x13, 0x16);       // the sidebar, a step darker
 constexpr COLORREF kSurface = RGB(0x1f, 0x22, 0x28);       // cards, fields
 constexpr COLORREF kSurfaceHover = RGB(0x26, 0x2a, 0x31);  // a card or button under the pointer
 constexpr COLORREF kSurfaceRaised = RGB(0x2a, 0x2e, 0x36); // secondary buttons

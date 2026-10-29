@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "../src/version.h"
 #include "theme.h"
 
 namespace {
@@ -33,14 +34,21 @@ const char kOurMarker[] = "ddda-pawn-coop loaded"; // a string only our dinput8.
 
 enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
-    ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP
+    ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP,
+    ID_OPEN_BACKUPS, ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
 };
+// the screens, in the sidebar's order
+enum Page { PAGE_PLAY, PAGE_SALON, PAGE_SAVES, PAGE_SETTINGS, PAGE_LOG, PAGE_COUNT };
+const wchar_t *const kPageNames[PAGE_COUNT] = {L"Jouer", L"Salon", L"Sauvegardes", L"Paramètres", L"Journal"};
+// Segoe MDL2 Assets glyphs (Windows 10 and 11): play, people, save, settings, list
+const wchar_t *const kPageIcons[PAGE_COUNT] = {L"\uE768", L"\uE716", L"\uE74E", L"\uE713", L"\uE8FD"};
+int g_page = PAGE_PLAY;
+int g_game_state = 0;     // 0 DDDA.exe not found, 1 found but another version, 2 supported (the header's line)
+bool g_log_unseen = false; // a warning or an error in the journal since it was last shown (a dot on its icon)
 
 HWND g_wnd, g_game_edit, g_version, g_host, g_guest, g_solo, g_own_char, g_keep, g_debug, g_launch, g_state, g_events,
-    g_players, g_events_toggle, g_backup_btn, g_export_btn, g_backup_note;
-bool g_events_open = false; // the events list: shut until a warning or an error (the toggle opens and shuts it)
-int g_events_top = 0;       // where the events part starts (96-dpi units), for the layout below it
-HFONT g_font, g_bold, g_head, g_title;
+    g_players, g_backup_note;
+HFONT g_font, g_bold, g_head, g_title, g_icon, g_small;
 HBRUSH g_bg_brush, g_card_brush;
 int g_dpi = 96;
 RECT g_state_rect = {}, g_header_rect = {};
@@ -287,8 +295,11 @@ void add_event(const std::wstring &text)
     int i = int(SendMessageW(g_events, LB_ADDSTRING, 0, LPARAM((stamp + text).c_str())));
     SendMessageW(g_events, LB_SETITEMDATA, i, LPARAM(event_kind(text)));
     SendMessageW(g_events, LB_SETTOPINDEX, i, 0);
-    if (!g_events_open && event_kind(text) >= 2) // a warning or an error opens the list (a short window otherwise)
-        g_events_open = true;
+    if (event_kind(text) >= 2 && g_page != PAGE_LOG) { // a warning or an error: a dot on the journal's icon
+        g_log_unseen = true;
+        if (HWND nav = GetDlgItem(g_wnd, ID_NAV + PAGE_LOG))
+            InvalidateRect(nav, nullptr, FALSE);
+    }
     layout_events();
 }
 
@@ -333,6 +344,7 @@ void check_game()
 {
     g_game_dir = window_text(g_game_edit);
     g_supported = false;
+    g_game_state = 0;
     if (g_game_dir.empty() || !exists(g_game_dir + L"\\DDDA.exe")) {
         SetWindowTextW(g_version, L"DDDA.exe introuvable dans ce dossier.");
     } else {
@@ -341,8 +353,11 @@ void check_game()
         g_supported = sha256_file(g_game_dir + L"\\DDDA.exe") == kSupportedSha;
         SetWindowTextW(g_version, g_supported ? L"Version du jeu prise en charge."
                                               : L"Version de DDDA.exe non prise en charge : le mod ne marcherait pas.");
+        g_game_state = g_supported ? 2 : 1;
     }
     update_controls();
+    if (g_wnd)
+        InvalidateRect(g_wnd, nullptr, FALSE);
 }
 
 // ---- actions ----
@@ -1134,7 +1149,7 @@ void hover_step(HWND parent)
         KillTimer(parent, kHoverTimer);
 }
 
-enum ButtonKind { BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST };
+enum ButtonKind { BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_NAV };
 ButtonKind kind_of(int id);
 
 void draw_button(const DRAWITEMSTRUCT *d)
@@ -1145,6 +1160,38 @@ void draw_button(const DRAWITEMSTRUCT *d)
     bool pressed = d->itemState & ODS_SELECTED, disabled = d->itemState & ODS_DISABLED, focus = d->itemState & ODS_FOCUS;
     RECT r = d->rcItem;
     HDC dc = d->hDC;
+    if (kind == BTN_NAV) { // icon over a small label; the current screen on a surface with the accent bar
+        int page = int(d->CtlID) - ID_NAV;
+        bool current = page == g_page;
+        HBRUSH side = CreateSolidBrush(theme::kSidebar);
+        FillRect(dc, &r, side);
+        DeleteObject(side);
+        RECT card = r;
+        InflateRect(&card, -px(8), -px(4));
+        COLORREF fill = current ? theme::kSurfaceHover : theme::mix(theme::kSidebar, theme::kSurface, pressed ? 1.f : hv);
+        if (current || hv > 0 || pressed)
+            theme::round_rect(dc, card, px(theme::kRadiusButton), fill);
+        if (current) {
+            RECT bar = {r.left + px(2), card.top + px(10), r.left + px(5), card.bottom - px(10)};
+            theme::round_rect(dc, bar, px(2), theme::kAccent);
+        }
+        if (focus && !(d->itemState & ODS_NOFOCUSRECT))
+            theme::round_rect(dc, card, px(theme::kRadiusButton), CLR_INVALID, theme::kFocus, 1.5f);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, current ? theme::kText : theme::kMuted);
+        HGDIOBJ old = SelectObject(dc, g_icon);
+        RECT ic = {card.left, card.top + px(8), card.right, card.top + px(32)};
+        DrawTextW(dc, kPageIcons[page], -1, &ic, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        SelectObject(dc, g_small);
+        RECT lb = {card.left, card.top + px(34), card.right, card.bottom - px(4)};
+        DrawTextW(dc, kPageNames[page], -1, &lb, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+        if (page == PAGE_LOG && g_log_unseen) {
+            RECT dot = {ic.right - px(26), ic.top, ic.right - px(18), ic.top + px(8)};
+            theme::circle(dc, dot, theme::kWarn);
+        }
+        SelectObject(dc, old);
+        return;
+    }
     // the parent's background first (rounded corners show it)
     HBRUSH bg = CreateSolidBrush(theme::kBg);
     FillRect(dc, &r, bg);
@@ -1200,77 +1247,110 @@ HWND make(const wchar_t *cls, const wchar_t *text, DWORD style, int x, int y, in
     return c;
 }
 
-ButtonKind kind_of(int id) { return id == ID_LAUNCH ? BTN_PRIMARY : id == ID_EVENTS_TOGGLE ? BTN_GHOST : BTN_SECONDARY; }
+ButtonKind kind_of(int id)
+{
+    return id >= ID_NAV && id < ID_NAV + PAGE_COUNT ? BTN_NAV : id == ID_LAUNCH ? BTN_PRIMARY : id == ID_EVENTS_TOGGLE ? BTN_GHOST
+                                                                                                                          : BTN_SECONDARY;
+}
 
-// layout in 96-dpi units, scaled by px(): two columns (the settings and the launch on the left, the salon
-// and the events on the right) so the window fits a laptop's screen (owner's choice, 2026-10-29)
-const int kW = 1080, kL = 24, kCol = 504, kR = kL + kCol + 24;
-int g_left_bottom = 0; // where the left column ends
-int g_height = 0;
+// Layout in 96-dpi units, scaled by px(): a thin sidebar of icons (the five screens) and one screen at a
+// time, so the window fits a laptop's screen (~768 px high) without scrolling (owner's direction,
+// 2026-10-29). Each screen's controls are listed in g_pages and shown or hidden together.
+const int kW = 960, kH = 600, kSide = 84, kX = kSide + 28, kCW = kW - kX - 28, kHeaderH = 112;
+int g_height = kH;
+std::vector<HWND> g_pages[PAGE_COUNT];
+int g_building = PAGE_PLAY; // the screen the controls made now belong to
+
+HWND add(HWND h)
+{
+    g_pages[g_building].push_back(h);
+    return h;
+}
+
+void show_page(int page)
+{
+    g_page = page;
+    if (page == PAGE_LOG)
+        g_log_unseen = false;
+    for (int k = 0; k < PAGE_COUNT; ++k)
+        for (HWND h : g_pages[k])
+            ShowWindow(h, k == page ? SW_SHOW : SW_HIDE);
+    for (int k = 0; k < PAGE_COUNT; ++k)
+        if (HWND nav = GetDlgItem(g_wnd, ID_NAV + k))
+            InvalidateRect(nav, nullptr, FALSE);
+    InvalidateRect(g_wnd, nullptr, TRUE);
+}
 
 void build_window()
 {
-    const int L = kL, W = kCol;
-    g_header_rect = {0, 0, px(kW), px(64)};
-    int y = 80;
-    make(L"STATIC", L"1.  Le jeu", 0, L, y, W, 24, 0, g_head);
-    y += 30;
-    g_game_edit = make(L"EDIT", g_game_dir.c_str(), WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, L, y, W - 120, 28, ID_GAME_EDIT);
-    make(L"BUTTON", L"&Changer…", BS_PUSHBUTTON | WS_TABSTOP, L + W - 110, y, 110, 28, ID_BROWSE);
-    y += 34;
-    g_version = make(L"STATIC", L"", 0, L, y, W, 22, 0);
-    y += 36;
+    // the sidebar (always shown); Ctrl+1..5 and Ctrl+Tab move between screens too (the message loop)
+    for (int k = 0; k < PAGE_COUNT; ++k) {
+        HWND nav = make(L"BUTTON", kPageNames[k], BS_PUSHBUTTON | WS_TABSTOP | (k == 0 ? WS_GROUP : 0), 0, 12 + k * 64, kSide, 62,
+                        ID_NAV + k);
+        (void)nav;
+    }
+    const int L = kX, W = kCW;
 
-    make(L"STATIC", L"2.  Ton rôle", 0, L, y, W, 24, 0, g_head);
-    y += 30;
-    g_host = make(L"BUTTON", L"L'&hôte : je charge ma partie, mes amis me rejoignent",
-                  BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, L, y, W, 26, ID_HOST);
+    // ---- Jouer: the header (gradient, room for an artwork), the role, the launch, the state ----
+    g_building = PAGE_PLAY;
+    g_header_rect = {px(kSide), 0, px(kW), px(kHeaderH)};
+    int y = kHeaderH + 16;
+    add(make(L"STATIC", L"Ton rôle", 0, L, y, W, 24, 0, g_head));
+    y += 32;
+    g_host = add(make(L"BUTTON", L"L'&hôte : je charge ma partie, mes amis me rejoignent",
+                      BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, L, y, W, 26, ID_HOST));
     y += 28;
-    g_guest = make(L"BUTTON", L"Un &invité : je rejoins un ami (ma partie n'est ni chargée ni sauvegardée)",
-                   BS_AUTORADIOBUTTON, L, y, W, 26, ID_GUEST);
+    g_guest = add(make(L"BUTTON", L"Un &invité : je rejoins un ami (ma partie n'est ni chargée ni sauvegardée)", BS_AUTORADIOBUTTON, L,
+                       y, W, 26, ID_GUEST));
     y += 28;
-    g_own_char = make(L"BUTTON", L"Jouer avec mon &propre perso (sinon je joue le pion de l'hôte)",
-                      BS_AUTOCHECKBOX | WS_TABSTOP, L + 24, y, W - 24, 26, ID_OWN_CHAR);
+    g_own_char = add(make(L"BUTTON", L"Jouer avec mon &propre perso (sinon je joue le pion de l'hôte)", BS_AUTOCHECKBOX | WS_TABSTOP,
+                          L + 24, y, W - 24, 26, ID_OWN_CHAR));
     y += 28;
-    g_solo = make(L"BUTTON", L"&Seul : je joue ma partie (ma progression gagnée en co-op y est ajoutée)",
-                  BS_AUTORADIOBUTTON, L, y, W, 26, ID_SOLO);
+    g_solo = add(make(L"BUTTON", L"&Seul : je joue ma partie (ma progression gagnée en co-op y est ajoutée)", BS_AUTORADIOBUTTON, L, y,
+                      W, 26, ID_SOLO));
     y += 34;
-    g_keep = make(L"BUTTON", L"&Garder la progression de mon perso gagnée chez un ami (exp, discipline, objets)",
-                  BS_AUTOCHECKBOX | WS_GROUP | WS_TABSTOP, L, y, W, 26, ID_KEEP);
-    y += 28;
-    g_debug = make(L"BUTTON", L"&Journal détaillé (utile pour signaler un problème)", BS_AUTOCHECKBOX | WS_TABSTOP, L, y,
-                   W, 26, ID_DEBUG);
-    y += 38;
-
-    make(L"STATIC", L"3.  Jouer", 0, L, y, W, 24, 0, g_head);
-    y += 30;
-    g_launch = make(L"BUTTON", L"&Lancer le jeu", BS_DEFPUSHBUTTON | WS_TABSTOP, L, y, 230, 42, ID_LAUNCH, g_bold);
-    make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L + 242, y, 150, 42, ID_REMOVE);
-    make(L"BUTTON", L"? A&ide", BS_PUSHBUTTON | WS_TABSTOP, L + W - 100, y, 100, 42, ID_HELP);
-    y += 54;
-    g_state_rect = {px(L), px(y), px(L + W), px(y + 52)};
-    g_state = make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, L + 14, y + 8, W - 22, 40, 0, g_bold);
+    g_keep = add(make(L"BUTTON", L"&Garder la progression de mon perso gagnée chez un ami (exp, discipline, objets)",
+                      BS_AUTOCHECKBOX | WS_GROUP | WS_TABSTOP, L, y, W, 26, ID_KEEP));
+    y += 40;
+    g_launch = add(make(L"BUTTON", L"&Lancer le jeu", BS_DEFPUSHBUTTON | WS_TABSTOP, L, y, 260, 46, ID_LAUNCH, g_bold));
+    add(make(L"BUTTON", L"? A&ide", BS_PUSHBUTTON | WS_TABSTOP, L + W - 100, y, 100, 46, ID_HELP));
+    y += 60;
+    g_state_rect = {px(L), px(y), px(L + W), px(y + 56)};
+    g_state = add(make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, L + 22, y + 10, W - 34, 40, 0, g_bold));
     set_state(L"Choisis ton rôle puis lance le jeu.", kMuted);
-    y += 64;
-    g_left_bottom = y;
 
-    // the right column, from the top
-    const int R = kR;
-    y = 80;
-    make(L"STATIC", L"Salon", 0, R, y, W, 24, 0, g_head);
-    y += 28;
-    g_players = make(L"DDDACoopSalon", L"Salon", 0, R, y, W, 176, ID_PLAYERS);
-    y += 184;
+    // ---- Salon ----
+    g_building = PAGE_SALON;
+    g_players = add(make(L"DDDACoopSalon", L"Salon", 0, L, 76, W, 300, ID_PLAYERS));
 
-    g_events_top = y;
-    g_events_toggle = make(L"BUTTON", L"", BS_PUSHBUTTON | BS_LEFT | WS_TABSTOP, R, y, W, 28, ID_EVENTS_TOGGLE, g_head);
-    g_events = make(L"LISTBOX", L"", WS_BORDER | WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL | LBS_OWNERDRAWFIXED |
-                    LBS_HASSTRINGS, R, y + 32, W, 96, ID_EVENTS);
-    g_backup_btn = make(L"BUTTON", L"Copier mes s&auvegardes", BS_PUSHBUTTON | WS_TABSTOP, R, y, 200, 32, ID_BACKUP);
-    g_export_btn = make(L"BUTTON", L"E&xporter le journal", BS_PUSHBUTTON | WS_TABSTOP, R + 210, y, 180, 32, ID_EXPORT);
-    g_backup_note = make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_PATHELLIPSIS, R, y, W, 20, 0);
+    // ---- Sauvegardes ----
+    g_building = PAGE_SAVES;
+    add(make(L"STATIC",
+             L"Une copie de secours de tes sauvegardes Steam de Dragon's Dogma est faite à chaque lancement. Tu peux en faire une "
+             L"tout de suite.",
+             0, L, 76, W, 44, 0));
+    add(make(L"BUTTON", L"Copier mes s&auvegardes", BS_PUSHBUTTON | WS_TABSTOP, L, 132, 230, 40, ID_BACKUP));
+    add(make(L"BUTTON", L"&Ouvrir le dossier", BS_PUSHBUTTON | WS_TABSTOP, L + 242, 132, 180, 40, ID_OPEN_BACKUPS));
+    g_backup_note = add(make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_PATHELLIPSIS, L, 188, W, 22, 0));
     show_backup_note();
-    layout_events(); // sets g_height
+
+    // ---- Paramètres ----
+    g_building = PAGE_SETTINGS;
+    add(make(L"STATIC", L"Dossier du jeu", 0, L, 76, W, 22, 0, g_bold));
+    g_game_edit = add(make(L"EDIT", g_game_dir.c_str(), WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, L, 102, W - 132, 30, ID_GAME_EDIT));
+    add(make(L"BUTTON", L"&Changer…", BS_PUSHBUTTON | WS_TABSTOP, L + W - 120, 102, 120, 30, ID_BROWSE));
+    g_version = add(make(L"STATIC", L"", 0, L, 140, W, 22, 0));
+    g_debug = add(make(L"BUTTON", L"&Journal détaillé (utile pour signaler un problème)", BS_AUTOCHECKBOX | WS_TABSTOP, L, 180, W, 26,
+                       ID_DEBUG));
+    add(make(L"STATIC", L"Zone sensible", 0, L, 236, W, 22, 0, g_bold));
+    add(make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L, 264, 180, 40, ID_REMOVE));
+
+    // ---- Journal ----
+    g_building = PAGE_LOG;
+    g_events = add(make(L"LISTBOX", L"", WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL | LBS_OWNERDRAWFIXED |
+                                            LBS_HASSTRINGS,
+                        L, 76, W, kH - 76 - 76, ID_EVENTS));
+    add(make(L"BUTTON", L"E&xporter le journal", BS_PUSHBUTTON | WS_TABSTOP, L, kH - 60, 200, 40, ID_EXPORT));
 
     std::wstring role = setting(L"role", L"host");
     SendMessageW(role == L"guest" ? g_guest : role == L"solo" ? g_solo : g_host, BM_SETCHECK, BST_CHECKED, 0);
@@ -1278,77 +1358,58 @@ void build_window()
     SendMessageW(g_own_char, BM_SETCHECK, setting(L"own_character", L"1") == L"1" ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(g_debug, BM_SETCHECK, setting(L"debug_log", L"1") == L"1" ? BST_CHECKED : BST_UNCHECKED, 0);
     update_players();
+    show_page(PAGE_PLAY);
 }
 
-// The part under the salon: the events toggle, the list when open, the buttons, the backup note; the
-// window's height follows.
-void layout_events()
-{
-    if (!g_events_toggle)
-        return;
-    const int L = kR, W = kCol;
-    int n = int(SendMessageW(g_events, LB_GETCOUNT, 0, 0));
-    std::wstring label = std::wstring(g_events_open ? L"\u25BE  " : L"\u25B8  ") + L"Événements (" + std::to_wstring(n) + L")" +
-                         (n == 0 ? L" \u2013 rien pour l'instant" : g_events_open ? L"" : L" \u2013 cliquer pour afficher");
-    SetWindowTextW(g_events_toggle, label.c_str());
-    int y = g_events_top + 32;
-    ShowWindow(g_events, g_events_open ? SW_SHOW : SW_HIDE);
-    if (g_events_open)
-        y += 104;
-    MoveWindow(g_backup_btn, px(L), px(y), px(200), px(32), TRUE);
-    MoveWindow(g_export_btn, px(L + 210), px(y), px(180), px(32), TRUE);
-    y += 38;
-    MoveWindow(g_backup_note, px(L), px(y), px(W), px(20), TRUE);
-    y += 30;
-    if (y < g_left_bottom)
-        y = g_left_bottom;
-    if (y != g_height) {
-        g_height = y;
-        if (IsWindowVisible(g_wnd)) {
-            RECT need = {0, 0, px(kW), px(g_height)};
-            AdjustWindowRect(&need, DWORD(GetWindowLongW(g_wnd, GWL_STYLE)), FALSE);
-            SetWindowPos(g_wnd, nullptr, 0, 0, need.right - need.left, need.bottom - need.top, SWP_NOMOVE | SWP_NOZORDER);
-        }
-    }
-    InvalidateRect(g_wnd, nullptr, TRUE);
-}
-
-void paint_columns(HDC dc)
-{
-    HPEN pen = CreatePen(PS_SOLID, 1, theme::kBorder);
-    HGDIOBJ old = SelectObject(dc, pen);
-    int x = px(kL + kCol + 12);
-    MoveToEx(dc, x, px(84), nullptr);
-    LineTo(dc, x, px(g_height - 16));
-    SelectObject(dc, old);
-    DeleteObject(pen);
-}
+// Kept for the event code: the journal is its own screen now, nothing to move.
+void layout_events() {}
 
 void paint(HWND h)
 {
     PAINTSTRUCT ps;
     HDC dc = BeginPaint(h, &ps);
-    {
-        Gdiplus::Graphics g(dc);
-        Gdiplus::LinearGradientBrush grad(Gdiplus::Point(0, INT(g_header_rect.top)), Gdiplus::Point(0, INT(g_header_rect.bottom)),
-                                          theme::gp(RGB(0x2a, 0x1c, 0x22)), theme::gp(theme::kBg));
-        g.FillRectangle(&grad, INT(g_header_rect.left), INT(g_header_rect.top), INT(g_header_rect.right - g_header_rect.left),
-                        INT(g_header_rect.bottom - g_header_rect.top));
-    }
+    RECT side = {0, 0, px(kSide), px(kH)};
+    HBRUSH sb = CreateSolidBrush(theme::kSidebar);
+    FillRect(dc, &side, sb);
+    DeleteObject(sb);
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, kText);
     HGDIOBJ old = SelectObject(dc, g_title);
-    RECT t = {px(kL), px(8), px(kW - kL), px(40)};
-    DrawTextW(dc, L"DDDA Coop", -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-    SelectObject(dc, g_font);
-    SetTextColor(dc, kMuted);
-    RECT sub = {px(kL), px(38), px(kW - kL), px(60)};
-    DrawTextW(dc, L"Dragon's Dogma: Dark Arisen à plusieurs, chacun sur son PC", -1, &sub, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-    // the state card: white, with a coloured bar on the left
-    theme::round_rect(dc, g_state_rect, px(theme::kRadiusCard), kCard, theme::kBorder);
-    RECT bar = {g_state_rect.left + px(8), g_state_rect.top + px(12), g_state_rect.left + px(12), g_state_rect.bottom - px(12)};
-    theme::round_rect(dc, bar, px(2), g_state_color);
-    paint_columns(dc);
+    if (g_page == PAGE_PLAY) {
+        {
+            Gdiplus::Graphics g(dc);
+            Gdiplus::LinearGradientBrush grad(Gdiplus::Point(0, INT(g_header_rect.top)), Gdiplus::Point(0, INT(g_header_rect.bottom)),
+                                              theme::gp(RGB(0x2a, 0x1c, 0x22)), theme::gp(theme::kBg));
+            g.FillRectangle(&grad, INT(g_header_rect.left), INT(g_header_rect.top), INT(g_header_rect.right - g_header_rect.left),
+                            INT(g_header_rect.bottom - g_header_rect.top));
+        }
+        SetTextColor(dc, kText);
+        RECT t = {px(kX), px(22), px(kX + kCW), px(56)};
+        DrawTextW(dc, L"DDDA Coop", -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        // "✓ DDDA détecté · Mod v0.9.0" (or what is wrong, in its colour)
+        SelectObject(dc, g_font);
+        std::wstring mod = L"Mod v" + widen(DDDA_COOP_VERSION);
+        std::wstring line = g_game_state == 2 ? L"\u2714  DDDA détecté \u00b7 " + mod
+                            : g_game_state == 1 ? L"\u2716  Version de DDDA.exe non prise en charge \u00b7 " + mod
+                                                : L"\u2716  DDDA.exe introuvable : choisis son dossier dans Paramètres \u00b7 " + mod;
+        SetTextColor(dc, g_game_state == 2 ? theme::kOk : theme::kBad);
+        RECT st = {px(kX), px(60), px(kX + kCW), px(84)};
+        DrawTextW(dc, line.c_str(), -1, &st, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        theme::round_rect(dc, g_state_rect, px(theme::kRadiusCard), kCard, theme::kBorder);
+        RECT bar = {g_state_rect.left + px(10), g_state_rect.top + px(14), g_state_rect.left + px(14), g_state_rect.bottom - px(14)};
+        theme::round_rect(dc, bar, px(2), g_state_color);
+    } else {
+        SetTextColor(dc, kText);
+        RECT t = {px(kX), px(22), px(kX + kCW), px(58)};
+        DrawTextW(dc, kPageNames[g_page], -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        if (g_page == PAGE_SETTINGS) { // the sensitive part apart, under a line
+            HPEN pen = CreatePen(PS_SOLID, 1, theme::kBorder);
+            HGDIOBJ op = SelectObject(dc, pen);
+            MoveToEx(dc, px(kX), px(222), nullptr);
+            LineTo(dc, px(kX + kCW), px(222));
+            SelectObject(dc, op);
+            DeleteObject(pen);
+        }
+    }
     SelectObject(dc, old);
     EndPaint(h, &ps);
 }
@@ -1392,6 +1453,10 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         paint(h);
         return 0;
     case WM_COMMAND:
+        if (LOWORD(w) >= ID_NAV && LOWORD(w) < ID_NAV + PAGE_COUNT) {
+            show_page(LOWORD(w) - ID_NAV);
+            return 0;
+        }
         switch (LOWORD(w)) {
         case ID_BROWSE: on_browse(); break;
         case ID_HOST:
@@ -1404,10 +1469,13 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_REMOVE: on_remove(); break;
         case ID_BACKUP: on_backup(); break;
         case ID_HELP: show_help(); break;
-        case ID_EVENTS_TOGGLE:
-            g_events_open = !g_events_open;
-            layout_events();
+        case ID_OPEN_BACKUPS: {
+            std::wstring dir = setting(L"last_backup", L"");
+            if (dir.empty() || !is_dir(dir))
+                dir = documents_dir() + L"\\DDDA Coop";
+            ShellExecuteW(g_wnd, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
             break;
+        }
         case ID_EXPORT: on_export(); break;
         case ID_GAME_EDIT:
             if (HIWORD(w) == EN_KILLFOCUS && window_text(g_game_edit) != g_game_dir) {
@@ -1517,6 +1585,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     g_bold = font(theme::kSizeBody, FW_SEMIBOLD);
     g_head = font(theme::kSizeTitle, FW_SEMIBOLD);
     g_title = font(theme::kSizeDisplay, FW_BOLD);
+    g_small = font(theme::kSizeSmall, FW_NORMAL);
+    {
+        LOGFONTW f = {};
+        f.lfHeight = -MulDiv(14, g_dpi, 72);
+        f.lfQuality = CLEARTYPE_QUALITY;
+        wcscpy(f.lfFaceName, L"Segoe MDL2 Assets");
+        g_icon = CreateFontIndirectW(&f);
+    }
     g_bg_brush = CreateSolidBrush(kBg);
     g_card_brush = CreateSolidBrush(kCard);
 
@@ -1534,7 +1610,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     wc.hbrBackground = CreateSolidBrush(kBg);
     wc.lpszClassName = L"DDDACoopLauncher";
     RegisterClassW(&wc);
-    RECT r = {0, 0, MulDiv(kW, g_dpi, 96), MulDiv(1000, g_dpi, 96)};
+    RECT r = {0, 0, MulDiv(kW, g_dpi, 96), MulDiv(kH, g_dpi, 96)};
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
     AdjustWindowRect(&r, style, FALSE);
     HWND h = CreateWindowW(wc.lpszClassName, kTitle, style, CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left,
@@ -1551,6 +1627,18 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
+        if (msg.message == WM_KEYDOWN && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            int to = -1;
+            if (msg.wParam >= '1' && msg.wParam < '1' + PAGE_COUNT)
+                to = int(msg.wParam - '1');
+            else if (msg.wParam == VK_TAB)
+                to = (g_page + ((GetKeyState(VK_SHIFT) & 0x8000) ? PAGE_COUNT - 1 : 1)) % PAGE_COUNT;
+            if (to >= 0) {
+                show_page(to);
+                SetFocus(GetDlgItem(h, ID_NAV + to));
+                continue;
+            }
+        }
         if (IsDialogMessageW(h, &msg))
             continue;
         TranslateMessage(&msg);
