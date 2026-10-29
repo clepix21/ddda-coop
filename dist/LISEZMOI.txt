@@ -1,4 +1,4 @@
-DDDA Coop (alpha) - Dragon's Dogma: Dark Arisen à 2 à 4 joueurs, sur Steam
+DDDA Coop 0.9.0 (alpha) - Dragon's Dogma: Dark Arisen à 2 à 4 joueurs, sur Steam
 ==========================================================================
 
 Chaque joueur a le jeu sur Steam, sur son propre PC. Les invités doivent être amis Steam avec
@@ -7,16 +7,28 @@ l'hôte. Pas d'adresse IP ni de port à régler.
 Dans ce dossier : DDDA-Coop.exe (la fenêtre de réglage), dinput8.dll (le mod), coop.ini (modèle).
 Garde les trois fichiers ensemble, n'importe où (Bureau, Documents...).
 
+Tout le monde doit avoir cette version (0.9.0) : une autre version ne se connecte pas, et la
+fenêtre le dit.
+
+La fenêtre
+----------
+À gauche, une barre d'écrans : Jouer, Salon, Sauvegardes, Paramètres, Journal (Ctrl+1 à 5).
+En haut de « Jouer » : « DDDA détecté · Mod v0.9.0 ». Le bouton « ? Aide » rappelle les touches.
+
 Pour jouer
 ----------
-1. Ouvre DDDA-Coop.exe. Il trouve le jeu tout seul ; sinon, clique sur « Changer... » et choisis
-   le dossier qui contient DDDA.exe.
-2. Choisis ton rôle :
-   - l'hôte : il charge sa partie, les autres le rejoignent ;
-   - un invité : tu rejoins l'hôte avec ton propre perso, qui remplace un de ses pions.
-3. Clique sur « Lancer le jeu ». La fenêtre copie d'abord tes sauvegardes dans
+1. Ouvre DDDA-Coop.exe. Il trouve le jeu tout seul ; sinon, va dans « Paramètres » et clique sur
+   « Changer... » pour choisir le dossier qui contient DDDA.exe.
+2. Dans « Jouer », choisis ton rôle (une des trois cartes) :
+   - Hôte : il charge sa partie, les autres le rejoignent ;
+   - Invité : tu rejoins l'hôte avec ton propre perso, qui remplace un de ses pions ;
+   - Seul : ta partie normale (les gains faits en co-op y sont ajoutés).
+3. Facultatif, si plusieurs amis hébergent en même temps : l'hôte ouvre « Salon » une fois le jeu
+   lancé et clique sur « Copier le code » ; l'invité colle ce code dans son « Salon » avant de
+   lancer. Sans code, l'invité rejoint le premier ami Steam qui héberge.
+4. Clique sur « Lancer le jeu ». La fenêtre copie d'abord tes sauvegardes dans
    Documents\DDDA Coop\Sauvegardes, installe le mod et lance le jeu par Steam.
-4. Invité : reste sur l'écran titre jusqu'à ce que la fenêtre affiche « Connecté ! », puis appuie
+5. Invité : reste sur l'écran titre jusqu'à ce que la fenêtre affiche « Connecté ! », puis appuie
    sur Start et choisis « Charger ». Tu arrives dans le monde de l'hôte.
    L'hôte peut déjà être en train de jouer : son jeu sauvegarde et recharge quelques secondes
    pour faire entrer l'invité.
@@ -38,8 +50,9 @@ Après la partie
   ta partie et sauvegarde. Ta sauvegarde est d'abord copiée dans coop_progress\backups. Les niveaux
   montent au premier ennemi tué. Les objets arrivent dans ton coffre.
 - « Retirer le mod » remet le jeu d'origine. Les gains pas encore ajoutés restent en attente.
-- En cas de problème : « Exporter le journal » copie le journal dans Documents\DDDA Coop\Journaux.
-  Envoie-le à l'hôte.
+- En cas de problème : écran « Journal », « Exporter le journal » copie le journal dans
+  Documents\DDDA Coop\Journaux. Envoie-le à l'hôte. Laisse « Journal détaillé » activé
+  (Paramètres) pendant les tests : il dit où ça coince.
 
 Monde partagé (shared_world=1 dans coop.ini, le réglage de ce paquet)
 -----------------------------------------------------------------------
