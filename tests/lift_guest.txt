@@ -1,0 +1,11 @@
+# Monster lift test, guest (after route_guild_to_underground): stays next to the pawn showing the host
+# (pawn 1) while it lifts monsters.
+wait 2000
+pawngoto 1 150 15000
+wait 6000
+pawngoto 1 150 15000
+wait 6000
+pawngoto 1 150 15000
+wait 6000
+pawngoto 1 150 15000
+wait 30000

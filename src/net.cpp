@@ -102,6 +102,7 @@ struct CharState {
     int8_t hold_slot;               // holding another player (action 0xA9): that player's place, else -1
     int16_t hold_enemy;             // holding an enemy: its number in the group leader's table, else -1
     int8_t hold_kind;               // ch+0x3938 (lift kind)
+    float hold_off[3];              // holding an enemy: where it is from the holder (forward, up, right)
 };
 struct StageState {
     int32_t stage, point;           // current stage and entry point ([0x018FA4BC]+0x34 / +0x44)
@@ -226,9 +227,11 @@ struct SaveNeedMsg {
 };
 #pragma pack(pop)
 
-// The message format's version: 'DDC2' since 2026-10-29 (32-bit action numbers). Messages of the
-// format before ('DDCO') come from a player with an older mod: dropped, and said (the badge, the log).
-constexpr uint32_t kMagic = 0x32434444, kOldMagic = 0x4F434444;
+// The message format's version: 'DDC2' since 2026-10-29 (32-bit action numbers), 'DDC3' (the held
+// monster's place). Messages of another format ('DDCO', 'DDC2'...) come from a player with another mod
+// version: dropped, and said (the badge, the log).
+constexpr uint32_t kMagic = 0x33434444;
+bool other_version(uint32_t magic) { return (magic & 0x00FFFFFF) == 0x00434444 && magic != kMagic; }
 volatile LONG g_old_peer = 0;
 NetRole g_role = NET_OFF;
 SOCKET g_sock = INVALID_SOCKET;
@@ -556,6 +559,43 @@ uintptr_t enemy_from_share_id(int id);
 // replayed RT keeps it and its release ends it, as in its world.
 // In front of a character at distance d: its facing from the quaternion at +0x50 (x, y, z, w), the
 // rotated +z axis (GRAB_FRONT_SIGN=-1 in coop.ini flips it, tests).
+// A character's facing on the ground plane (from its quaternion +0x50), unit length; (0, 1) if unknown.
+void facing(uintptr_t ch, float &fx, float &fz)
+{
+    float qx = game::at<float>(ch, 0x50), qy = game::at<float>(ch, 0x54), qz = game::at<float>(ch, 0x58), qw = game::at<float>(ch, 0x5C);
+    fx = 2.f * (qx * qz + qw * qy);
+    fz = 1.f - 2.f * (qx * qx + qy * qy);
+    float n = std::sqrt(fx * fx + fz * fz);
+    if (!(n > 0.01f)) {
+        fx = 0.f, fz = 1.f;
+        return;
+    }
+    fx /= n, fz /= n;
+}
+
+// Monsters a player lifts in its world that its pawn here could not catch: carried where the holder
+// has them (CharState.hold_off), and left alone by the enemy following meanwhile (enemy_net_after_finalize).
+uintptr_t g_carried[kParty] = {};
+bool carried_here(uintptr_t em)
+{
+    for (uintptr_t c : g_carried)
+        if (c && c == em)
+            return true;
+    return false;
+}
+void carry(uintptr_t ch, uintptr_t em, const float off[3])
+{
+    float fx, fz;
+    facing(ch, fx, fz);
+    float to[3] = {game::at<float>(ch, 0x40) + fx * off[0] + fz * off[2], game::at<float>(ch, 0x44) + off[1],
+                   game::at<float>(ch, 0x48) + fz * off[0] - fx * off[2]};
+    if (!(std::isfinite(to[0]) && std::isfinite(to[1]) && std::isfinite(to[2])) || !(std::fabs(off[0]) + std::fabs(off[1]) + std::fabs(off[2]) < 400.f))
+        return;
+    memcpy(reinterpret_cast<void *>(em + 0x40), to, 12);
+    for (uintptr_t o : kPosCopies)
+        memcpy(reinterpret_cast<void *>(em + o), to, 12);
+}
+
 void place_in_front(uintptr_t ch, uintptr_t other, float d)
 {
     float qx = game::at<float>(ch, 0x50), qy = game::at<float>(ch, 0x54), qz = game::at<float>(ch, 0x58), qw = game::at<float>(ch, 0x5C);
@@ -605,15 +645,6 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     static constexpr uintptr_t kEmLinks[3] = {0x2B98, 0x5CA4, 0x60E4};
     static uintptr_t old_em[kParty][3] = {};
     static bool held_player[kParty] = {};
-    static int tries[kParty] = {}; // aimed grabs at a monster for this hold (each one moves it a little)
-    static uintptr_t pinned[kParty] = {}; // the monster kept in front of the pawn while its grab starts
-    static DWORD pinned_until[kParty] = {};
-    if (pinned[i] && int(GetTickCount() - pinned_until[i]) < 0) {
-        if (game::at<uintptr_t>(ch, 0x38F0) == pinned[i] && strcmp(action_name(ch), "cPlActGrabStart") == 0)
-            place_in_front(ch, pinned[i], 30.f);
-        else
-            pinned[i] = 0;
-    }
     DWORD t = GetTickCount();
     int want = !hold_action(s.action) ? -1 : s.hold_slot >= 0 ? s.hold_slot : s.hold_enemy >= 0 ? 0x100 + s.hold_enemy : -1;
     if (want < 0) {
@@ -636,7 +667,10 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
             released[i] = t | 1;
         }
         applied[i] = -1;
-        tries[i] = 0;
+        if (g_carried[i]) {
+            logf("net: shared: party %d let go of the monster it carried here", i);
+            g_carried[i] = 0;
+        }
         if (released[i] && int(t - released[i]) > 1200) {
             uintptr_t h = held_by[i];
             int32_t a = h && held_player[i] ? game::at<int32_t>(h, 0x2DD4) : 0;
@@ -649,10 +683,12 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     }
     bool player = want < 0x100;
     uintptr_t held = player ? slot_character(want) : enemy_from_share_id(want - 0x100);
+    float reach = -1.f; // how far the held one is from the pawn here (for the log), -1 = not found
     if (held && held != ch) { // only within reach: never tie a character to a pawn somewhere else
         float rx = game::at<float>(held, 0x40) - game::at<float>(ch, 0x40), ry = game::at<float>(held, 0x44) - game::at<float>(ch, 0x44),
               rz = game::at<float>(held, 0x48) - game::at<float>(ch, 0x48);
-        if (!(rx * rx + ry * ry + rz * rz < 300.f * 300.f))
+        reach = std::sqrt(rx * rx + ry * ry + rz * rz);
+        if (!(reach < 300.f) && g_carried[i] != held) // a monster carried here may be brought back from afar
             held = 0;
     }
     static DWORD next_why[kParty] = {};
@@ -660,8 +696,12 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     if (!held || held == ch) {
         if (tell) {
             next_why[i] = (t + 2000) | 1;
-            logf("net: shared: party %d holds %s %d in its world: not found here", i, player ? "player" : "enemy",
-                 player ? want : want - 0x100);
+            logf("net: shared: party %d holds %s %d in its world: not found here (%s)", i, player ? "player" : "enemy",
+                 player ? want : want - 0x100, reach < 0.f ? "no such one" : "too far from the pawn");
+            if (reach >= 0.f)
+                logf("net: shared:   it is %.0f u from the pawn: it at (%.0f, %.0f, %.0f), the pawn at (%.0f, %.0f, %.0f)", reach,
+                     game::at<float>(held, 0x40), game::at<float>(held, 0x44), game::at<float>(held, 0x48), game::at<float>(ch, 0x40),
+                     game::at<float>(ch, 0x44), game::at<float>(ch, 0x48));
         }
         return;
     }
@@ -680,7 +720,7 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
         // 1.5 s on the held player's own Arisen while the holder kept RT held)
         bool holding = game::at<uintptr_t>(ch, 0x38F0) == held &&
                        (player ? game::at<uintptr_t>(held, 0x2104) == ch && (s.action != 0xA9 || game::at<int32_t>(held, 0x2DD4) == 0xAA)
-                               : strstr(action_name(ch), "Lift") != nullptr); // a monster: lifted by the game's own catch
+                               : g_carried[i] == held); // a monster: carried here
         static DWORD next_log[kParty] = {};
         if (!next_log[i] || int(t - next_log[i]) >= 0) { // tests: does the held one follow the pawn here?
             next_log[i] = (t + 1000) | 1;
@@ -690,7 +730,11 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
                  player ? "player" : "enemy", player ? want : want - 0x100, holding ? "held" : "lost",
                  std::sqrt(dx * dx + dz * dz), dy, action_name(ch));
         }
-        if (holding || int(t - again[i]) < 1000 || (!player && tries[i] >= 3))
+        if (!player) { // carried where the holder has it, for as long as the hold lasts
+            carry(ch, held, s.hold_off);
+            return;
+        }
+        if (holding || int(t - again[i]) < 1000)
             return;
     }
     again[i] = t | 1;
@@ -708,19 +752,16 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     game::at<uintptr_t>(ch, 0x38F0) = held;
     game::at<int32_t>(ch, 0x3938) = s.hold_kind;
     if (!player) {
-        // a monster: the game's own catch, from a grab start aimed at it. Forcing the lift (the
-        // holder's action, the monster's links +0x2104, +0x30, and even +0x2B98, +0x5CA4, +0x60E4
-        // as in a real lift) gave NaN places and killed the pawn. It stood 60-68 u from the pawn
-        // here, out of a grab's reach: brought to 25 u first, on the same bearing
-        // pushed back to 47-59 u by the bodies when brought to 25 u on its bearing, and maybe not in front:
-        // now 30 u in front of the pawn's facing, and kept there for 0.4 s while the grab starts
-        place_in_front(ch, held, 30.f);
-        pinned[i] = held;
-        pinned_until[i] = (GetTickCount() + 400) | 1;
-        action_set(ch, 0x39);
-        ++tries[i];
-        logf("net: shared: party %d (player %d) grabs enemy %d: grab started at it here (try %d)", i, party_to_slot(i),
-             want - 0x100, tries[i]);
+        // a monster: carried where the holder has it (CharState.hold_off: forward, up, right of the
+        // holder), the enemy following leaving it alone meanwhile. Tried before: forcing the lift
+        // (the holder's action, the monster's links +0x2104, +0x30, +0x2B98, +0x5CA4, +0x60E4) gave
+        // NaN places and killed the pawn; a grab start aimed at it 30 u in front caught it in 2 of
+        // 19 tries, and its NaN place afterwards crashed the guest twice (lift suite, 2026-10-29).
+        game::at<uintptr_t>(ch, 0x38F0) = 0;
+        g_carried[i] = held;
+        carry(ch, held, s.hold_off);
+        logf("net: shared: party %d (player %d) holds enemy %d: carried here where its player has it (%.0f, %+.0f, %.0f)", i,
+             party_to_slot(i), want - 0x100, s.hold_off[0], s.hold_off[1], s.hold_off[2]);
         return;
     }
     action_set(ch, s.action);
@@ -1163,7 +1204,7 @@ void receive_all()
         if (n < int(sizeof(Header)))
             continue;
         auto h = reinterpret_cast<const Header *>(buf);
-        if (h->magic == kOldMagic && !InterlockedExchange(&g_old_peer, 1))
+        if (other_version(h->magic) && !InterlockedExchange(&g_old_peer, 1))
             logf("net: a player has an older version of the mod (its messages are not read): every player needs this one");
         if (h->magic != kMagic)
             continue;
@@ -2238,6 +2279,28 @@ void net_capture(uintptr_t ch, int i)
                 s.hold_slot = int8_t(party_to_slot(1 + p));
         if (held && s.hold_slot < 0)
             s.hold_enemy = int16_t(enemy_share_id(held));
+        if (held && s.hold_slot < 0) {
+            float fx, fz;
+            facing(ch, fx, fz);
+            float dx = game::at<float>(held, 0x40) - game::at<float>(ch, 0x40), dz = game::at<float>(held, 0x48) - game::at<float>(ch, 0x48);
+            s.hold_off[0] = dx * fx + dz * fz;
+            s.hold_off[1] = game::at<float>(held, 0x44) - game::at<float>(ch, 0x44);
+            s.hold_off[2] = dx * fz - dz * fx;
+            // lifted, a monster's place (+0x40) is no longer where it is drawn: about 6000 u away and
+            // 700 u up (lift suite, 2026-10-29: 64 u ahead in the grab, then -496/+737/6165 lifted);
+            // the other worlds carry it above the holder's head instead
+            if (strstr(action_name(ch), "Lift") || !(std::fabs(s.hold_off[0]) + std::fabs(s.hold_off[2]) < 300.f)) {
+                s.hold_off[0] = 15.f;
+                s.hold_off[1] = 180.f;
+                s.hold_off[2] = 0.f;
+            }
+            static DWORD next_hold_log = 0;
+            if (!next_hold_log || int(GetTickCount() - next_hold_log) >= 0) {
+                next_hold_log = (GetTickCount() + 1000) | 1;
+                logf("net: shared: holding enemy %d (%s): %.0f ahead, %+.0f up, %.0f right", s.hold_enemy, action_name(ch), s.hold_off[0],
+                     s.hold_off[1], s.hold_off[2]);
+            }
+        }
     }
     EnterCriticalSection(&g_cap_lock);
     g_cap[i] = s;
@@ -2875,7 +2938,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         return pending_death;
     }
     f.unpaired_since = 0;
-    if (g_shared && game::at<uintptr_t>(em, 0x2104)) { // held or lifted by someone here: it goes with its hands
+    if (g_shared && (game::at<uintptr_t>(em, 0x2104) || carried_here(em))) { // held, lifted or carried here: it goes with its hands
         LeaveCriticalSection(&g_enemy_lock);
         return pending_death;
     }

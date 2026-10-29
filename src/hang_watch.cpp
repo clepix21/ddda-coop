@@ -59,6 +59,35 @@ void dump_main_thread()
     logf("hang: main thread %lu: %s", tid, len ? buf : "(no context)");
 }
 
+// Crashes (debug_log=1): the first access violations in DDDA.exe or the mod, with the faulting place,
+// the address read or written and the code addresses on the stack. A guest copy closed in the lift
+// suite twice with nothing in its log (2026-10-29); first-chance, so ones the game handles itself show
+// too (at most 5 logged).
+LONG CALLBACK on_exception(EXCEPTION_POINTERS *e)
+{
+    static volatile LONG logged = 0;
+    if (!e || !e->ExceptionRecord || e->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || logged >= 5)
+        return EXCEPTION_CONTINUE_SEARCH;
+    uintptr_t base = 0;
+    const char *m = module_of(e->ContextRecord->Eip, base);
+    if (!m || (_stricmp(m, "DDDA.exe") != 0 && _stricmp(m, "dinput8.dll") != 0))
+        return EXCEPTION_CONTINUE_SEARCH;
+    InterlockedIncrement(&logged);
+    char buf[1200];
+    const ULONG_PTR *info = e->ExceptionRecord->ExceptionInformation;
+    int len = _snprintf(buf, sizeof buf, "EIP %s+%X, %s %08lX, EAX %08lX ECX %08lX EDX %08lX ESI %08lX EDI %08lX, stack:", m,
+                        unsigned(e->ContextRecord->Eip - base), info[0] ? "write" : "read", static_cast<unsigned long>(info[1]),
+                        e->ContextRecord->Eax, e->ContextRecord->Ecx, e->ContextRecord->Edx, e->ContextRecord->Esi, e->ContextRecord->Edi);
+    const uintptr_t *sp = reinterpret_cast<const uintptr_t *>(e->ContextRecord->Esp);
+    for (int i = 0, found = 0; i < 2048 && found < 24 && mem_readable(sp + i, 4) && len < int(sizeof buf) - 40; ++i)
+        if (const char *mm = module_of(sp[i], base)) {
+            len += _snprintf(buf + len, sizeof buf - len, " %s+%X", mm, unsigned(sp[i] - base));
+            ++found;
+        }
+    logf("crash? access violation in thread %lu: %s", GetCurrentThreadId(), buf);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 DWORD WINAPI watch_thread(LPVOID)
 {
     DWORD dumped_at = 0;
@@ -89,6 +118,7 @@ void hang_watch_start()
 {
     if (!cfg_debug_log())
         return;
+    AddVectoredExceptionHandler(1, on_exception);
     if (HANDLE t = CreateThread(nullptr, 0, watch_thread, nullptr, 0, nullptr))
         CloseHandle(t);
 }
