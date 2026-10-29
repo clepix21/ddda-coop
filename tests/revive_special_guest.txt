@@ -18,3 +18,8 @@ where
 actname
 wait 70000
 where
+actc 0 cPlActDipWater
+wait 1000
+actname
+wait 75000
+where

@@ -12,7 +12,7 @@ if ($Transport -eq "udp") {
     $hostNet = @("transport=steam", "steam_mock=1", "mock_id=1", "mock_friends=2")
     $guestNet = @("transport=steam", "steam_mock=1", "mock_id=2", "mock_friends=1")
 }
-$run = & (Join-Path $tools "run_pair.ps1") -Seconds 300 -OutDir $out -Shots 121, 125, 160, 190 -GuestSavesFromRole `
+$run = & (Join-Path $tools "run_pair.ps1") -Seconds 400 -OutDir $out -Shots 121, 125, 160, 190 -GuestSavesFromRole `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "bot_load_game_p2.txt") `
     -HostBridge @((Join-Path $tests "revive_special_host.txt")) -GuestBridge @((Join-Path $tests "revive_special_guest.txt")) `
     -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "shared_world=1") + $hostNet) `

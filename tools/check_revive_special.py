@@ -33,6 +33,8 @@ if len(wh) >= 4 and lift:
 else:
     check(False, f"after the fall it is back on the ground (where lines: {len(wh)})")
 check(any("revive: up again (next to another player)" in ln for ln in guest), "nobody helped: after 60 s it came back next to the host")
+check(any("revive: down (cPlActDipWater)" in ln for ln in guest), "deep water (the game's drowning action) put the guest down instead")
+check(sum("revive: up again (next to another player)" in ln for ln in guest) >= 2, "after the water too it came back next to the host")
 check(not any("every player is down" in ln for ln in guest), "the game's own death never ran")
 hw = [(float(m[1]), float(m[2])) for ln in host for m in [re.search(r"bridge: where (-?\d+) -?\d+ (-?\d+)", ln)] if m]
 if wh and hw:
