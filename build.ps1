@@ -21,7 +21,7 @@ foreach ($c in $mhSrc) {
 $src = Get-ChildItem (Join-Path $PSScriptRoot "src\*.cpp") | ForEach-Object { $_.FullName }
 & $cxx -shared -O2 -std=c++17 -Wall -Wno-unused-function -static -static-libgcc -static-libstdc++ `
     -I (Join-Path $MinHook "include") $src $objs `
-    "-Wl,--kill-at" "-Wl,--enable-stdcall-fixup" -lws2_32 `
+    "-Wl,--kill-at" "-Wl,--enable-stdcall-fixup" -lws2_32 -lgdi32 `
     -o (Join-Path $out "dinput8.dll")
 if ($LASTEXITCODE) { throw "link failed" }
 
