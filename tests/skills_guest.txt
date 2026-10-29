@@ -1,0 +1,18 @@
+# Skills test, guest: walk next to the host and watch its puppet (actname every second).
+wait 3000
+goto -2350 -4550 60 8000
+wait 2000
+actname
+wait 3000
+actname
+wait 3000
+actname
+wait 3000
+actname
+wait 3000
+actname
+wait 3000
+actname
+wait 3000
+actname
+wait 30000

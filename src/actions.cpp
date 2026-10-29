@@ -202,6 +202,12 @@ bool deadly(int n)
 
 bool refuse(uintptr_t ch, int n)
 {
+    static int log_all = -1; // tests (test_log_actions=1): every action the Arisen and the player pawns start
+    if (log_all < 0)
+        log_all = early_flag("test_log_actions") ? 1 : 0;
+    if (log_all && (ch == possess_arisen() || net_puppet_ptr(ch)))
+        logf("actions: %s %p starts %s (0x%X)", ch == possess_arisen() ? "arisen" : "puppet", (void *)ch, action_class(n),
+             unsigned(n));
     if (ch == possess_arisen() && deadly(n)) // shared world: down instead while another player is up
         return revive_on_fatal(ch, action_class(n), true);
     if (net_puppet_ptr(ch) && deadly(n)) { // a pawn showing a player dies with that player only

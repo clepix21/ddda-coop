@@ -1,0 +1,40 @@
+# Skills test, host: walk away from the Rift stone (the guest comes too), draw the weapon, then the
+# primary skills (RB + X, Y, B), the secondary ones (LT + X, Y, B), a light and a strong attack; the guest's puppet must play them.
+wait 3000
+goto -2330 -4520 60 8000
+wait 2000
+actname
+pad 0 0 0 0 0 0 255 0 300
+wait 2000
+actname
+pad 0 4200 0 0 0 0 0 0 500
+wait 300
+actname
+wait 3000
+pad 0 8200 0 0 0 0 0 0 500
+wait 300
+actname
+wait 3000
+pad 0 2200 0 0 0 0 0 0 500
+wait 300
+actname
+wait 3000
+pad 0 4000 0 0 0 0 0 0 200
+wait 300
+actname
+wait 2000
+pad 0 8000 0 0 0 0 0 0 200
+wait 300
+actname
+pad 0 4000 0 0 0 0 255 0 500
+wait 300
+actname
+wait 3000
+pad 0 8000 0 0 0 0 255 0 500
+wait 300
+actname
+wait 3000
+pad 0 2000 0 0 0 0 255 0 500
+wait 300
+actname
+wait 20000

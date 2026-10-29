@@ -97,7 +97,8 @@ struct CharState {
     uint8_t cmd[kCmdCopyLen];      // command object +0x0C..+0x5F (sticks, move state, buttons)
     uint8_t cmd_extra[kCmdExtraLen]; // command object +0x88..+0x8F
     float hp, hp_max;               // [[ch+0x1D18]]+8, +0xC (hp_max 0 = unknown)
-    int16_t action;                 // shared world: its action number (ch+0x2DD4, actions.cpp)
+    int32_t action;                 // shared world: its action number (ch+0x2DD4, actions.cpp; weapon
+                                    // actions have high bits: 0x0101001E, so not 16 bits)
     int8_t hold_slot;               // holding another player (action 0xA9): that player's place, else -1
     int16_t hold_enemy;             // holding an enemy: its number in the group leader's table, else -1
     int8_t hold_kind;               // ch+0x3938 (lift kind)
@@ -566,6 +567,31 @@ void place_in_front(uintptr_t ch, uintptr_t other, float d)
         memcpy(reinterpret_cast<void *>(other + off), to, 12);
 }
 
+// Game thread: a weapon action (skill, attack: the high-bit numbers of the second action table) the
+// player started that its pawn here did not start from the replayed buttons within 0.2 s is started
+// directly. Skills test 2026-10-29: RB+Y (0x01010021) came out as the strong attack (0x01010004).
+void shared_skill_look(uintptr_t ch, int i, const CharState &s)
+{
+    static int32_t seen[kParty] = {};
+    static DWORD due[kParty] = {};
+    DWORD now = GetTickCount();
+    if (s.action != seen[i]) {
+        seen[i] = s.action;
+        unsigned table = unsigned(s.action) >> 24; // 1, 2...: weapon actions; 0xFF: none (-1, it froze the game)
+        due[i] = table >= 1 && table <= 0x0F ? (now + 200) | 1 : 0;
+        return;
+    }
+    if (!due[i] || int(now - due[i]) < 0)
+        return;
+    due[i] = 0;
+    int32_t mine = game::at<int32_t>(ch, 0x2DD4);
+    if (mine == s.action)
+        return;
+    logf("net: shared: party %d plays its player's 0x%X (it was in %s 0x%X)", i, unsigned(s.action), action_name(ch),
+         unsigned(mine));
+    action_set(ch, s.action);
+}
+
 void shared_grab_look(uintptr_t ch, int i, const CharState &s)
 {
     static int applied[kParty] = {-1, -1, -1, -1}; // held here: 0..3 a player, 0x100 + id an enemy
@@ -792,8 +818,10 @@ void shared_apply_transform(uintptr_t ch, int i)
     LeaveCriticalSection(&g_cap_lock);
     if (!s.valid && !away)
         return; // a player with no state yet (just connected): its pawn is left where it is
-    if (!away)
+    if (!away) {
         shared_grab_look(ch, i, s);
+        shared_skill_look(ch, i, s);
+    }
     EnterCriticalSection(&g_cap_lock);
     float vel[3];
     memcpy(vel, g_rp_vel[i], sizeof vel);
@@ -2178,7 +2206,7 @@ void net_capture(uintptr_t ch, int i)
     s.hold_slot = -1;
     s.hold_enemy = -1;
     if (g_shared && i == 0) { // its action, and what it holds (shared_grab_look)
-        s.action = int16_t(game::at<int32_t>(ch, 0x2DD4));
+        s.action = game::at<int32_t>(ch, 0x2DD4);
         s.hold_kind = int8_t(game::at<int32_t>(ch, 0x3938));
         uintptr_t held = hold_action(s.action) ? game::at<uintptr_t>(ch, 0x38F0) : 0;
         for (int p = 0; held && p < kPawns; ++p)
