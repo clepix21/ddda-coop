@@ -1,0 +1,18 @@
+# Spells test, host (guild_sorcerer.sav: the Arisen is a sorcerer): walk away from the Rift stone,
+# draw the staff, a light shot (X), then three spells held (RB + X, Y, B for 4 s each: casting takes
+# time), and a held strong one (Y 3 s); the guest's pawn of the host must play the same.
+wait 3000
+goto -2330 -4520 60 8000
+wait 2000
+pad 0 0 0 0 0 0 255 0 300
+wait 2000
+pad 0 4000 0 0 0 0 0 0 200
+wait 3000
+pad 0 4200 0 0 0 0 0 0 4000
+wait 4000
+pad 0 8200 0 0 0 0 0 0 4000
+wait 4000
+pad 0 2200 0 0 0 0 0 0 4000
+wait 4000
+pad 0 8000 0 0 0 0 0 0 3000
+wait 30000
