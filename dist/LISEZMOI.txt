@@ -51,17 +51,26 @@ Monde partagé (shared_world=1 dans coop.ini, le réglage de ce paquet)
   présent qui fait tourner les ennemis de la zone.
 - À 0 PV on tombe au sol : un autre joueur maintient B à côté pour relever. Sans aide, retour
   près d'un autre joueur après 60 s. Seuls tous les joueurs à terre donnent « Réessayer ».
+- Une chute mortelle, l'eau profonde ou une mort instantanée (la Mort au Récif de l'amertume) ne
+  tuent plus : on tombe au sol là où on se tenait juste avant, et on se relève de la même façon
+  (testé pour la chute et la mort instantanée ; l'eau et la Mort restent à confirmer en jeu).
 - Un joueur à terre est couché au sol, chez lui comme chez les autres.
 - Saisir un autre joueur avec RT : la prise se voit chez tout le monde. Soulever un petit monstre :
   chez les autres, ton pion essaie aussi de le saisir (ça ne réussit pas à chaque fois).
 - Sur la carte (Start > Carte), les autres joueurs sont des flèches de pion. Un joueur parti dans une
   autre zone reste affiché à l'endroit par où il est parti.
+- Les compétences d'arme (RB + X/Y/B...) se voient chez les autres.
+- Les noms des menus sont corrigés ; les visages et le sexe des autres joueurs aussi (à confirmer
+  entre vrais PC : nos tests n'ont qu'un seul visage).
+- Sur l'écran titre, dans le menu pause et sur la carte, un bandeau en haut à droite indique
+  « DDDA Coop actif », ton rôle et le nombre de joueurs. no_badge=1 dans coop.ini le retire.
 - La Faille est fermée pendant le co-op (la pierre ne réagit plus). allow_rift=1 la rouvre.
 - L'hôte : gardez 2 pions recrutés, sinon le 2e invité prend votre pion principal.
 
 À savoir
 --------
-- Version alpha : jamais encore testée entre deux vrais PC. Garde tes copies de sauvegardes.
+- Version alpha. Garde tes copies de sauvegardes.
+- Tous les joueurs doivent avoir la même version du mod (celle de ce paquet).
 - Seule la version Steam actuelle du jeu est prise en charge (la fenêtre le vérifie).
 - Évitez les fonctions en ligne du jeu.
 - Si le dossier du jeu contient déjà un autre dinput8.dll (un autre mod), la fenêtre ne le
