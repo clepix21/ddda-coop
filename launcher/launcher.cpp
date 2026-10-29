@@ -10,6 +10,8 @@
 #include <windows.h>
 #include <bcrypt.h>
 #include <commctrl.h>
+#include <dwmapi.h>
+#include <uxtheme.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <tlhelp32.h>
@@ -20,6 +22,8 @@
 #include <ctime>
 #include <string>
 #include <vector>
+
+#include "theme.h"
 
 namespace {
 
@@ -41,10 +45,9 @@ HBRUSH g_bg_brush, g_card_brush;
 int g_dpi = 96;
 RECT g_state_rect = {}, g_header_rect = {};
 
-// colours: dark text on a light background (contrast above 7:1), the state also in words and a symbol
-const COLORREF kBg = RGB(246, 247, 250), kCard = RGB(255, 255, 255), kText = RGB(28, 32, 40), kMuted = RGB(84, 90, 102),
-               kAccent = RGB(122, 26, 26), kOk = RGB(24, 110, 48), kWarn = RGB(150, 82, 0), kBad = RGB(170, 24, 24),
-               kInfo = RGB(30, 80, 150);
+// colours: the theme's tokens (theme.h); the state also in words and a symbol, not only in colour
+const COLORREF kBg = theme::kBg, kCard = theme::kSurface, kText = theme::kText, kMuted = theme::kMuted,
+               kOk = theme::kOk, kWarn = theme::kWarn, kBad = theme::kBad, kInfo = theme::kInfo;
 int px(int v) { return MulDiv(v, g_dpi, 96); }
 std::wstring g_exe_dir, g_game_dir, g_steam_dir, g_docs_dir;
 bool g_no_launch = false;
@@ -981,19 +984,15 @@ void paint_salon(HWND h, HDC dc)
     DrawTextW(mem, g_salon_info.c_str(), -1, &info, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
     int top = px(24), gap = px(6);
     int cw = (rc.right - gap) / 2, ch = (rc.bottom - top - gap) / 2;
-    static const COLORREF seat_colors[4] = {RGB(122, 26, 26), RGB(30, 80, 150), RGB(24, 110, 48), RGB(110, 60, 140)};
+    // the initials' circles (no picture): muted tones that read on the dark theme
+    static const COLORREF seat_colors[4] = {RGB(0x5a, 0x3a, 0x42), RGB(0x34, 0x4c, 0x66), RGB(0x34, 0x5a, 0x48), RGB(0x52, 0x44, 0x66)};
     for (int k = 0; k < 4; ++k) {
         const Seat &r = g_seats[k];
         RECT c = {(k % 2) * (cw + gap), top + (k / 2) * (ch + gap), 0, 0};
         c.right = c.left + cw;
         c.bottom = c.top + ch;
-        HPEN pen = CreatePen(r.used ? PS_SOLID : PS_DOT, 1, r.used ? (r.me ? kInfo : RGB(210, 214, 222)) : RGB(180, 184, 192));
-        HGDIOBJ old_pen = SelectObject(mem, pen);
-        HGDIOBJ old_brush = SelectObject(mem, r.used ? g_card_brush : g_bg_brush);
-        RoundRect(mem, c.left, c.top, c.right, c.bottom, px(10), px(10));
-        SelectObject(mem, old_brush);
-        SelectObject(mem, old_pen);
-        DeleteObject(pen);
+        theme::round_rect(mem, c, px(theme::kRadiusCard), r.used ? kCard : CLR_INVALID,
+                          r.used ? (r.me ? theme::kAccent : theme::kBorder) : theme::kBorder, r.me ? 1.5f : 1.f, !r.used);
         int pad = px(10), av = px(42);
         RECT pic = {c.left + pad, c.top + (ch - av) / 2, c.left + pad + av, c.top + (ch - av) / 2 + av};
         if (!r.used) {
@@ -1036,7 +1035,7 @@ void paint_salon(HWND h, HDC dc)
         DrawTextW(mem, title.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         OffsetRect(&t, 0, lh);
         SelectObject(mem, g_font);
-        SetTextColor(mem, seat_colors[k]);
+        SetTextColor(mem, kMuted);
         std::wstring line2 = r.role + (r.character.empty() ? L"" : L" · perso : " + r.character);
         DrawTextW(mem, line2.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         OffsetRect(&t, 0, lh);
@@ -1080,13 +1079,128 @@ LRESULT CALLBACK salon_proc(HWND h, UINT m, WPARAM w, LPARAM l)
 
 // ---- window ----
 
+// ---- themed controls ----
+// Push buttons are owner-drawn: still real buttons for the keyboard and screen readers, painted with the
+// theme. Hover fades in and out over theme::kHoverMs (a 15 ms timer while any button moves).
+struct ButtonLook {
+    HWND h;
+    float hover;  // 0..1, shown
+    bool inside;  // pointer over it
+};
+std::vector<ButtonLook> g_buttons;
+const UINT_PTR kHoverTimer = 77;
+
+ButtonLook *look_of(HWND h)
+{
+    for (ButtonLook &b : g_buttons)
+        if (b.h == h)
+            return &b;
+    return nullptr;
+}
+
+LRESULT CALLBACK button_sub(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR)
+{
+    if (m == WM_MOUSEMOVE) {
+        if (ButtonLook *b = look_of(h); b && !b->inside) {
+            b->inside = true;
+            TRACKMOUSEEVENT t = {sizeof t, TME_LEAVE, h, 0};
+            TrackMouseEvent(&t);
+            SetTimer(GetParent(h), kHoverTimer, 15, nullptr);
+        }
+    } else if (m == WM_MOUSELEAVE) {
+        if (ButtonLook *b = look_of(h))
+            b->inside = false;
+        SetTimer(GetParent(h), kHoverTimer, 15, nullptr);
+    } else if (m == WM_ERASEBKGND) {
+        return 1;
+    }
+    return DefSubclassProc(h, m, w, l);
+}
+
+// Timer step: every button's hover moves toward its target; the timer stops when all are there.
+void hover_step(HWND parent)
+{
+    bool moving = false;
+    float step = 15.f / float(theme::kHoverMs);
+    for (ButtonLook &b : g_buttons) {
+        float target = b.inside ? 1.f : 0.f;
+        if (b.hover == target)
+            continue;
+        b.hover = b.hover < target ? (b.hover + step > target ? target : b.hover + step) : (b.hover - step < target ? target : b.hover - step);
+        InvalidateRect(b.h, nullptr, FALSE);
+        moving = true;
+    }
+    if (!moving)
+        KillTimer(parent, kHoverTimer);
+}
+
+enum ButtonKind { BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST };
+ButtonKind kind_of(int id);
+
+void draw_button(const DRAWITEMSTRUCT *d)
+{
+    ButtonLook *lk = look_of(d->hwndItem);
+    float hv = lk ? lk->hover : 0.f;
+    ButtonKind kind = kind_of(int(d->CtlID));
+    bool pressed = d->itemState & ODS_SELECTED, disabled = d->itemState & ODS_DISABLED, focus = d->itemState & ODS_FOCUS;
+    RECT r = d->rcItem;
+    HDC dc = d->hDC;
+    // the parent's background first (rounded corners show it)
+    HBRUSH bg = CreateSolidBrush(theme::kBg);
+    FillRect(dc, &r, bg);
+    DeleteObject(bg);
+    COLORREF fill, text = theme::kText, border = CLR_INVALID;
+    if (kind == BTN_PRIMARY) {
+        fill = theme::mix(theme::kAccent, theme::kAccentHover, pressed ? 0.4f : hv);
+    } else if (kind == BTN_GHOST) {
+        fill = theme::mix(theme::kBg, theme::kSurfaceHover, pressed ? 1.f : hv);
+    } else {
+        fill = theme::mix(theme::kSurfaceRaised, theme::kSurfaceHover, pressed ? 1.f : hv);
+        border = theme::kBorder;
+    }
+    if (disabled) {
+        fill = kind == BTN_GHOST ? theme::kBg : theme::kSurface;
+        text = theme::mix(theme::kMuted, theme::kBg, 0.35f);
+    }
+    theme::round_rect(dc, r, px(theme::kRadiusButton), fill, border);
+    if (focus && !(d->itemState & ODS_NOFOCUSRECT)) {
+        RECT f = r;
+        InflateRect(&f, -px(2), -px(2));
+        theme::round_rect(dc, f, px(theme::kRadiusButton - 2), CLR_INVALID, theme::kFocus, 1.5f);
+    }
+    wchar_t label[256] = L"";
+    GetWindowTextW(d->hwndItem, label, 256);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, text);
+    HGDIOBJ old = SelectObject(dc, HFONT(SendMessageW(d->hwndItem, WM_GETFONT, 0, 0)));
+    RECT t = r;
+    UINT align = (GetWindowLongW(d->hwndItem, GWL_STYLE) & BS_LEFT) == BS_LEFT ? DT_LEFT : DT_CENTER;
+    if (align == DT_LEFT)
+        t.left += px(12);
+    // Alt shows the underlined letters (DT_HIDEPREFIX until the keyboard is used)
+    DrawTextW(dc, label, -1, &t, align | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS |
+                                     ((d->itemState & ODS_NOACCEL) ? DT_HIDEPREFIX : 0));
+    SelectObject(dc, old);
+}
+
 HWND make(const wchar_t *cls, const wchar_t *text, DWORD style, int x, int y, int w, int h, int id, HFONT font = nullptr)
 {
+    bool push = wcscmp(cls, L"BUTTON") == 0 && ((style & 0xF) == BS_PUSHBUTTON || (style & 0xF) == BS_DEFPUSHBUTTON);
+    if (push)
+        style = (style & ~DWORD(0xF)) | BS_OWNERDRAW;
     HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, px(x), px(y), px(w), px(h), g_wnd,
                              reinterpret_cast<HMENU>(INT_PTR(id)), GetModuleHandleW(nullptr), nullptr);
     SendMessageW(c, WM_SETFONT, WPARAM(font ? font : g_font), TRUE);
+    if (push) {
+        g_buttons.push_back({c, 0.f, false});
+        SetWindowSubclass(c, button_sub, 1, 0);
+    } else if (wcscmp(cls, L"BUTTON") == 0) {
+        SetWindowTheme(c, L"", L""); // radio buttons and check boxes: classic, so they take the theme's colours
+    }
     return c;
 }
+
+ButtonKind kind_of(int id) { return id == ID_LAUNCH ? BTN_PRIMARY : id == ID_EVENTS_TOGGLE ? BTN_GHOST : BTN_SECONDARY; }
 
 // layout in 96-dpi units, scaled by px(): two columns (the settings and the launch on the left, the salon
 // and the events on the right) so the window fits a laptop's screen (owner's choice, 2026-10-29)
@@ -1201,7 +1315,7 @@ void layout_events()
 
 void paint_columns(HDC dc)
 {
-    HPEN pen = CreatePen(PS_SOLID, 1, RGB(222, 225, 232));
+    HPEN pen = CreatePen(PS_SOLID, 1, theme::kBorder);
     HGDIOBJ old = SelectObject(dc, pen);
     int x = px(kL + kCol + 12);
     MoveToEx(dc, x, px(84), nullptr);
@@ -1214,24 +1328,26 @@ void paint(HWND h)
 {
     PAINTSTRUCT ps;
     HDC dc = BeginPaint(h, &ps);
-    HBRUSH accent = CreateSolidBrush(kAccent);
-    FillRect(dc, &g_header_rect, accent);
-    DeleteObject(accent);
+    {
+        Gdiplus::Graphics g(dc);
+        Gdiplus::LinearGradientBrush grad(Gdiplus::Point(0, INT(g_header_rect.top)), Gdiplus::Point(0, INT(g_header_rect.bottom)),
+                                          theme::gp(RGB(0x2a, 0x1c, 0x22)), theme::gp(theme::kBg));
+        g.FillRectangle(&grad, INT(g_header_rect.left), INT(g_header_rect.top), INT(g_header_rect.right - g_header_rect.left),
+                        INT(g_header_rect.bottom - g_header_rect.top));
+    }
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(255, 255, 255));
+    SetTextColor(dc, kText);
     HGDIOBJ old = SelectObject(dc, g_title);
     RECT t = {px(kL), px(8), px(kW - kL), px(40)};
     DrawTextW(dc, L"DDDA Coop", -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
     SelectObject(dc, g_font);
-    SetTextColor(dc, RGB(245, 225, 225));
+    SetTextColor(dc, kMuted);
     RECT sub = {px(kL), px(38), px(kW - kL), px(60)};
     DrawTextW(dc, L"Dragon's Dogma: Dark Arisen à plusieurs, chacun sur son PC", -1, &sub, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
     // the state card: white, with a coloured bar on the left
-    FillRect(dc, &g_state_rect, g_card_brush);
-    RECT bar = {g_state_rect.left, g_state_rect.top, g_state_rect.left + px(6), g_state_rect.bottom};
-    HBRUSH b = CreateSolidBrush(g_state_color);
-    FillRect(dc, &bar, b);
-    DeleteObject(b);
+    theme::round_rect(dc, g_state_rect, px(theme::kRadiusCard), kCard, theme::kBorder);
+    RECT bar = {g_state_rect.left + px(8), g_state_rect.top + px(12), g_state_rect.left + px(12), g_state_rect.bottom - px(12)};
+    theme::round_rect(dc, bar, px(2), g_state_color);
     paint_columns(dc);
     SelectObject(dc, old);
     EndPaint(h, &ps);
@@ -1260,7 +1376,18 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
             draw_event(reinterpret_cast<const DRAWITEMSTRUCT *>(l));
             return TRUE;
         }
+        if (reinterpret_cast<const DRAWITEMSTRUCT *>(l)->CtlType == ODT_BUTTON) {
+            draw_button(reinterpret_cast<const DRAWITEMSTRUCT *>(l));
+            return TRUE;
+        }
         break;
+    case DM_GETDEFID: // Enter launches the game, as the default button did
+        return MAKELRESULT(ID_LAUNCH, DC_HASDEFID);
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX:
+        SetTextColor(HDC(w), kText);
+        SetBkColor(HDC(w), kCard);
+        return LRESULT(g_card_brush);
     case WM_PAINT:
         paint(h);
         return 0;
@@ -1291,6 +1418,10 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         }
         return 0;
     case WM_TIMER:
+        if (w == kHoverTimer) {
+            hover_step(h);
+            return 0;
+        }
         poll_log();
         check_watchers();
         update_players();
@@ -1313,9 +1444,35 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
 
 } // namespace
 
+int CALLBACK font_found(const LOGFONTW *, const TEXTMETRICW *, DWORD, LPARAM l)
+{
+    *reinterpret_cast<bool *>(l) = true;
+    return 0;
+}
+
+// The theme's font if Windows has it (Segoe UI Variable: Windows 11), else its fallback.
+const wchar_t *font_family()
+{
+    static const wchar_t *chosen = nullptr;
+    if (chosen)
+        return chosen;
+    LOGFONTW want = {};
+    want.lfCharSet = DEFAULT_CHARSET;
+    wcscpy(want.lfFaceName, theme::kFontFamily);
+    bool found = false;
+    HDC dc = GetDC(nullptr);
+    EnumFontFamiliesExW(dc, &want, font_found, LPARAM(&found), 0);
+    ReleaseDC(nullptr, dc);
+    chosen = found ? theme::kFontFamily : theme::kFontFallback;
+    return chosen;
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
 {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    Gdiplus::GdiplusStartupInput gsi;
+    ULONG_PTR gdiplus = 0;
+    Gdiplus::GdiplusStartup(&gdiplus, &gsi, nullptr);
     INITCOMMONCONTROLSEX icc = {sizeof icc, ICC_STANDARD_CLASSES | ICC_LISTVIEW_CLASSES};
     InitCommonControlsEx(&icc);
 
@@ -1353,13 +1510,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
         f.lfHeight = -MulDiv(pt, g_dpi, 72);
         f.lfWeight = weight;
         f.lfQuality = CLEARTYPE_QUALITY;
-        wcscpy(f.lfFaceName, L"Segoe UI");
+        wcscpy(f.lfFaceName, font_family());
         return CreateFontIndirectW(&f);
     };
-    g_font = font(10, FW_NORMAL);
-    g_bold = font(10, FW_SEMIBOLD);
-    g_head = font(12, FW_SEMIBOLD);
-    g_title = font(18, FW_BOLD);
+    g_font = font(theme::kSizeBody, FW_NORMAL);
+    g_bold = font(theme::kSizeBody, FW_SEMIBOLD);
+    g_head = font(theme::kSizeTitle, FW_SEMIBOLD);
+    g_title = font(theme::kSizeDisplay, FW_BOLD);
     g_bg_brush = CreateSolidBrush(kBg);
     g_card_brush = CreateSolidBrush(kCard);
 
@@ -1387,6 +1544,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     RECT need = {0, 0, MulDiv(kW, g_dpi, 96), MulDiv(g_height, g_dpi, 96)};
     AdjustWindowRect(&need, style, FALSE);
     SetWindowPos(h, nullptr, 0, 0, need.right - need.left, need.bottom - need.top, SWP_NOMOVE | SWP_NOZORDER);
+    BOOL dark = TRUE; // a dark title bar to match (DWMWA_USE_IMMERSIVE_DARK_MODE, Windows 10 2004+)
+    DwmSetWindowAttribute(h, 20, &dark, sizeof dark);
     ShowWindow(h, show);
     check_game();
 
