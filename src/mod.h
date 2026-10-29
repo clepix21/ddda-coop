@@ -126,6 +126,7 @@ bool net_stage_jump(int32_t to, int32_t point);  // game thread
 bool revive_down();
 bool revive_helping();                             // B held next to a downed player
 bool revive_on_damage(uintptr_t ch, float *dmg);  // game thread, the damage hook
+std::string roam_pawn_name(int p);               // roam.cpp, guest: the name on pawn p of its world
 bool net_old_peer();                             // net.cpp: a player with an older mod was heard
 void overlay_install();                           // overlay.cpp: the "mod active" badge on the title screen
 bool revive_on_fatal(uintptr_t ch, const char *why, bool move_back); // game thread: a death that is not a blow

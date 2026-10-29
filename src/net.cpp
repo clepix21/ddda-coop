@@ -1708,6 +1708,22 @@ void write_status(DWORD now)
         if (s == me) {
             connected = true;
             ago = 0;
+            std::string own;
+            if (g_role == NET_GUEST && storage_guest_character(own))
+                name = save_character_name(own);
+            static uint32_t host_version = 0; // host: its Arisen's name, read again when its save changes
+            static std::string host_name;
+            std::vector<uint8_t> file;
+            uint32_t v = 0;
+            if (g_role == NET_HOST && storage_own_save(file, v) && v != host_version) {
+                std::string xml, ch;
+                uint32_t head[8];
+                if (save_unpack(file, xml, head) && save_character(xml, -1, ch))
+                    host_name = save_character_name(ch);
+                host_version = v;
+            }
+            if (g_role == NET_HOST)
+                name = host_name;
         } else if (g_role == NET_HOST) {
             const Peer &p = g_peers[s - 1];
             connected = s >= 1 && p.used;
@@ -1718,7 +1734,10 @@ void write_status(DWORD now)
         } else if (g_have_snap) {
             EnterCriticalSection(&g_snap_lock);
             connected = s == 0 || g_snap.pawn_of[s] >= 0;
+            int pawn = s == 0 ? net_guest_my_pawn() : g_snap.pawn_of[s]; // where that player shows in this world
             LeaveCriticalSection(&g_snap_lock);
+            if (connected)
+                name = roam_pawn_name(pawn);
             if (s == 0 && g_peers[0].last_rx)
                 ago = long(now - g_peers[0].last_rx);
         }

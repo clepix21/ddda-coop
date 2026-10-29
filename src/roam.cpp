@@ -112,6 +112,25 @@ bool make_roam_save(std::vector<uint8_t> &out)
 
 } // namespace
 
+// The names on the pawns of this guest's world (the host's Arisen, the other guests), for the launcher's
+// players list (coop_status.txt). Guarded by a spin lock: set on the net thread, read on another.
+static std::string g_pawn_names[kPawns];
+static volatile LONG g_names_lock = 0;
+static void keep_pawn_names(const std::string &xml)
+{
+    std::string names[kPawns];
+    for (int p = 0; p < kPawns; ++p) {
+        std::string ch;
+        if (save_character(xml, p, ch))
+            names[p] = save_character_name(ch);
+    }
+    while (InterlockedExchange(&g_names_lock, 1))
+        Sleep(0);
+    for (int p = 0; p < kPawns; ++p)
+        g_pawn_names[p] = names[p];
+    InterlockedExchange(&g_names_lock, 0);
+}
+
 // Shared world (shared_world=1), guest: the host's save as this guest's own world: its own character
 // is the Arisen (taken from the pawn holding it, whose place the host's Arisen takes; or put over the
 // host's Arisen when the host has not merged it yet), with its own bag.
@@ -141,6 +160,7 @@ bool roam_world_from_host(const std::vector<uint8_t> &host, std::vector<uint8_t>
     logf("roam: shared world: %s is this guest's Arisen%s", name.c_str(),
          swapped ? " (the host's Arisen on its pawn)" : " (the host has not merged it yet)");
     logf("roam: shared world party: %s", save_copy_names(xml).c_str());
+    keep_pawn_names(xml);
     return true;
 }
 
@@ -164,10 +184,23 @@ bool roam_refresh_party(const std::vector<uint8_t> &own, const std::vector<uint8
         return false;
     logf("roam: shared world: this guest's own snapshot with the host's latest party (it stays where it is)");
     logf("roam: shared world party: %s", save_copy_names(mine).c_str());
+    keep_pawn_names(mine);
     return true;
 }
 
 bool net_guest_roaming() { return g_roaming != 0; }
+
+// Guest: the name on pawn p of its world ("" = not known yet).
+std::string roam_pawn_name(int p)
+{
+    if (p < 0 || p >= kPawns)
+        return "";
+    while (InterlockedExchange(&g_names_lock, 1))
+        Sleep(0);
+    std::string n = g_pawn_names[p];
+    InterlockedExchange(&g_names_lock, 0);
+    return n;
+}
 bool roam_busy() { return g_step != ATTACHED && g_step != ROAMING; }
 
 // Guest, net thread, every ~16 ms.
