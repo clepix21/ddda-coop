@@ -43,6 +43,15 @@ const wchar_t *const kPageNames[PAGE_COUNT] = {L"Jouer", L"Salon", L"Sauvegardes
 // Segoe MDL2 Assets glyphs (Windows 10 and 11): play, people, save, settings, list
 const wchar_t *const kPageIcons[PAGE_COUNT] = {L"\uE768", L"\uE716", L"\uE74E", L"\uE713", L"\uE8FD"};
 int g_page = PAGE_PLAY;
+enum Role { ROLE_HOST, ROLE_GUEST, ROLE_SOLO };
+int g_role = ROLE_HOST;
+// the switches (own character, keep progress, detailed log): on/off and their label without the state
+struct Switch {
+    HWND h;
+    bool on;
+    std::wstring label;
+};
+std::vector<Switch> g_switches;
 int g_game_state = 0;     // 0 DDDA.exe not found, 1 found but another version, 2 supported (the header's line)
 bool g_log_unseen = false; // a warning or an error in the journal since it was last shown (a dot on its icon)
 
@@ -242,24 +251,35 @@ std::wstring setting(const wchar_t *key, const wchar_t *def)
     return buf;
 }
 
+bool switch_on(HWND h)
+{
+    for (const Switch &w : g_switches)
+        if (w.h == h)
+            return w.on;
+    return false;
+}
+
 void save_settings()
 {
     auto p = settings_path();
     WritePrivateProfileStringW(L"launcher", L"game", g_game_dir.c_str(), p.c_str());
-    WritePrivateProfileStringW(L"launcher", L"role", SendMessageW(g_guest, BM_GETCHECK, 0, 0)  ? L"guest"
-                                                     : SendMessageW(g_solo, BM_GETCHECK, 0, 0) ? L"solo"
-                                                                                               : L"host",
+    WritePrivateProfileStringW(L"launcher", L"role", g_role == ROLE_GUEST ? L"guest" : g_role == ROLE_SOLO ? L"solo" : L"host",
                                p.c_str());
-    WritePrivateProfileStringW(L"launcher", L"keep_progress", SendMessageW(g_keep, BM_GETCHECK, 0, 0) ? L"1" : L"0", p.c_str());
-    WritePrivateProfileStringW(L"launcher", L"own_character", SendMessageW(g_own_char, BM_GETCHECK, 0, 0) ? L"1" : L"0", p.c_str());
-    WritePrivateProfileStringW(L"launcher", L"debug_log", SendMessageW(g_debug, BM_GETCHECK, 0, 0) ? L"1" : L"0", p.c_str());
+    WritePrivateProfileStringW(L"launcher", L"keep_progress", switch_on(g_keep) ? L"1" : L"0", p.c_str());
+    WritePrivateProfileStringW(L"launcher", L"own_character", switch_on(g_own_char) ? L"1" : L"0", p.c_str());
+    WritePrivateProfileStringW(L"launcher", L"debug_log", switch_on(g_debug) ? L"1" : L"0", p.c_str());
 }
 
 // ---- state shown in the window ----
 
+HBRUSH g_state_brush = nullptr;
+
 void set_state(const std::wstring &text, COLORREF color)
 {
     g_state_color = color;
+    if (g_state_brush)
+        DeleteObject(g_state_brush);
+    g_state_brush = CreateSolidBrush(theme::mix(theme::kSurface, color, 0.08f)); // the state card's tint (paint)
     // the meaning is in the words and the symbol too, not only in the colour
     const wchar_t *sym = color == kOk ? L"\u2714  " : color == kBad ? L"\u2716  " : color == kWarn ? L"\u26A0  " : L"\u25CF  ";
     SetWindowTextW(g_state, (sym + text).c_str());
@@ -331,12 +351,14 @@ void draw_event(const DRAWITEMSTRUCT *d)
     DrawTextW(d->hDC, rest.c_str(), -1, &r, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
 }
 
-bool guest_role() { return SendMessageW(g_guest, BM_GETCHECK, 0, 0) == BST_CHECKED; }
-bool solo_role() { return SendMessageW(g_solo, BM_GETCHECK, 0, 0) == BST_CHECKED; }
+bool guest_role() { return g_role == ROLE_GUEST; }
+bool solo_role() { return g_role == ROLE_SOLO; }
 
 void update_controls()
 {
-    EnableWindow(g_own_char, guest_role());
+    // the guest's own options only under the guest's card
+    ShowWindow(g_own_char, g_page == PAGE_PLAY && guest_role() ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_keep, g_page == PAGE_PLAY && guest_role() ? SW_SHOW : SW_HIDE);
     EnableWindow(g_launch, g_supported);
 }
 
@@ -464,9 +486,9 @@ bool write_coop_ini()
         out += guest ? "role=guest\n" : "role=host\n";
         out += "transport=steam\n";
     }
-    out += SendMessageW(g_keep, BM_GETCHECK, 0, 0) ? "keep_progress=1\n" : "keep_progress=0\n";
-    out += SendMessageW(g_debug, BM_GETCHECK, 0, 0) ? "debug_log=1\n" : "debug_log=0\n";
-    if (guest && !SendMessageW(g_own_char, BM_GETCHECK, 0, 0))
+    out += switch_on(g_keep) ? "keep_progress=1\n" : "keep_progress=0\n";
+    out += switch_on(g_debug) ? "debug_log=1\n" : "debug_log=0\n";
+    if (guest && !switch_on(g_own_char))
         out += "send_character=0\n";
     return write_file(g_game_dir + L"\\coop.ini", out);
 }
@@ -1149,7 +1171,16 @@ void hover_step(HWND parent)
         KillTimer(parent, kHoverTimer);
 }
 
-enum ButtonKind { BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_NAV };
+enum ButtonKind { BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_NAV, BTN_ROLE, BTN_SWITCH };
+// the role cards: icon (Segoe MDL2 Assets), title, short description
+struct RoleCard {
+    const wchar_t *icon, *title, *text;
+};
+const RoleCard kRoles[3] = {
+    {L"\uE80F", L"Hôte", L"Je charge ma partie ; mes amis me rejoignent."},
+    {L"\uE8FA", L"Invité", L"Je rejoins un ami : ma partie n'est ni chargée ni sauvegardée."},
+    {L"\uE77B", L"Seul", L"Je joue ma partie ; la progression gagnée en co-op y est ajoutée."},
+};
 ButtonKind kind_of(int id);
 
 void draw_button(const DRAWITEMSTRUCT *d)
@@ -1160,6 +1191,72 @@ void draw_button(const DRAWITEMSTRUCT *d)
     bool pressed = d->itemState & ODS_SELECTED, disabled = d->itemState & ODS_DISABLED, focus = d->itemState & ODS_FOCUS;
     RECT r = d->rcItem;
     HDC dc = d->hDC;
+    if (kind == BTN_ROLE) { // a card: icon, title, description; the chosen one outlined with the accent
+        int role = int(d->CtlID) == ID_GUEST ? ROLE_GUEST : int(d->CtlID) == ID_SOLO ? ROLE_SOLO : ROLE_HOST;
+        bool chosen = role == g_role;
+        HBRUSH bgb = CreateSolidBrush(theme::kBg);
+        FillRect(dc, &r, bgb);
+        DeleteObject(bgb);
+        RECT card = r;
+        InflateRect(&card, -px(1), -px(1));
+        COLORREF fill = theme::mix(theme::kSurface, theme::kSurfaceHover, pressed ? 1.f : hv);
+        theme::round_rect(dc, card, px(theme::kRadiusCard), fill, chosen ? theme::kAccent : theme::kBorder, chosen ? 2.f : 1.f);
+        if (focus && !(d->itemState & ODS_NOFOCUSRECT)) {
+            RECT f = card;
+            InflateRect(&f, -px(4), -px(4));
+            theme::round_rect(dc, f, px(theme::kRadiusCard - 4), CLR_INVALID, theme::kFocus, 1.f);
+        }
+        const RoleCard &rc = kRoles[role];
+        int pad = px(theme::kPadCard);
+        SetBkMode(dc, TRANSPARENT);
+        RECT ic = {card.left + pad, card.top + pad, card.left + pad + px(32), card.top + pad + px(32)};
+        theme::circle(dc, ic, chosen ? theme::kAccent : theme::kSurfaceRaised);
+        HGDIOBJ old = SelectObject(dc, g_icon);
+        SetTextColor(dc, theme::kText);
+        DrawTextW(dc, rc.icon, -1, &ic, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        SelectObject(dc, g_head);
+        RECT tt = {ic.right + px(12), card.top + pad, card.right - pad, card.top + pad + px(32)};
+        // the title with its Alt letter
+        static const wchar_t *titles[3] = {L"&Hôte", L"&Invité", L"&Seul"};
+        DrawTextW(dc, titles[role], -1, &tt, DT_LEFT | DT_SINGLELINE | DT_VCENTER | ((d->itemState & ODS_NOACCEL) ? DT_HIDEPREFIX : 0));
+        SelectObject(dc, g_font);
+        SetTextColor(dc, theme::kMuted);
+        RECT dt = {card.left + pad, ic.bottom + px(10), card.right - pad, card.bottom - px(10)};
+        DrawTextW(dc, rc.text, -1, &dt, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX | DT_END_ELLIPSIS);
+        SelectObject(dc, old);
+        return;
+    }
+    if (kind == BTN_SWITCH) { // label on the left, a pill switch on the right (accent when on)
+        bool on = switch_on(d->hwndItem);
+        std::wstring label;
+        for (const Switch &w : g_switches)
+            if (w.h == d->hwndItem)
+                label = w.label;
+        HBRUSH bgb = CreateSolidBrush(theme::kBg);
+        FillRect(dc, &r, bgb);
+        DeleteObject(bgb);
+        RECT row = r;
+        if (hv > 0 || focus)
+            theme::round_rect(dc, row, px(theme::kRadiusButton), theme::mix(theme::kBg, theme::kSurface, focus ? 1.f : hv));
+        if (focus && !(d->itemState & ODS_NOFOCUSRECT))
+            theme::round_rect(dc, row, px(theme::kRadiusButton), CLR_INVALID, theme::kFocus, 1.f);
+        int sw = px(40), sh = px(22);
+        RECT pill = {r.right - px(10) - sw, (r.top + r.bottom - sh) / 2, r.right - px(10), (r.top + r.bottom + sh) / 2};
+        theme::round_rect(dc, pill, sh / 2, on ? theme::kAccent : theme::kSurfaceRaised, on ? CLR_INVALID : theme::kBorder);
+        int k = sh - px(6);
+        RECT knob = {on ? pill.right - px(3) - k : pill.left + px(3), pill.top + px(3), 0, 0};
+        knob.right = knob.left + k;
+        knob.bottom = knob.top + k;
+        theme::circle(dc, knob, on ? theme::kText : theme::kMuted);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, disabled ? theme::kMuted : theme::kText);
+        HGDIOBJ old = SelectObject(dc, g_font);
+        RECT t = {r.left + px(10), r.top, pill.left - px(12), r.bottom};
+        DrawTextW(dc, label.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS |
+                                                ((d->itemState & ODS_NOACCEL) ? DT_HIDEPREFIX : 0));
+        SelectObject(dc, old);
+        return;
+    }
     if (kind == BTN_NAV) { // icon over a small label; the current screen on a surface with the accent bar
         int page = int(d->CtlID) - ID_NAV;
         bool current = page == g_page;
@@ -1249,8 +1346,13 @@ HWND make(const wchar_t *cls, const wchar_t *text, DWORD style, int x, int y, in
 
 ButtonKind kind_of(int id)
 {
-    return id >= ID_NAV && id < ID_NAV + PAGE_COUNT ? BTN_NAV : id == ID_LAUNCH ? BTN_PRIMARY : id == ID_EVENTS_TOGGLE ? BTN_GHOST
-                                                                                                                          : BTN_SECONDARY;
+    if (id >= ID_NAV && id < ID_NAV + PAGE_COUNT)
+        return BTN_NAV;
+    if (id == ID_HOST || id == ID_GUEST || id == ID_SOLO)
+        return BTN_ROLE;
+    if (id == ID_OWN_CHAR || id == ID_KEEP || id == ID_DEBUG)
+        return BTN_SWITCH;
+    return id == ID_LAUNCH ? BTN_PRIMARY : id == ID_EVENTS_TOGGLE ? BTN_GHOST : BTN_SECONDARY;
 }
 
 // Layout in 96-dpi units, scaled by px(): a thin sidebar of icons (the five screens) and one screen at a
@@ -1267,6 +1369,8 @@ HWND add(HWND h)
     return h;
 }
 
+void update_controls();
+
 void show_page(int page)
 {
     g_page = page;
@@ -1278,7 +1382,26 @@ void show_page(int page)
     for (int k = 0; k < PAGE_COUNT; ++k)
         if (HWND nav = GetDlgItem(g_wnd, ID_NAV + k))
             InvalidateRect(nav, nullptr, FALSE);
+    update_controls(); // the guest's options stay hidden unless its card is chosen
     InvalidateRect(g_wnd, nullptr, TRUE);
+}
+
+// The role cards' and switches' window texts carry their state for screen readers ("&Hôte, choisi",
+// "...: activé"); the drawing takes the title and the label without it.
+void refresh_names()
+{
+    HWND cards[3] = {g_host, g_guest, g_solo};
+    const wchar_t *names[3] = {L"&Hôte", L"&Invité", L"&Seul"};
+    for (int k = 0; k < 3; ++k) {
+        std::wstring t = std::wstring(names[k]) + (k == g_role ? L", choisi" : L"") + L". " + kRoles[k].text;
+        SetWindowTextW(cards[k], t.c_str());
+        InvalidateRect(cards[k], nullptr, FALSE);
+    }
+    for (const Switch &w : g_switches) {
+        SetWindowTextW(w.h, (w.label + (w.on ? L" : activé" : L" : désactivé")).c_str());
+        InvalidateRect(w.h, nullptr, FALSE);
+    }
+    update_controls();
 }
 
 void build_window()
@@ -1297,26 +1420,22 @@ void build_window()
     int y = kHeaderH + 16;
     add(make(L"STATIC", L"Ton rôle", 0, L, y, W, 24, 0, g_head));
     y += 32;
-    g_host = add(make(L"BUTTON", L"L'&hôte : je charge ma partie, mes amis me rejoignent",
-                      BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, L, y, W, 26, ID_HOST));
-    y += 28;
-    g_guest = add(make(L"BUTTON", L"Un &invité : je rejoins un ami (ma partie n'est ni chargée ni sauvegardée)", BS_AUTORADIOBUTTON, L,
-                       y, W, 26, ID_GUEST));
-    y += 28;
-    g_own_char = add(make(L"BUTTON", L"Jouer avec mon &propre perso (sinon je joue le pion de l'hôte)", BS_AUTOCHECKBOX | WS_TABSTOP,
-                          L + 24, y, W - 24, 26, ID_OWN_CHAR));
-    y += 28;
-    g_solo = add(make(L"BUTTON", L"&Seul : je joue ma partie (ma progression gagnée en co-op y est ajoutée)", BS_AUTORADIOBUTTON, L, y,
-                      W, 26, ID_SOLO));
-    y += 34;
-    g_keep = add(make(L"BUTTON", L"&Garder la progression de mon perso gagnée chez un ami (exp, discipline, objets)",
-                      BS_AUTOCHECKBOX | WS_GROUP | WS_TABSTOP, L, y, W, 26, ID_KEEP));
-    y += 40;
-    g_launch = add(make(L"BUTTON", L"&Lancer le jeu", BS_DEFPUSHBUTTON | WS_TABSTOP, L, y, 260, 46, ID_LAUNCH, g_bold));
-    add(make(L"BUTTON", L"? A&ide", BS_PUSHBUTTON | WS_TABSTOP, L + W - 100, y, 100, 46, ID_HELP));
-    y += 60;
+    int cw = (W - 2 * theme::kGapSmall) / 3, ch = 124;
+    g_host = add(make(L"BUTTON", L"&Hôte", BS_PUSHBUTTON | WS_TABSTOP | WS_GROUP, L, y, cw, ch, ID_HOST));
+    g_guest = add(make(L"BUTTON", L"&Invité", BS_PUSHBUTTON | WS_TABSTOP, L + cw + theme::kGapSmall, y, cw, ch, ID_GUEST));
+    g_solo = add(make(L"BUTTON", L"&Seul", BS_PUSHBUTTON | WS_TABSTOP, L + 2 * (cw + theme::kGapSmall), y, cw, ch, ID_SOLO));
+    y += ch + 10;
+    // the guest's own options (shown only under its card, update_controls)
+    g_own_char = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, y, W, 30, ID_OWN_CHAR));
+    g_keep = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, y + 32, W, 30, ID_KEEP));
+    g_switches.push_back({g_own_char, true, L"Jouer avec mon &propre perso (sinon je joue le pion de l'hôte)"});
+    g_switches.push_back({g_keep, true, L"&Garder la progression de mon perso gagnée chez un ami (exp, discipline, objets)"});
+    y += 68;
+    g_launch = add(make(L"BUTTON", L"&Lancer le jeu", BS_DEFPUSHBUTTON | WS_TABSTOP, L, y, 300, 52, ID_LAUNCH, g_head));
+    add(make(L"BUTTON", L"? A&ide", BS_PUSHBUTTON | WS_TABSTOP, L + W - 100, y + 4, 100, 44, ID_HELP));
+    y += 64;
     g_state_rect = {px(L), px(y), px(L + W), px(y + 56)};
-    g_state = add(make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, L + 22, y + 10, W - 34, 40, 0, g_bold));
+    g_state = add(make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_CENTERIMAGE, L + 28, y + 8, W - 40, 40, 0, g_bold));
     set_state(L"Choisis ton rôle puis lance le jeu.", kMuted);
 
     // ---- Salon ----
@@ -1340,8 +1459,8 @@ void build_window()
     g_game_edit = add(make(L"EDIT", g_game_dir.c_str(), WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, L, 102, W - 132, 30, ID_GAME_EDIT));
     add(make(L"BUTTON", L"&Changer…", BS_PUSHBUTTON | WS_TABSTOP, L + W - 120, 102, 120, 30, ID_BROWSE));
     g_version = add(make(L"STATIC", L"", 0, L, 140, W, 22, 0));
-    g_debug = add(make(L"BUTTON", L"&Journal détaillé (utile pour signaler un problème)", BS_AUTOCHECKBOX | WS_TABSTOP, L, 180, W, 26,
-                       ID_DEBUG));
+    g_debug = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 176, W, 32, ID_DEBUG));
+    g_switches.push_back({g_debug, true, L"&Journal détaillé (utile pour signaler un problème)"});
     add(make(L"STATIC", L"Zone sensible", 0, L, 236, W, 22, 0, g_bold));
     add(make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L, 264, 180, 40, ID_REMOVE));
 
@@ -1352,11 +1471,12 @@ void build_window()
                         L, 76, W, kH - 76 - 76, ID_EVENTS));
     add(make(L"BUTTON", L"E&xporter le journal", BS_PUSHBUTTON | WS_TABSTOP, L, kH - 60, 200, 40, ID_EXPORT));
 
-    std::wstring role = setting(L"role", L"host");
-    SendMessageW(role == L"guest" ? g_guest : role == L"solo" ? g_solo : g_host, BM_SETCHECK, BST_CHECKED, 0);
-    SendMessageW(g_keep, BM_SETCHECK, setting(L"keep_progress", L"1") == L"1" ? BST_CHECKED : BST_UNCHECKED, 0);
-    SendMessageW(g_own_char, BM_SETCHECK, setting(L"own_character", L"1") == L"1" ? BST_CHECKED : BST_UNCHECKED, 0);
-    SendMessageW(g_debug, BM_SETCHECK, setting(L"debug_log", L"1") == L"1" ? BST_CHECKED : BST_UNCHECKED, 0);
+    std::wstring role = setting(L"role", L"host"); // the last role chosen
+    g_role = role == L"guest" ? ROLE_GUEST : role == L"solo" ? ROLE_SOLO : ROLE_HOST;
+    g_switches[0].on = setting(L"own_character", L"1") == L"1";
+    g_switches[1].on = setting(L"keep_progress", L"1") == L"1";
+    g_switches[2].on = setting(L"debug_log", L"1") == L"1";
+    refresh_names();
     update_players();
     show_page(PAGE_PLAY);
 }
@@ -1394,8 +1514,9 @@ void paint(HWND h)
         SetTextColor(dc, g_game_state == 2 ? theme::kOk : theme::kBad);
         RECT st = {px(kX), px(60), px(kX + kCW), px(84)};
         DrawTextW(dc, line.c_str(), -1, &st, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
-        theme::round_rect(dc, g_state_rect, px(theme::kRadiusCard), kCard, theme::kBorder);
-        RECT bar = {g_state_rect.left + px(10), g_state_rect.top + px(14), g_state_rect.left + px(14), g_state_rect.bottom - px(14)};
+        theme::round_rect(dc, g_state_rect, px(theme::kRadiusCard), theme::mix(kCard, g_state_color, 0.08f),
+                          theme::mix(theme::kBorder, g_state_color, 0.35f));
+        RECT bar = {g_state_rect.left + px(12), g_state_rect.top + px(14), g_state_rect.left + px(16), g_state_rect.bottom - px(14)};
         theme::round_rect(dc, bar, px(2), g_state_color);
     } else {
         SetTextColor(dc, kText);
@@ -1462,9 +1583,19 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_HOST:
         case ID_GUEST:
         case ID_SOLO:
+            g_role = LOWORD(w) == ID_GUEST ? ROLE_GUEST : LOWORD(w) == ID_SOLO ? ROLE_SOLO : ROLE_HOST;
+            refresh_names();
+            save_settings();
+            break;
         case ID_KEEP:
         case ID_OWN_CHAR:
-        case ID_DEBUG: update_controls(); save_settings(); break;
+        case ID_DEBUG:
+            for (Switch &sw : g_switches)
+                if (sw.h == HWND(l))
+                    sw.on = !sw.on;
+            refresh_names();
+            save_settings();
+            break;
         case ID_LAUNCH: on_launch(); break;
         case ID_REMOVE: on_remove(); break;
         case ID_BACKUP: on_backup(); break;
@@ -1497,8 +1628,8 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
     case WM_CTLCOLORSTATIC: // labels, radio buttons and check boxes on the light background
         if (HWND(l) == g_state) {
             SetTextColor(HDC(w), g_state_color);
-            SetBkColor(HDC(w), kCard);
-            return LRESULT(g_card_brush);
+            SetBkColor(HDC(w), theme::mix(theme::kSurface, g_state_color, 0.08f));
+            return LRESULT(g_state_brush);
         }
         SetTextColor(HDC(w), HWND(l) == g_version || HWND(l) == g_backup_note ? kMuted : kText);
         SetBkColor(HDC(w), kBg);
@@ -1622,6 +1753,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     SetWindowPos(h, nullptr, 0, 0, need.right - need.left, need.bottom - need.top, SWP_NOMOVE | SWP_NOZORDER);
     BOOL dark = TRUE; // a dark title bar to match (DWMWA_USE_IMMERSIVE_DARK_MODE, Windows 10 2004+)
     DwmSetWindowAttribute(h, 20, &dark, sizeof dark);
+    // Alt letters and focus rings hidden until the keyboard is used, as Windows does in dialogs
+    SendMessageW(h, WM_CHANGEUISTATE, MAKEWPARAM(UIS_SET, UISF_HIDEACCEL | UISF_HIDEFOCUS), 0);
     ShowWindow(h, show);
     check_game();
 
