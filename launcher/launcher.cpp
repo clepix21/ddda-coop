@@ -926,7 +926,7 @@ void update_players()
         r.down = present && down;
         r.role = slot == 0 ? L"HÔTE" : L"INVITÉ " + std::to_wstring(slot);
         r.character = widen_utf8(name);
-        r.zone = r.me ? L"Ta zone" : !present ? L"Zone inconnue" : same ? L"Même zone que toi"
+        r.zone = r.me ? L"Ta zone" : !present ? L"Zone inconnue" : same ? L"Même zone"
                                                                         : L"Autre zone (n° " + std::to_wstring(stage) + L")";
         r.state = !present ? L"" : down ? L"\u26A0 À terre" : L"Debout";
         r.link = r.me ? L"Toi" : ago < 0 ? L"Connexion inconnue" : ago < 1500 ? L"Bonne connexion" : ago < 5000 ? L"Connexion lente"
@@ -1088,12 +1088,15 @@ HWND make(const wchar_t *cls, const wchar_t *text, DWORD style, int x, int y, in
     return c;
 }
 
-const int kW = 600, kL = 24; // layout in 96-dpi units, scaled by px()
+// layout in 96-dpi units, scaled by px(): two columns (the settings and the launch on the left, the salon
+// and the events on the right) so the window fits a laptop's screen (owner's choice, 2026-10-29)
+const int kW = 1080, kL = 24, kCol = 504, kR = kL + kCol + 24;
+int g_left_bottom = 0; // where the left column ends
 int g_height = 0;
 
 void build_window()
 {
-    const int L = kL, W = kW - 2 * kL;
+    const int L = kL, W = kCol;
     g_header_rect = {0, 0, px(kW), px(64)};
     int y = 80;
     make(L"STATIC", L"1.  Le jeu", 0, L, y, W, 24, 0, g_head);
@@ -1127,27 +1130,31 @@ void build_window()
 
     make(L"STATIC", L"3.  Jouer", 0, L, y, W, 24, 0, g_head);
     y += 30;
-    g_launch = make(L"BUTTON", L"&Lancer le jeu", BS_DEFPUSHBUTTON | WS_TABSTOP, L, y, 260, 42, ID_LAUNCH, g_bold);
-    make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L + 272, y, 150, 42, ID_REMOVE);
+    g_launch = make(L"BUTTON", L"&Lancer le jeu", BS_DEFPUSHBUTTON | WS_TABSTOP, L, y, 230, 42, ID_LAUNCH, g_bold);
+    make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L + 242, y, 150, 42, ID_REMOVE);
     make(L"BUTTON", L"? A&ide", BS_PUSHBUTTON | WS_TABSTOP, L + W - 100, y, 100, 42, ID_HELP);
     y += 54;
     g_state_rect = {px(L), px(y), px(L + W), px(y + 52)};
     g_state = make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, L + 14, y + 8, W - 22, 40, 0, g_bold);
     set_state(L"Choisis ton rôle puis lance le jeu.", kMuted);
     y += 64;
+    g_left_bottom = y;
 
-    make(L"STATIC", L"Salon", 0, L, y, W, 24, 0, g_head);
+    // the right column, from the top
+    const int R = kR;
+    y = 80;
+    make(L"STATIC", L"Salon", 0, R, y, W, 24, 0, g_head);
     y += 28;
-    g_players = make(L"DDDACoopSalon", L"Salon", 0, L, y, W, 176, ID_PLAYERS);
+    g_players = make(L"DDDACoopSalon", L"Salon", 0, R, y, W, 176, ID_PLAYERS);
     y += 184;
 
     g_events_top = y;
-    g_events_toggle = make(L"BUTTON", L"", BS_PUSHBUTTON | BS_LEFT | WS_TABSTOP, L, y, W, 28, ID_EVENTS_TOGGLE, g_head);
+    g_events_toggle = make(L"BUTTON", L"", BS_PUSHBUTTON | BS_LEFT | WS_TABSTOP, R, y, W, 28, ID_EVENTS_TOGGLE, g_head);
     g_events = make(L"LISTBOX", L"", WS_BORDER | WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL | LBS_OWNERDRAWFIXED |
-                    LBS_HASSTRINGS, L, y + 32, W, 96, ID_EVENTS);
-    g_backup_btn = make(L"BUTTON", L"Copier mes s&auvegardes", BS_PUSHBUTTON | WS_TABSTOP, L, y, 200, 32, ID_BACKUP);
-    g_export_btn = make(L"BUTTON", L"E&xporter le journal", BS_PUSHBUTTON | WS_TABSTOP, L + 210, y, 180, 32, ID_EXPORT);
-    g_backup_note = make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_PATHELLIPSIS, L, y, W, 20, 0);
+                    LBS_HASSTRINGS, R, y + 32, W, 96, ID_EVENTS);
+    g_backup_btn = make(L"BUTTON", L"Copier mes s&auvegardes", BS_PUSHBUTTON | WS_TABSTOP, R, y, 200, 32, ID_BACKUP);
+    g_export_btn = make(L"BUTTON", L"E&xporter le journal", BS_PUSHBUTTON | WS_TABSTOP, R + 210, y, 180, 32, ID_EXPORT);
+    g_backup_note = make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_PATHELLIPSIS, R, y, W, 20, 0);
     show_backup_note();
     layout_events(); // sets g_height
 
@@ -1165,7 +1172,7 @@ void layout_events()
 {
     if (!g_events_toggle)
         return;
-    const int L = kL, W = kW - 2 * kL;
+    const int L = kR, W = kCol;
     int n = int(SendMessageW(g_events, LB_GETCOUNT, 0, 0));
     std::wstring label = std::wstring(g_events_open ? L"\u25BE  " : L"\u25B8  ") + L"Événements (" + std::to_wstring(n) + L")" +
                          (n == 0 ? L" \u2013 rien pour l'instant" : g_events_open ? L"" : L" \u2013 cliquer pour afficher");
@@ -1179,6 +1186,8 @@ void layout_events()
     y += 38;
     MoveWindow(g_backup_note, px(L), px(y), px(W), px(20), TRUE);
     y += 30;
+    if (y < g_left_bottom)
+        y = g_left_bottom;
     if (y != g_height) {
         g_height = y;
         if (IsWindowVisible(g_wnd)) {
@@ -1188,6 +1197,17 @@ void layout_events()
         }
     }
     InvalidateRect(g_wnd, nullptr, TRUE);
+}
+
+void paint_columns(HDC dc)
+{
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(222, 225, 232));
+    HGDIOBJ old = SelectObject(dc, pen);
+    int x = px(kL + kCol + 12);
+    MoveToEx(dc, x, px(84), nullptr);
+    LineTo(dc, x, px(g_height - 16));
+    SelectObject(dc, old);
+    DeleteObject(pen);
 }
 
 void paint(HWND h)
@@ -1212,6 +1232,7 @@ void paint(HWND h)
     HBRUSH b = CreateSolidBrush(g_state_color);
     FillRect(dc, &bar, b);
     DeleteObject(b);
+    paint_columns(dc);
     SelectObject(dc, old);
     EndPaint(h, &ps);
 }
@@ -1356,14 +1377,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     wc.hbrBackground = CreateSolidBrush(kBg);
     wc.lpszClassName = L"DDDACoopLauncher";
     RegisterClassW(&wc);
-    RECT r = {0, 0, MulDiv(600, g_dpi, 96), MulDiv(1000, g_dpi, 96)};
+    RECT r = {0, 0, MulDiv(kW, g_dpi, 96), MulDiv(1000, g_dpi, 96)};
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
     AdjustWindowRect(&r, style, FALSE);
     HWND h = CreateWindowW(wc.lpszClassName, kTitle, style, CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left,
                            r.bottom - r.top, nullptr, nullptr, inst, nullptr);
     RECT wr;
     GetWindowRect(h, &wr);
-    RECT need = {0, 0, MulDiv(600, g_dpi, 96), MulDiv(g_height, g_dpi, 96)};
+    RECT need = {0, 0, MulDiv(kW, g_dpi, 96), MulDiv(g_height, g_dpi, 96)};
     AdjustWindowRect(&need, style, FALSE);
     SetWindowPos(h, nullptr, 0, 0, need.right - need.left, need.bottom - need.top, SWP_NOMOVE | SWP_NOZORDER);
     ShowWindow(h, show);
