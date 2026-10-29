@@ -23,8 +23,10 @@ $checks += if ($silent.Count -ge 1 -and $off.Count -ge 1 -and $off[0].LineNumber
 if ($connects.Count -eq 2 -and $silent.Count -ge 1) {
     $checks += if ($connects[1].LineNumber -gt $silent[0].LineNumber) { "PASS  guest rejoined after the drop" } else { "FAIL  guest rejoined after the drop" }
 }
-# the rejoined guest's forward push: guest bot 159-164 s after its second start (135 s)
-$checks += @(python -I (Join-Path $tools "check_net.py") $out --pawn-window 294 299)
+# the rejoined guest's forward push: guest bot 159-164 s after its second start, measured at 295.9-300.9 s
+# of the host's log (2026-10-29, three runs); 294-299 took 2 s of the pawn turning on the spot first and
+# failed once (dot 0.924): the window starts 1 s into the push
+$checks += @(python -I (Join-Path $tools "check_net.py") $out --pawn-window 297 301)
 if ($run -match "saves and owner config unchanged: True") { $checks += "PASS  owner's saves and config unchanged" } else { $checks += "FAIL  owner's saves and config unchanged" }
 if ($run -match "a copy exited early") { $checks += "FAIL  both copies still running at the end" } else { $checks += "PASS  both copies still running at the end" }
 $failed = ($checks | Where-Object { $_ -like "FAIL*" }).Count

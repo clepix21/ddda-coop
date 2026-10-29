@@ -44,7 +44,16 @@ for line in r.stdout.splitlines():
 failed += r.returncode != 0
 
 cam_re = rf'guest {guest_num} camera forward' if guest_num else r'guest (?:\d )?camera forward'
-cams = [tuple(map(float, m.groups())) for l in host if (m := re.search(cam_re + r' \((\S+), (\S+)\)', l))]
+def secs(l):
+    h, mi, se = l[:12].split(':')
+    return int(h) * 3600 + int(mi) * 60 + float(se)
+
+
+# the guest's camera while it pushed (lines from 3 s before the window to its end; the last line of the
+# whole log came after the push and failed the reconnect suite once when the guest restarted late)
+t0 = secs(host[0])
+cams_all = [(secs(l) - t0, tuple(map(float, m.groups()))) for l in host if (m := re.search(cam_re + r' \((\S+), (\S+)\)', l))]
+cams = [c for t, c in cams_all if ws - 3 <= t <= we] or [c for t, c in cams_all if t <= we][-1:]
 r = subprocess.run([sys.executable, '-I', str(tools / 'analyze_log.py'), str(d / 'host.log'), '--window', 'fwd', str(ws), str(we), '--cmc', cmc],
                    capture_output=True, text=True)
 m = re.search(r'pawn: moved\s+(\S+) heading \((\S+), (\S+)\)', r.stdout)
