@@ -688,7 +688,9 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
         float rx = game::at<float>(held, 0x40) - game::at<float>(ch, 0x40), ry = game::at<float>(held, 0x44) - game::at<float>(ch, 0x44),
               rz = game::at<float>(held, 0x48) - game::at<float>(ch, 0x48);
         reach = std::sqrt(rx * rx + ry * ry + rz * rz);
-        if (!(reach < 300.f) && g_carried[i] != held) // a monster carried here may be brought back from afar
+        // a monster is carried to the pawn wherever it is: the holder's world sends a lifted monster's
+        // place as it stands there, ~6000 u off (the line before a guest's crash, lift suite 2026-10-29)
+        if (!(reach < 300.f) && player)
             held = 0;
     }
     static DWORD next_why[kParty] = {};
@@ -998,6 +1000,7 @@ struct Follow {
     bool forced;        // death forced once
     DWORD unpaired_since; // no host enemy for it while the host sends enemies (0 = no)
     DWORD last;           // last finalize of the local enemy: a gone enemy's entry stays behind
+    int paired_to;        // host_slot of the first update applied (the pairing's own jump is not an error)
 };
 Follow g_follow[kEnemySlots] = {};
 struct EnemyStats {
@@ -2849,7 +2852,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
                 claimed[g_follow[k].host_slot] = true;
         // 1. same class, spawn within 40 u; 2. same class, standing within 40 u now (critters such as
         // uEm8100 move away from their spawn after their first frames, not at the same moment on both PCs);
-        // 3. once it has been here 2 s: same class or a variant, the closest standing within 800 u.
+        // 3. once it has been here 6 s: same class or a variant, the closest standing within 800 u.
         // Packs (wolves, bats, harpies) spawn 100 to 1500 u apart in the two worlds (friends' logs,
         // 2026-10-28) and stayed apart: one of the same kind is as good as another.
         const float *here = reinterpret_cast<const float *>(em + 0x40);
@@ -2857,7 +2860,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         float best = 40.f * 40.f;
         for (int pass = 0; pass < 3 && f.host_slot < 0; ++pass) {
             if (pass == 2) {
-                if (now - slot.first_seen < 2000)
+                if (now - slot.first_seen < 6000) // passes 1 and 2 first: at 2 s it snapped critters (uEm8100) 784 u
                     break;
                 best = 800.f * 800.f;
                 how = "kind, closest";
@@ -2947,7 +2950,9 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     float dx = s.pos[0] - pos[0], dy = s.pos[1] - pos[1], dz = s.pos[2] - pos[2];
     float err = std::sqrt(dx * dx + dy * dy + dz * dz);
     ++g_enemy_stats.applied;
-    if (err > g_enemy_stats.worst_err)
+    bool first = f.paired_to != f.host_slot + 1; // the pairing's own jump, logged with the pair
+    f.paired_to = f.host_slot + 1;
+    if (!first && err > g_enemy_stats.worst_err)
         g_enemy_stats.worst_err = err;
     LeaveCriticalSection(&g_enemy_lock);
     // same correction as the players' puppets: snap when far (with every copy the collision pass
