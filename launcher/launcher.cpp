@@ -29,11 +29,13 @@ const char kOurMarker[] = "ddda-pawn-coop loaded"; // a string only our dinput8.
 
 enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
-    ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS
+    ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP
 };
 
 HWND g_wnd, g_game_edit, g_version, g_host, g_guest, g_solo, g_own_char, g_keep, g_debug, g_launch, g_state, g_events,
-    g_players;
+    g_players, g_events_toggle, g_backup_btn, g_export_btn, g_backup_note;
+bool g_events_open = false; // the events list: shut until a warning or an error (the toggle opens and shuts it)
+int g_events_top = 0;       // where the events part starts (96-dpi units), for the layout below it
 HFONT g_font, g_bold, g_head, g_title;
 HBRUSH g_bg_brush, g_card_brush;
 int g_dpi = 96;
@@ -254,6 +256,25 @@ void set_state(const std::wstring &text, COLORREF color)
     InvalidateRect(g_wnd, &g_state_rect, TRUE);
 }
 
+// The kind of an event, from its words: 0 information, 1 good news (connected, received, copied),
+// 2 a warning (disconnected, lost, waiting), 3 an error. Its icon and colour in the list.
+int event_kind(const std::wstring &t)
+{
+    auto has = [&](const wchar_t *w) { return t.find(w) != std::wstring::npos; };
+    if (has(L"Impossible") || has(L"non prise en charge") || has(L"autre version") || has(L"planté") || has(L"pas chargé") ||
+        has(L"ne démarre pas") || has(L"ne répond pas") || has(L"échoué"))
+        return 3;
+    if (has(L"déconnecté") || has(L"perdue") || has(L"pas maintenant") || has(L"en attente") || has(L"Aucun") ||
+        has(L"introuvable") || has(L"s'est fermé"))
+        return 2;
+    if (has(L"connecté") || has(L"Connecté") || has(L"trouvé") || has(L"reçu") || has(L"copiées") || has(L"installé") ||
+        has(L"est arrivé") || has(L"De retour") || has(L"revenu") || has(L"ajoutée") || has(L"enregistrée") || has(L"copié"))
+        return 1;
+    return 0;
+}
+
+void layout_events();
+
 void add_event(const std::wstring &text)
 {
     wchar_t stamp[16];
@@ -261,7 +282,39 @@ void add_event(const std::wstring &text)
     GetLocalTime(&t);
     swprintf(stamp, 16, L"%02d:%02d:%02d  ", t.wHour, t.wMinute, t.wSecond);
     int i = int(SendMessageW(g_events, LB_ADDSTRING, 0, LPARAM((stamp + text).c_str())));
+    SendMessageW(g_events, LB_SETITEMDATA, i, LPARAM(event_kind(text)));
     SendMessageW(g_events, LB_SETTOPINDEX, i, 0);
+    if (!g_events_open && event_kind(text) >= 2) // a warning or an error opens the list (a short window otherwise)
+        g_events_open = true;
+    layout_events();
+}
+
+void draw_event(const DRAWITEMSTRUCT *d)
+{
+    if (d->itemID == UINT(-1))
+        return;
+    static const COLORREF colors[4] = {kInfo, kOk, kWarn, kBad};
+    static const wchar_t *icons[4] = {L"\u25CF", L"\u2714", L"\u26A0", L"\u2716"};
+    int kind = int(d->itemData) & 3;
+    wchar_t text[600] = L"";
+    SendMessageW(d->hwndItem, LB_GETTEXT, d->itemID, LPARAM(text));
+    FillRect(d->hDC, &d->rcItem, g_card_brush);
+    SetBkMode(d->hDC, TRANSPARENT);
+    RECT r = d->rcItem;
+    r.left += px(4);
+    // "hh:mm:ss  " then the icon in the kind's colour, then the words
+    std::wstring all = text;
+    std::wstring stamp = all.substr(0, all.size() >= 10 ? 10 : all.size()), rest = all.size() > 10 ? all.substr(10) : L"";
+    SetTextColor(d->hDC, kMuted);
+    DrawTextW(d->hDC, stamp.c_str(), -1, &r, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    SIZE sz = {};
+    GetTextExtentPoint32W(d->hDC, stamp.c_str(), int(stamp.size()), &sz);
+    r.left += sz.cx;
+    SetTextColor(d->hDC, colors[kind]);
+    DrawTextW(d->hDC, icons[kind], -1, &r, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    r.left += px(18);
+    SetTextColor(d->hDC, kind == 3 ? kBad : kind == 2 ? kWarn : kText);
+    DrawTextW(d->hDC, rest.c_str(), -1, &r, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
 }
 
 bool guest_role() { return SendMessageW(g_guest, BM_GETCHECK, 0, 0) == BST_CHECKED; }
@@ -420,6 +473,46 @@ bool install_dll()
     return true;
 }
 
+// "Last backup copy: when, where" under the buttons, kept in DDDA-Coop.ini.
+void show_backup_note()
+{
+    std::wstring when = setting(L"last_backup_time", L""), where = setting(L"last_backup", L"");
+    std::wstring text = when.empty() ? L"Copie de secours automatique de tes sauvegardes à chaque lancement (aucune encore)."
+                                     : L"Dernière copie de secours : " + when + L" \u2192 " + where;
+    if (g_backup_note)
+        SetWindowTextW(g_backup_note, text.c_str());
+}
+
+void note_backup(const std::wstring &where)
+{
+    wchar_t when[32];
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    swprintf(when, 32, L"%02d/%02d %02d:%02d", t.wDay, t.wMonth, t.wHour, t.wMinute);
+    WritePrivateProfileStringW(L"launcher", L"last_backup_time", when, settings_path().c_str());
+    WritePrivateProfileStringW(L"launcher", L"last_backup", where.c_str(), settings_path().c_str());
+    show_backup_note();
+}
+
+// The game's controls and the launcher's own, in a message box (screen readers read it); shown once by
+// itself at the first start.
+void show_help()
+{
+    MessageBoxW(g_wnd,
+                L"Dans le jeu\n"
+                L"  \u2022 Invité : attends « Connecté ! » dans cette fenêtre avant d'appuyer sur Start.\n"
+                L"  \u2022 Explorer seul / revenir : LB + RB + Y maintenus 1,5 s (ou F7).\n"
+                L"  \u2022 Relever un joueur à terre : maintiens B à côté de lui (3 s).\n"
+                L"  \u2022 Saisir un joueur ou un petit monstre : RT.\n"
+                L"  \u2022 Le bandeau « DDDA Coop actif » (écran titre, menu pause, carte) dit que le mod tourne.\n\n"
+                L"Ici\n"
+                L"  \u2022 Une copie de secours de tes sauvegardes est faite à chaque lancement ;\n"
+                L"    « Copier mes sauvegardes » en fait une tout de suite et ouvre le dossier.\n"
+                L"  \u2022 En cas de souci : « Exporter le journal » et envoie le fichier.\n"
+                L"  \u2022 Clavier : Alt + la lettre soulignée, Tab pour passer d'un élément à l'autre.",
+                L"DDDA Coop \u2013 Aide", MB_ICONINFORMATION | MB_OK);
+}
+
 void on_launch()
 {
     check_game();
@@ -435,8 +528,10 @@ void on_launch()
         ask(L"La copie de secours de tes sauvegardes n'a pas marché (aucune trouvée, ou erreur).\n\nLancer quand même ?",
             MB_ICONWARNING | MB_YESNO) != IDYES)
         return;
-    if (!backup.empty())
+    if (!backup.empty()) {
         add_event(L"Sauvegardes copiées dans " + backup);
+        note_backup(backup);
+    }
     if (!install_dll())
         return;
     if (!write_coop_ini()) {
@@ -501,6 +596,7 @@ void on_backup()
         return;
     }
     add_event(L"Sauvegardes copiées dans " + dest);
+    note_backup(dest);
     ShellExecuteW(g_wnd, L"open", dest.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
@@ -883,7 +979,7 @@ void paint_salon(HWND h, HDC dc)
     SetTextColor(mem, kMuted);
     RECT info = {0, 0, rc.right, px(22)};
     DrawTextW(mem, g_salon_info.c_str(), -1, &info, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-    int top = px(26), gap = px(8);
+    int top = px(24), gap = px(6);
     int cw = (rc.right - gap) / 2, ch = (rc.bottom - top - gap) / 2;
     static const COLORREF seat_colors[4] = {RGB(122, 26, 26), RGB(30, 80, 150), RGB(24, 110, 48), RGB(110, 60, 140)};
     for (int k = 0; k < 4; ++k) {
@@ -898,7 +994,7 @@ void paint_salon(HWND h, HDC dc)
         SelectObject(mem, old_brush);
         SelectObject(mem, old_pen);
         DeleteObject(pen);
-        int pad = px(10), av = px(48);
+        int pad = px(10), av = px(42);
         RECT pic = {c.left + pad, c.top + (ch - av) / 2, c.left + pad + av, c.top + (ch - av) / 2 + av};
         if (!r.used) {
             SetTextColor(mem, kMuted);
@@ -932,8 +1028,8 @@ void paint_salon(HWND h, HDC dc)
         SelectClipRgn(mem, nullptr);
         DeleteObject(clip);
         // text: Steam name (bold), role and character, area and state, link
-        int x = pic.right + pad, lh = px(18);
-        RECT t = {x, c.top + px(6), c.right - pad, c.top + px(6) + lh};
+        int x = pic.right + pad, lh = px(16);
+        RECT t = {x, c.top + px(4), c.right - pad, c.top + px(4) + lh};
         SelectObject(mem, g_bold);
         SetTextColor(mem, kText);
         std::wstring title = (r.steam.empty() ? (r.character.empty() ? r.role : r.character) : r.steam) + (r.me ? L" (toi)" : L"");
@@ -1033,6 +1129,7 @@ void build_window()
     y += 30;
     g_launch = make(L"BUTTON", L"&Lancer le jeu", BS_DEFPUSHBUTTON | WS_TABSTOP, L, y, 260, 42, ID_LAUNCH, g_bold);
     make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L + 272, y, 150, 42, ID_REMOVE);
+    make(L"BUTTON", L"? A&ide", BS_PUSHBUTTON | WS_TABSTOP, L + W - 100, y, 100, 42, ID_HELP);
     y += 54;
     g_state_rect = {px(L), px(y), px(L + W), px(y + 52)};
     g_state = make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, L + 14, y + 8, W - 22, 40, 0, g_bold);
@@ -1041,23 +1138,18 @@ void build_window()
 
     make(L"STATIC", L"Salon", 0, L, y, W, 24, 0, g_head);
     y += 28;
-    g_players = make(L"DDDACoopSalon", L"Salon", 0, L, y, W, 196, ID_PLAYERS);
-    y += 204;
+    g_players = make(L"DDDACoopSalon", L"Salon", 0, L, y, W, 176, ID_PLAYERS);
+    y += 184;
 
-    make(L"STATIC", L"Événements", 0, L, y, W, 24, 0, g_head);
-    y += 28;
-    g_events = make(L"LISTBOX", L"", WS_BORDER | WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL, L, y, W, 72,
-                    ID_EVENTS);
-    y += 80;
-    make(L"BUTTON", L"Copier mes s&auvegardes", BS_PUSHBUTTON | WS_TABSTOP, L, y, 200, 32, ID_BACKUP);
-    make(L"BUTTON", L"E&xporter le journal", BS_PUSHBUTTON | WS_TABSTOP, L + 210, y, 180, 32, ID_EXPORT);
-    y += 42;
-    make(L"STATIC",
-         L"Invité : attends « Connecté ! » avant Start. LB + RB + Y (1,5 s) ou F7 : explorer seul / revenir. Raccourcis : "
-         L"Alt + la lettre soulignée, Tab pour passer d'un élément à l'autre.",
-         0, L, y, W, 40, 0);
-    y += 52;
-    g_height = y;
+    g_events_top = y;
+    g_events_toggle = make(L"BUTTON", L"", BS_PUSHBUTTON | BS_LEFT | WS_TABSTOP, L, y, W, 28, ID_EVENTS_TOGGLE, g_head);
+    g_events = make(L"LISTBOX", L"", WS_BORDER | WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL | LBS_OWNERDRAWFIXED |
+                    LBS_HASSTRINGS, L, y + 32, W, 96, ID_EVENTS);
+    g_backup_btn = make(L"BUTTON", L"Copier mes s&auvegardes", BS_PUSHBUTTON | WS_TABSTOP, L, y, 200, 32, ID_BACKUP);
+    g_export_btn = make(L"BUTTON", L"E&xporter le journal", BS_PUSHBUTTON | WS_TABSTOP, L + 210, y, 180, 32, ID_EXPORT);
+    g_backup_note = make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_PATHELLIPSIS, L, y, W, 20, 0);
+    show_backup_note();
+    layout_events(); // sets g_height
 
     std::wstring role = setting(L"role", L"host");
     SendMessageW(role == L"guest" ? g_guest : role == L"solo" ? g_solo : g_host, BM_SETCHECK, BST_CHECKED, 0);
@@ -1065,6 +1157,37 @@ void build_window()
     SendMessageW(g_own_char, BM_SETCHECK, setting(L"own_character", L"1") == L"1" ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(g_debug, BM_SETCHECK, setting(L"debug_log", L"1") == L"1" ? BST_CHECKED : BST_UNCHECKED, 0);
     update_players();
+}
+
+// The part under the salon: the events toggle, the list when open, the buttons, the backup note; the
+// window's height follows.
+void layout_events()
+{
+    if (!g_events_toggle)
+        return;
+    const int L = kL, W = kW - 2 * kL;
+    int n = int(SendMessageW(g_events, LB_GETCOUNT, 0, 0));
+    std::wstring label = std::wstring(g_events_open ? L"\u25BE  " : L"\u25B8  ") + L"Événements (" + std::to_wstring(n) + L")" +
+                         (n == 0 ? L" \u2013 rien pour l'instant" : g_events_open ? L"" : L" \u2013 cliquer pour afficher");
+    SetWindowTextW(g_events_toggle, label.c_str());
+    int y = g_events_top + 32;
+    ShowWindow(g_events, g_events_open ? SW_SHOW : SW_HIDE);
+    if (g_events_open)
+        y += 104;
+    MoveWindow(g_backup_btn, px(L), px(y), px(200), px(32), TRUE);
+    MoveWindow(g_export_btn, px(L + 210), px(y), px(180), px(32), TRUE);
+    y += 38;
+    MoveWindow(g_backup_note, px(L), px(y), px(W), px(20), TRUE);
+    y += 30;
+    if (y != g_height) {
+        g_height = y;
+        if (IsWindowVisible(g_wnd)) {
+            RECT need = {0, 0, px(kW), px(g_height)};
+            AdjustWindowRect(&need, DWORD(GetWindowLongW(g_wnd, GWL_STYLE)), FALSE);
+            SetWindowPos(g_wnd, nullptr, 0, 0, need.right - need.left, need.bottom - need.top, SWP_NOMOVE | SWP_NOZORDER);
+        }
+    }
+    InvalidateRect(g_wnd, nullptr, TRUE);
 }
 
 void paint(HWND h)
@@ -1100,7 +1223,23 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         g_wnd = h;
         build_window();
         SetTimer(h, ID_TIMER, 1000, nullptr);
+        if (setting(L"help_seen", L"0") != L"1") { // the help once by itself, at the first start
+            WritePrivateProfileStringW(L"launcher", L"help_seen", L"1", settings_path().c_str());
+            PostMessageW(h, WM_COMMAND, ID_HELP, 0);
+        }
         return 0;
+    case WM_MEASUREITEM:
+        if (w == ID_EVENTS) {
+            reinterpret_cast<MEASUREITEMSTRUCT *>(l)->itemHeight = UINT(px(20));
+            return TRUE;
+        }
+        break;
+    case WM_DRAWITEM:
+        if (w == ID_EVENTS) {
+            draw_event(reinterpret_cast<const DRAWITEMSTRUCT *>(l));
+            return TRUE;
+        }
+        break;
     case WM_PAINT:
         paint(h);
         return 0;
@@ -1116,6 +1255,11 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_LAUNCH: on_launch(); break;
         case ID_REMOVE: on_remove(); break;
         case ID_BACKUP: on_backup(); break;
+        case ID_HELP: show_help(); break;
+        case ID_EVENTS_TOGGLE:
+            g_events_open = !g_events_open;
+            layout_events();
+            break;
         case ID_EXPORT: on_export(); break;
         case ID_GAME_EDIT:
             if (HIWORD(w) == EN_KILLFOCUS && window_text(g_game_edit) != g_game_dir) {
@@ -1136,7 +1280,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
             SetBkColor(HDC(w), kCard);
             return LRESULT(g_card_brush);
         }
-        SetTextColor(HDC(w), HWND(l) == g_version ? kMuted : kText);
+        SetTextColor(HDC(w), HWND(l) == g_version || HWND(l) == g_backup_note ? kMuted : kText);
         SetBkColor(HDC(w), kBg);
         return LRESULT(g_bg_brush);
     case WM_DESTROY:
