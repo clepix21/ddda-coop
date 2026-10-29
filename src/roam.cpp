@@ -153,6 +153,12 @@ bool roam_world_from_host(const std::vector<uint8_t> &host, std::vector<uint8_t>
             pawn = p;
     }
     bool swapped = pawn >= 0 && save_swap_arisen_pawn(xml, pawn);
+    // not merged yet, but the pawn is given: the host's Arisen goes there right away (it was lost under
+    // this guest's character until the host's next save: the host invisible for this guest meanwhile)
+    bool early = false;
+    std::string host_char;
+    if (!swapped && given >= 0 && save_character(xml, -1, host_char))
+        early = save_put_character(xml, given, host_char);
     if (!swapped && !save_put_arisen_everywhere(xml, own_char))
         return false;
     std::vector<uint8_t> own;
@@ -163,7 +169,8 @@ bool roam_world_from_host(const std::vector<uint8_t> &host, std::vector<uint8_t>
     if (!save_pack(xml, head, out))
         return false;
     logf("roam: shared world: %s is this guest's Arisen%s", name.c_str(),
-         swapped ? " (the host's Arisen on its pawn)" : " (the host has not merged it yet)");
+         swapped ? " (the host's Arisen on its pawn)"
+                 : early ? " (not merged by the host yet: the host's Arisen put on the pawn it gave)" : " (the host has not merged it yet)");
     logf("roam: shared world party: %s", save_copy_names(xml).c_str());
     keep_pawn_names(xml);
     return true;
