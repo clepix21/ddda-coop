@@ -1,0 +1,24 @@
+# Menu state test, host: candidates for "a menu is open" read while the game menu opens and closes,
+# the map (Back) opens and closes; then the menu and its Statut page (down, A) for the screenshots.
+wait 12000
+peek 01879724 0187FF5C 018D50B0 01878C8C 01880024
+pad 0 0010 0 0 0 0 0 0 200
+wait 2500
+peek 01879724 0187FF5C 018D50B0 01878C8C 01880024
+pad 0 2000 0 0 0 0 0 0 200
+wait 2500
+peek 01879724 0187FF5C 018D50B0 01878C8C 01880024
+pad 0 0020 0 0 0 0 0 0 200
+wait 2500
+peek 01879724 0187FF5C 018D50B0 01878C8C 01880024
+pad 0 2000 0 0 0 0 0 0 200
+wait 2500
+peek 01879724 0187FF5C 018D50B0 01878C8C 01880024
+pad 0 0010 0 0 0 0 0 0 200
+wait 2500
+pad 0 0002 0 0 0 0 0 0 200
+wait 1500
+pad 0 1000 0 0 0 0 0 0 200
+wait 1500
+peek 01879724 0187FF5C 018D50B0 01878C8C 01880024
+wait 30000

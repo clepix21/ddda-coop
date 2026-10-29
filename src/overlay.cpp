@@ -46,14 +46,26 @@ struct Vtx {
     float x, y, z, rhw, u, v;
 };
 
-// What the badge says now, or false when it is not shown: shown out of the play areas (the title
-// screen, its main menu, loads), whose current area is no aStage (0 on the title, 2026-10-29).
+// What the badge says now (called once a second), or false when it is not shown. Shown out of the
+// play areas (the title screen, its main menu, loads: their current area is no aStage, 0 on the
+// title, 2026-10-29), and in a play area while the game is paused (the pause menu "Menu pause" and
+// its pages, the map): the game's clock (sGameSys, ms into the day) has not moved for a second. No
+// fixed word in the game's globals told the menu apart (snapshot diffs with the menu shut, open, shut).
 bool badge_text(wchar_t *out, size_t cap)
 {
     uintptr_t area = game::at<uintptr_t>(game::kArea, 0);
     uintptr_t cur = area ? game::at<uintptr_t>(area, game::kAreaCurrent) : 0;
     const char *cls = cur ? enemies_class_of(cur) : "";
-    if (strncmp(cls, "aStage", 6) == 0)
+    static int32_t last_ms = -1;
+    uintptr_t gm = game::at<uintptr_t>(game::kGameMain, 0);
+    int32_t ms = gm ? game::at<int32_t>(gm, game::kGsDayMs) : -1;
+    bool paused = ms >= 0 && ms == last_ms;
+    last_ms = ms;
+    static bool was_paused = false;
+    if (strncmp(cls, "aStage", 6) == 0 && paused != was_paused)
+        logf("overlay: the game's clock %s", paused ? "stopped (paused)" : "runs again");
+    was_paused = paused;
+    if (strncmp(cls, "aStage", 6) == 0 && !paused)
         return false;
     NetRole role = net_role();
     int players = 0;
@@ -168,7 +180,7 @@ void draw_badge(IDirect3DDevice9 *dev)
         bool was = shown;
         shown = badge_text(text, 160);
         if (shown != was)
-            logf("overlay: badge %s", shown ? "shown (out of the play areas)" : "hidden (in a play area)");
+            logf("overlay: badge %s", shown ? "shown" : "hidden (playing)");
     }
     if (!shown || (last_draw && now - last_draw < 5) || !render_text(dev, text)) // once a frame (both Presents)
         return;

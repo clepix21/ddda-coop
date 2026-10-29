@@ -22,6 +22,8 @@
 #include "mod.h"
 
 namespace {
+std::vector<uint32_t> g_snaps[3];  // snapg / diffg (tests)
+std::vector<uint32_t> g_snap_objs; // the globals whose objects the snapshots hold
 
 struct Goto {
     bool active;
@@ -430,6 +432,66 @@ void run_line(const char *line)
             quest_live_queue(id);
         logf("bridge: questadd %08X (journal %d)", id, quest_live_count());
         _snprintf(g_current, sizeof g_current, "questadd %08X", id);
+    } else if (sscanf(line, "snapg %u", &slot) == 1 && slot < 3) {
+        // snapg <0|1|2>: the exe's globals (0x01621000..0x019AB1E0) and the first 0x400 bytes of each
+        // object of a game class (vtable in DDDA.exe) one points to (the list made at snapshot 0), kept
+        // for diffg (tests: before, during, after something)
+        constexpr uintptr_t lo = 0x01621000, hi = 0x019AB1E0;
+        constexpr size_t n = (hi - lo) / 4;
+        auto &snap = g_snaps[slot];
+        snap.assign(n, 0);
+        SIZE_T got = 0;
+        ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<void *>(lo), snap.data(), hi - lo, &got);
+        if (slot == 0) {
+            g_snap_objs.clear();
+            for (size_t k = 0; k < n && g_snap_objs.size() < 20000; ++k) {
+                uint32_t vt = 0;
+                if (snap[k] >= 0x10000 && snap[k] < 0x7FFF0000 && !(snap[k] & 3) &&
+                    ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<void *>(uintptr_t(snap[k])), &vt, 4, &got) &&
+                    vt >= 0x00401000 && vt < 0x01A0C000)
+                    g_snap_objs.push_back(uint32_t(k));
+            }
+        }
+        snap.resize(n + g_snap_objs.size() * 0x100, 0);
+        for (size_t j = 0; j < g_snap_objs.size(); ++j)
+            ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<void *>(uintptr_t(snap[g_snap_objs[j]])), &snap[n + j * 0x100], 0x400, &got);
+        logf("bridge: snapg %u taken (%u objects)", slot, unsigned(g_snap_objs.size()));
+        _snprintf(g_current, sizeof g_current, "snapg %u", slot);
+    } else if (strncmp(line, "peek ", 5) == 0) { // peek <hex address>...: the words there (tests)
+        char buf[300] = "";
+        int len = 0;
+        unsigned addr = 0;
+        int used = 0;
+        for (const char *q = line + 5; sscanf(q, "%x%n", &addr, &used) == 1 && len < 260; q += used) {
+            uint32_t v = 0;
+            SIZE_T got = 0;
+            bool ok = ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<void *>(uintptr_t(addr)), &v, 4, &got);
+            len += _snprintf(buf + len, sizeof buf - len, " %08X=%s%08X", addr, ok ? "" : "?", v);
+        }
+        logf("bridge: peek%s", buf);
+        strcpy(g_current, "peek");
+    } else if (strncmp(line, "diffg", 5) == 0) {
+        // diffg: words equal in snapshots 0 and 2 and different in 1 (a state that came and went)
+        constexpr uintptr_t lo = 0x01621000, hi = 0x019AB1E0;
+        constexpr size_t n = (hi - lo) / 4;
+        int hits = 0;
+        if (g_snaps[0].size() == g_snaps[1].size() && g_snaps[1].size() == g_snaps[2].size() && !g_snaps[0].empty())
+            for (size_t k = 0; k < g_snaps[0].size() && hits < 80; ++k) {
+                uint32_t a0 = g_snaps[0][k], a1 = g_snaps[1][k], a2 = g_snaps[2][k];
+                if (a0 != a2 || a0 == a1)
+                    continue;
+                if (k >= n) { // inside an object: only when the global pointed at the same one all along
+                    size_t gk = g_snap_objs[(k - n) / 0x100];
+                    if (g_snaps[0][gk] != g_snaps[1][gk] || g_snaps[0][gk] != g_snaps[2][gk])
+                        continue;
+                    logf("bridge: diffg [%08X]+0x%X: %08X -> %08X -> %08X", unsigned(lo + gk * 4), unsigned((k - n) % 0x100 * 4), a0, a1, a2);
+                } else {
+                    logf("bridge: diffg %08X: %08X -> %08X -> %08X", unsigned(lo + k * 4), a0, a1, a2);
+                }
+                ++hits;
+            }
+        logf("bridge: diffg %d", hits);
+        strcpy(g_current, "diffg");
     } else if (strncmp(line, "watchg ", 7) == 0) { // watchg <global hex> <offset hex> <count>: every change at [global]+offset
         unsigned g = 0, off = 0, count = 20;
         uintptr_t addr = 0;

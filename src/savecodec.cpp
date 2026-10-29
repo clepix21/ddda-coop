@@ -200,10 +200,30 @@ bool save_character(const std::string &xml, int pawn, std::string &out)
     return true;
 }
 
+// The Arisen's look and name has a third copy, mSystemData > mEditPl, which the menus show (Statut:
+// a guest's own Arisen had the host's name there, menu screenshots 2026-10-29). The Arisen's mEdit is
+// written there too.
+bool put_system_edit(std::string &xml, const std::string &character)
+{
+    size_t sys = xml.find("<class name=\"mSystemData\"");
+    if (sys == std::string::npos)
+        return true; // no such block: nothing to keep in step
+    size_t e = child(xml, sys, "mEditPl");
+    size_t split = character.find("<class name=\"mParam\"");
+    if (e == std::string::npos || split == std::string::npos || character.compare(0, 19, "<class name=\"mEdit\"") != 0)
+        return false;
+    std::string edit = character.substr(0, character.find_last_not_of('\n', split - 1) + 1);
+    edit.replace(0, 19, "<class name=\"mEditPl\"");
+    xml.replace(e, block_end(xml, e) - e, edit);
+    return true;
+}
+
 // Writes a character (from save_character) over pawn `pawn`'s mEdit and mParam, in every player data
-// copy.
+// copy (and the Arisen's look in mSystemData).
 bool save_put_character(std::string &xml, int pawn, const std::string &character)
 {
+    if (pawn < 0 && !put_system_edit(xml, character))
+        return false;
     int done = 0;
     for (size_t i = 0;; ++i) {
         std::vector<size_t> starts = player_data_starts(xml); // offsets move with each replace
@@ -266,11 +286,14 @@ bool save_put_arisen_everywhere(std::string &xml, const std::string &character)
     return save_put_character(xml, -1, character);
 }
 
-// For logs: the names in each player data copy, "Manual: A, p0, p1, p2 / Base: ...".
+// For logs: the names in each player data copy, "Manual: A, p0, p1, p2 / Base: ... / System: A".
 std::string save_copy_names(const std::string &xml)
 {
     std::string out;
     std::vector<size_t> starts = player_data_starts(xml);
+    size_t sys = xml.find("<class name=\"mSystemData\"");
+    size_t se = sys == std::string::npos ? sys : child(xml, sys, "mEditPl");
+    std::string system = se == std::string::npos ? "?" : save_character_name(xml.substr(se, block_end(xml, se) - se));
     for (size_t i = 0; i < starts.size(); ++i) {
         out += i ? " / Base:" : "Manual:";
         for (int p = -1; p < kPawns; ++p) {
@@ -279,7 +302,7 @@ std::string save_copy_names(const std::string &xml)
                    (e == std::string::npos ? "?" : save_character_name(xml.substr(e, block_end(xml, e) - e)));
         }
     }
-    return out;
+    return out + " / System: " + system;
 }
 
 // The bag of party member `who` (0 = Arisen, 1 + mCmcId) in copy `copy`: its cSAVE_DATA_ITEM block.

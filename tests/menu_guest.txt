@@ -1,0 +1,8 @@
+# Names test, guest: the game menu and its Statut page (down, A) for the screenshots.
+wait 15000
+pad 0 0010 0 0 0 0 0 0 200
+wait 3000
+pad 0 0002 0 0 0 0 0 0 200
+wait 1500
+pad 0 1000 0 0 0 0 0 0 200
+wait 30000
