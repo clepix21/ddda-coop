@@ -573,6 +573,18 @@ void facing(uintptr_t ch, float &fx, float &fz)
     fx /= n, fz /= n;
 }
 
+// The pawn carrying a monster here plays its player's lift action (arms up, LiftGeneric 0x61...),
+// target and lift kind set, once a second while it plays something else; never on a pawn down or
+// being hit. Tests first (test_carry_pose=1): the monster's own links are left alone (forcing them
+// gave NaN places, 2026-10-28).
+bool carry_pose_on()
+{
+    static int on = -1;
+    if (on < 0)
+        on = early_flag("test_carry_pose") ? 1 : 0;
+    return on != 0;
+}
+
 // Monsters a player lifts in its world that its pawn here could not catch: carried where the holder
 // has them (CharState.hold_off), and left alone by the enemy following meanwhile (enemy_net_after_finalize).
 uintptr_t g_carried[kParty] = {};
@@ -594,6 +606,28 @@ void carry(uintptr_t ch, uintptr_t em, const float off[3])
     memcpy(reinterpret_cast<void *>(em + 0x40), to, 12);
     for (uintptr_t o : kPosCopies)
         memcpy(reinterpret_cast<void *>(em + o), to, 12);
+}
+
+void carry_pose(uintptr_t ch, uintptr_t em, const CharState &s)
+{
+    static DWORD next[4] = {};
+    if (!carry_pose_on() || !strstr(action_class(s.action), "Lift"))
+        return;
+    int k = 0;
+    for (int p = 0; p < kPawns; ++p)
+        if (possess_pawn_ptr(p) == ch)
+            k = 1 + p;
+    DWORD t = GetTickCount();
+    if (next[k] && int(t - next[k]) < 0)
+        return;
+    next[k] = (t + 1000) | 1;
+    const char *now = action_name(ch);
+    if (strstr(now, "Lift") || strstr(now, "Dead") || strncmp(now, "cPlActDmg", 9) == 0)
+        return;
+    game::at<uintptr_t>(ch, 0x38F0) = em;
+    game::at<int32_t>(ch, 0x3938) = s.hold_kind;
+    action_set(ch, s.action);
+    logf("net: shared: carrying pawn %p: %s -> %s (0x%X)", (void *)ch, now, action_name(ch), unsigned(s.action));
 }
 
 void place_in_front(uintptr_t ch, uintptr_t other, float d)
@@ -734,6 +768,7 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
         }
         if (!player) { // carried where the holder has it, for as long as the hold lasts
             carry(ch, held, s.hold_off);
+            carry_pose(ch, held, s);
             return;
         }
         if (holding || int(t - again[i]) < 1000)
