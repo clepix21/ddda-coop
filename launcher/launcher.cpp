@@ -35,7 +35,7 @@ const char kOurMarker[] = "ddda-pawn-coop loaded"; // a string only our dinput8.
 enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
     ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP,
-    ID_OPEN_BACKUPS, ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
+    ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
 };
 // the screens, in the sidebar's order
 enum Page { PAGE_PLAY, PAGE_SALON, PAGE_SAVES, PAGE_SETTINGS, PAGE_LOG, PAGE_COUNT };
@@ -43,6 +43,47 @@ const wchar_t *const kPageNames[PAGE_COUNT] = {L"Jouer", L"Salon", L"Sauvegardes
 // Segoe MDL2 Assets glyphs (Windows 10 and 11): play, people, save, settings, list
 const wchar_t *const kPageIcons[PAGE_COUNT] = {L"\uE768", L"\uE716", L"\uE74E", L"\uE713", L"\uE8FD"};
 int g_page = PAGE_PLAY;
+uint64_t g_self_steam = 0; // this player's Steam id, from the mod (the host's code)
+HWND g_code_edit = nullptr, g_copy_code = nullptr, g_code_clear = nullptr;
+
+// The host's code: its Steam account number (the low 32 bits of its Steam id) in Crockford's base 32,
+// 7 characters shown "ABC-DEFG". The guest's launcher turns it back into peer_steamid= for the mod.
+const char *const kCode = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+std::wstring code_from_steam(uint64_t id)
+{
+    uint32_t acct = uint32_t(id & 0xFFFFFFFFu);
+    wchar_t c[9];
+    for (int k = 6; k >= 0; --k) {
+        c[k < 3 ? k : k + 1] = wchar_t(kCode[acct & 31]);
+        acct >>= 5;
+    }
+    c[3] = L'-';
+    c[8] = 0;
+    return c;
+}
+bool steam_from_code(const std::wstring &text, uint64_t &id)
+{
+    uint64_t v = 0;
+    int n = 0;
+    for (wchar_t ch : text) {
+        if (ch == L'-' || ch == L' ')
+            continue;
+        wchar_t u = wchar_t(towupper(ch));
+        if (u == L'O')
+            u = L'0';
+        if (u == L'I' || u == L'L')
+            u = L'1';
+        const char *at = u < 128 ? strchr(kCode, char(u)) : nullptr;
+        if (!at || !*at)
+            return false;
+        v = v * 32 + uint64_t(at - kCode);
+        ++n;
+    }
+    if (n != 7 || v > 0xFFFFFFFFull || v == 0)
+        return false;
+    id = 76561197960265728ull + v;
+    return true;
+}
 enum Role { ROLE_HOST, ROLE_GUEST, ROLE_SOLO };
 int g_role = ROLE_HOST;
 // the switches (own character, keep progress, detailed log): on/off and their label without the state
@@ -57,7 +98,7 @@ bool g_log_unseen = false; // a warning or an error in the journal since it was 
 
 HWND g_wnd, g_game_edit, g_version, g_host, g_guest, g_solo, g_own_char, g_keep, g_debug, g_launch, g_state, g_events,
     g_players, g_backup_note;
-HFONT g_font, g_bold, g_head, g_title, g_icon, g_small;
+HFONT g_font, g_bold, g_head, g_title, g_icon, g_small, g_small_icon, g_code_font;
 HBRUSH g_bg_brush, g_card_brush;
 int g_dpi = 96;
 RECT g_state_rect = {}, g_header_rect = {};
@@ -356,6 +397,14 @@ bool solo_role() { return g_role == ROLE_SOLO; }
 
 void update_controls()
 {
+    // the salon's connection block: the host copies its code, the guest pastes it
+    if (g_copy_code) {
+        bool salon = g_page == PAGE_SALON;
+        ShowWindow(g_copy_code, salon && g_role == ROLE_HOST ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_copy_code, g_self_steam != 0);
+        ShowWindow(g_code_edit, salon && g_role == ROLE_GUEST ? SW_SHOW : SW_HIDE);
+        ShowWindow(g_code_clear, salon && g_role == ROLE_GUEST ? SW_SHOW : SW_HIDE);
+    }
     // the guest's own options only under the guest's card
     ShowWindow(g_own_char, g_page == PAGE_PLAY && guest_role() ? SW_SHOW : SW_HIDE);
     ShowWindow(g_keep, g_page == PAGE_PLAY && guest_role() ? SW_SHOW : SW_HIDE);
@@ -463,7 +512,7 @@ bool write_coop_ini()
     std::string base;
     if (!read_file(g_game_dir + L"\\coop.ini", base) && !read_file(g_exe_dir + L"\\coop.ini", base))
         base = "p2_pad=1\nidle_pad=3\nauto_possess=0\nblock_saves=0\nguest_cam_pawn=1\n";
-    const char *ours[] = {"role=", "#role=", "transport=", "debug_log=", "send_character=", "keep_progress=",
+    const char *ours[] = {"role=", "#role=", "transport=", "debug_log=", "send_character=", "keep_progress=", "peer_steamid=",
                           "# Lines below are set by DDDA-Coop.exe"};
     std::string out, line;
     for (size_t i = 0; i <= base.size(); ++i) {
@@ -490,6 +539,9 @@ bool write_coop_ini()
     out += switch_on(g_debug) ? "debug_log=1\n" : "debug_log=0\n";
     if (guest && !switch_on(g_own_char))
         out += "send_character=0\n";
+    uint64_t host_id = 0;
+    if (guest && g_code_edit && steam_from_code(window_text(g_code_edit), host_id)) // the salon's code: this host only
+        out += "peer_steamid=" + std::to_string(host_id) + "\n";
     return write_file(g_game_dir + L"\\coop.ini", out);
 }
 
@@ -879,10 +931,12 @@ void check_watchers()
 // The salon (coop_status.txt from the mod, every second): four seats, each player's Steam name and
 // picture (coop_avatar_<place>.bmp), character, area, state and link, and the game above them.
 struct Seat {
-    bool used = false, me = false, down = false;
+    bool used = false, me = false, down = false, host = false;
     std::wstring role, steam, character, zone, state, link;
     COLORREF link_color = 0;
+    int level = 0, ping = 0; // 0 = unknown
 };
+
 Seat g_seats[4];
 std::wstring g_salon_info = L"Le jeu n'est pas lancé.";
 HBITMAP g_avatar[4] = {};
@@ -952,6 +1006,20 @@ void update_players()
             host_role = true;
         if (sscanf(line.c_str(), "game %15s %15s %d %d", mode, link, &day, &day_ms) >= 2)
             continue;
+        int v = 0;
+        unsigned long long self_id = 0;
+        if (sscanf(line.c_str(), "level %d %d", &slot, &v) == 2 && slot >= 0 && slot < 4) {
+            seats[slot].level = v;
+            continue;
+        }
+        if (sscanf(line.c_str(), "ping %d %d", &slot, &v) == 2 && slot >= 0 && slot < 4) {
+            seats[slot].ping = v;
+            continue;
+        }
+        if (sscanf(line.c_str(), "self %llu", &self_id) == 1) {
+            g_self_steam = self_id;
+            continue;
+        }
         if (sscanf(line.c_str(), "steam %d %159[^\n]", &slot, name) >= 1 && slot >= 0 && slot < 4) {
             seats[slot].steam = widen_utf8(name);
             continue;
@@ -965,6 +1033,7 @@ void update_players()
         r.me = slot == me;
         r.down = present && down;
         r.role = slot == 0 ? L"HÔTE" : L"INVITÉ " + std::to_wstring(slot);
+        r.host = slot == 0;
         r.character = widen_utf8(name);
         r.zone = r.me ? L"Ta zone" : !present ? L"Zone inconnue" : same ? L"Même zone"
                                                                         : L"Autre zone (n° " + std::to_wstring(stage) + L")";
@@ -974,8 +1043,10 @@ void update_players()
         r.link_color = r.me ? kInfo : ago < 0 ? kMuted : ago < 1500 ? kOk : ago < 5000 ? kWarn : kBad;
     }
     for (int k = 0; k < 4; ++k) {
-        if (!seats[k].used)
+        if (!seats[k].used) {
             seats[k].steam.clear();
+            seats[k].level = seats[k].ping = 0;
+        }
         g_seats[k] = seats[k];
         load_avatar(k, seats[k].used);
     }
@@ -999,13 +1070,19 @@ void update_players()
     std::wstring words = L"Salon. " + g_salon_info;
     for (const Seat &r : g_seats)
         if (r.used)
-            words += L". " + r.role + L" " + (r.steam.empty() ? r.character : r.steam) + L", " + r.zone + L", " + r.state + L", " +
-                     r.link;
+            words += L". " + r.role + L" " + (r.steam.empty() ? r.character : r.steam) +
+                     (r.level ? L", niveau " + std::to_wstring(r.level) : L"") + L", " + r.zone + L", " + r.state + L", " +
+                     (r.ping ? std::to_wstring(r.ping) + L" ms" : r.link);
     SetWindowTextW(g_players, words.c_str());
     InvalidateRect(g_players, nullptr, FALSE);
+    if (g_copy_code && bool(IsWindowEnabled(g_copy_code)) != (g_self_steam != 0)) {
+        EnableWindow(g_copy_code, g_self_steam != 0);
+        InvalidateRect(g_wnd, nullptr, FALSE);
+    }
 }
 
-// The salon's painting: the game's line, then the four seats as cards (2 x 2).
+// The salon's painting: the game's line, then the four seats as cards (2 x 2): picture (or initial),
+// Steam name with a star for the host, character and level, area and state, ping on the right.
 void paint_salon(HWND h, HDC dc)
 {
     RECT rc;
@@ -1019,7 +1096,7 @@ void paint_salon(HWND h, HDC dc)
     SetTextColor(mem, kMuted);
     RECT info = {0, 0, rc.right, px(22)};
     DrawTextW(mem, g_salon_info.c_str(), -1, &info, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-    int top = px(24), gap = px(6);
+    int top = px(32), gap = px(theme::kGapSmall);
     int cw = (rc.right - gap) / 2, ch = (rc.bottom - top - gap) / 2;
     // the initials' circles (no picture): muted tones that read on the dark theme
     static const COLORREF seat_colors[4] = {RGB(0x5a, 0x3a, 0x42), RGB(0x34, 0x4c, 0x66), RGB(0x34, 0x5a, 0x48), RGB(0x52, 0x44, 0x66)};
@@ -1028,16 +1105,17 @@ void paint_salon(HWND h, HDC dc)
         RECT c = {(k % 2) * (cw + gap), top + (k / 2) * (ch + gap), 0, 0};
         c.right = c.left + cw;
         c.bottom = c.top + ch;
-        theme::round_rect(mem, c, px(theme::kRadiusCard), r.used ? kCard : CLR_INVALID,
-                          r.used ? (r.me ? theme::kAccent : theme::kBorder) : theme::kBorder, r.me ? 1.5f : 1.f, !r.used);
-        int pad = px(10), av = px(42);
-        RECT pic = {c.left + pad, c.top + (ch - av) / 2, c.left + pad + av, c.top + (ch - av) / 2 + av};
-        if (!r.used) {
+        if (!r.used) { // an empty seat: discreet dashes
+            theme::round_rect(mem, c, px(theme::kRadiusCard), CLR_INVALID, theme::kBorder, 1.f, true);
             SetTextColor(mem, kMuted);
+            SelectObject(mem, g_font);
             RECT t = c;
             DrawTextW(mem, L"Place libre", -1, &t, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
             continue;
         }
+        theme::round_rect(mem, c, px(theme::kRadiusCard), kCard, r.me ? theme::kAccent : theme::kBorder, r.me ? 1.5f : 1.f);
+        int pad = px(theme::kPadCard), av = px(56);
+        RECT pic = {c.left + pad, c.top + (ch - av) / 2, c.left + pad + av, c.top + (ch - av) / 2 + av};
         // the Steam picture in a circle, or the first letter on the seat's colour
         HRGN clip = CreateEllipticRgn(pic.left, pic.top, pic.right + 1, pic.bottom + 1);
         SelectClipRgn(mem, clip);
@@ -1057,41 +1135,50 @@ void paint_salon(HWND h, HDC dc)
             std::wstring who = r.steam.empty() ? r.character : r.steam;
             std::wstring letter = who.empty() ? std::to_wstring(k + 1) : who.substr(0, 1);
             SelectObject(mem, g_head);
-            SetTextColor(mem, RGB(255, 255, 255));
+            SetTextColor(mem, theme::kText);
             RECT t = pic;
             DrawTextW(mem, letter.c_str(), -1, &t, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
         }
         SelectClipRgn(mem, nullptr);
         DeleteObject(clip);
-        // text: Steam name (bold), role and character, area and state, link
-        int x = pic.right + pad, lh = px(16);
-        RECT t = {x, c.top + px(4), c.right - pad, c.top + px(4) + lh};
+        // the ping on the right, in a pill coloured by its value (or the link's words without one)
+        std::wstring ping = r.me ? L"toi" : r.ping ? std::to_wstring(r.ping) + L" ms" : r.link;
+        COLORREF pc = r.me ? kInfo : r.ping ? (r.ping < 90 ? kOk : r.ping < 180 ? kWarn : kBad) : r.link_color;
+        SelectObject(mem, g_small);
+        SIZE ps = {};
+        GetTextExtentPoint32W(mem, ping.c_str(), int(ping.size()), &ps);
+        RECT pill = {c.right - pad - ps.cx - px(20), c.top + pad, c.right - pad, c.top + pad + px(22)};
+        theme::round_rect(mem, pill, px(11), theme::mix(kCard, pc, 0.18f));
+        SetTextColor(mem, pc);
+        DrawTextW(mem, ping.c_str(), -1, &pill, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        // text: name (+ host star), character and level, area and state, vertically centred
+        int x = pic.right + px(14), lh = px(20);
+        int ty = c.top + (ch - 3 * lh) / 2;
+        RECT t = {x, ty, pill.left - px(8), ty + lh};
         SelectObject(mem, g_bold);
         SetTextColor(mem, kText);
         std::wstring title = (r.steam.empty() ? (r.character.empty() ? r.role : r.character) : r.steam) + (r.me ? L" (toi)" : L"");
         DrawTextW(mem, title.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        if (r.host) { // the host's star after the name
+            SIZE ts = {};
+            GetTextExtentPoint32W(mem, title.c_str(), int(title.size()), &ts);
+            RECT star = {t.left + ts.cx + px(6), t.top, t.left + ts.cx + px(26), t.bottom};
+            if (star.right < t.right) {
+                SelectObject(mem, g_small_icon);
+                SetTextColor(mem, theme::kWarn);
+                DrawTextW(mem, L"\uE735", -1, &star, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX); // FavoriteStarFill
+            }
+        }
         OffsetRect(&t, 0, lh);
         SelectObject(mem, g_font);
         SetTextColor(mem, kMuted);
-        std::wstring line2 = r.role + (r.character.empty() ? L"" : L" · perso : " + r.character);
+        std::wstring line2 = r.role + (r.character.empty() ? L"" : L" \u00b7 " + r.character) +
+                             (r.level ? L" \u00b7 niveau " + std::to_wstring(r.level) : L"");
         DrawTextW(mem, line2.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         OffsetRect(&t, 0, lh);
         SetTextColor(mem, r.down ? kBad : kMuted);
-        std::wstring line3 = r.zone + (r.state.empty() ? L"" : L" · " + r.state);
+        std::wstring line3 = r.zone + (r.state.empty() ? L"" : L" \u00b7 " + r.state);
         DrawTextW(mem, line3.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
-        OffsetRect(&t, 0, lh);
-        HBRUSH dot = CreateSolidBrush(r.link_color);
-        HGDIOBJ old_dot = SelectObject(mem, dot);
-        HGDIOBJ old_np = SelectObject(mem, GetStockObject(NULL_PEN));
-        int d = px(8), dy = t.top + (lh - d) / 2;
-        Ellipse(mem, t.left, dy, t.left + d, dy + d);
-        SelectObject(mem, old_np);
-        SelectObject(mem, old_dot);
-        DeleteObject(dot);
-        RECT lt = t;
-        lt.left += d + px(6);
-        SetTextColor(mem, r.link_color);
-        DrawTextW(mem, r.link.c_str(), -1, &lt, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     }
     SelectObject(mem, old_font);
     BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
@@ -1440,7 +1527,14 @@ void build_window()
 
     // ---- Salon ----
     g_building = PAGE_SALON;
-    g_players = add(make(L"DDDACoopSalon", L"Salon", 0, L, 76, W, 300, ID_PLAYERS));
+    g_players = add(make(L"DDDACoopSalon", L"Salon", 0, L, 76, W, 296, ID_PLAYERS));
+    // the connection block under the cards (drawn by paint; controls by role, update_controls)
+    g_copy_code = add(make(L"BUTTON", L"&Copier le code", BS_PUSHBUTTON | WS_TABSTOP, L + W - 170 - 18, 444, 170, 38, ID_COPY_CODE));
+    g_code_edit = add(make(L"EDIT", setting(L"host_code", L"").c_str(), WS_BORDER | WS_TABSTOP | ES_UPPERCASE | ES_AUTOHSCROLL, L + 18,
+                           444, 200, 36, ID_CODE_EDIT, g_code_font));
+    SendMessageW(g_code_edit, EM_LIMITTEXT, 12, 0);
+    SendMessageW(g_code_edit, EM_SETCUEBANNER, TRUE, LPARAM(L"ABC-DEFG"));
+    g_code_clear = add(make(L"BUTTON", L"&Effacer", BS_PUSHBUTTON | WS_TABSTOP, L + 230, 444, 110, 36, ID_CODE_CLEAR));
 
     // ---- Sauvegardes ----
     g_building = PAGE_SAVES;
@@ -1522,6 +1616,43 @@ void paint(HWND h)
         SetTextColor(dc, kText);
         RECT t = {px(kX), px(22), px(kX + kCW), px(58)};
         DrawTextW(dc, kPageNames[g_page], -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        if (g_page == PAGE_SALON) { // the connection block
+            RECT card = {px(kX), px(384), px(kX + kCW), px(500)};
+            theme::round_rect(dc, card, px(theme::kRadiusCard), kCard, theme::kBorder);
+            SelectObject(dc, g_head);
+            SetTextColor(dc, kText);
+            RECT t = {card.left + px(18), card.top + px(12), card.right - px(18), card.top + px(40)};
+            DrawTextW(dc, L"Connexion", -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            SelectObject(dc, g_font);
+            SetTextColor(dc, kMuted);
+            RECT hint = {card.left + px(18), card.top + px(40), card.right - px(18), card.top + px(58)};
+            if (g_role == ROLE_HOST) {
+                DrawTextW(dc, L"Donne ce code à tes amis : ils le collent dans leur salon pour te rejoindre toi précisément.", -1,
+                          &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+                RECT code = {card.left + px(18), px(444), card.right - px(220), px(482)};
+                SelectObject(dc, g_code_font);
+                SetTextColor(dc, g_self_steam ? kText : kMuted);
+                std::wstring c = g_self_steam ? code_from_steam(g_self_steam) : L"–––-––––";
+                DrawTextW(dc, c.c_str(), -1, &code, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+                if (!g_self_steam) {
+                    SelectObject(dc, g_small);
+                    RECT why = {code.left + px(150), code.top, code.right, code.bottom};
+                    DrawTextW(dc, L"lance le jeu en hôte (Steam) pour l'obtenir", -1, &why, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+                }
+            } else if (g_role == ROLE_GUEST) {
+                DrawTextW(dc, L"Le code de ton hôte pour le rejoindre lui précisément ; vide : le premier ami Steam qui héberge.",
+                          -1, &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+                std::wstring txt = window_text(g_code_edit);
+                uint64_t id = 0;
+                bool ok = steam_from_code(txt, id);
+                RECT v = {px(kX + 356), px(444), card.right - px(18), px(480)};
+                SetTextColor(dc, txt.empty() ? kMuted : ok ? kOk : kBad);
+                DrawTextW(dc, txt.empty() ? L"●  recherche automatique" : ok ? L"✔  code valide" : L"✖  code incomplet ou invalide",
+                          -1, &v, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            } else {
+                DrawTextW(dc, L"Seul : pas de connexion.", -1, &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            }
+        }
         if (g_page == PAGE_SETTINGS) { // the sensitive part apart, under a line
             HPEN pen = CreatePen(PS_SOLID, 1, theme::kBorder);
             HGDIOBJ op = SelectObject(dc, pen);
@@ -1600,6 +1731,29 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_REMOVE: on_remove(); break;
         case ID_BACKUP: on_backup(); break;
         case ID_HELP: show_help(); break;
+        case ID_COPY_CODE:
+            if (g_self_steam && OpenClipboard(h)) {
+                std::wstring c = code_from_steam(g_self_steam);
+                EmptyClipboard();
+                if (HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, (c.size() + 1) * sizeof(wchar_t))) {
+                    memcpy(GlobalLock(mem), c.c_str(), (c.size() + 1) * sizeof(wchar_t));
+                    GlobalUnlock(mem);
+                    SetClipboardData(CF_UNICODETEXT, mem);
+                }
+                CloseClipboard();
+                add_event(L"Code de connexion copié : " + c);
+            }
+            break;
+        case ID_CODE_CLEAR:
+            SetWindowTextW(g_code_edit, L"");
+            break;
+        case ID_CODE_EDIT:
+            if (HIWORD(w) == EN_CHANGE) {
+                WritePrivateProfileStringW(L"launcher", L"host_code", window_text(g_code_edit).c_str(), settings_path().c_str());
+                RECT card = {px(kX), px(384), px(kX + kCW), px(500)};
+                InvalidateRect(h, &card, FALSE);
+            }
+            break;
         case ID_OPEN_BACKUPS: {
             std::wstring dir = setting(L"last_backup", L"");
             if (dir.empty() || !is_dir(dir))
@@ -1723,6 +1877,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
         f.lfQuality = CLEARTYPE_QUALITY;
         wcscpy(f.lfFaceName, L"Segoe MDL2 Assets");
         g_icon = CreateFontIndirectW(&f);
+        f.lfHeight = -MulDiv(10, g_dpi, 72);
+        g_small_icon = CreateFontIndirectW(&f);
+        LOGFONTW c = {};
+        c.lfHeight = -MulDiv(16, g_dpi, 72);
+        c.lfWeight = FW_SEMIBOLD;
+        c.lfQuality = CLEARTYPE_QUALITY;
+        wcscpy(c.lfFaceName, L"Consolas"); // the code: a fixed width, 0 and O apart
+        g_code_font = CreateFontIndirectW(&c);
     }
     g_bg_brush = CreateSolidBrush(kBg);
     g_card_brush = CreateSolidBrush(kCard);

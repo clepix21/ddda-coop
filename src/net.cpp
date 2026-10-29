@@ -61,7 +61,7 @@ namespace {
 
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
                        MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11, MSG_REVIVE = 12, MSG_QUEST = 13,
-                       MSG_AREA_ENEMIES = 14 };
+                       MSG_AREA_ENEMIES = 14, MSG_PING = 15, MSG_PONG = 16 };
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 // A big correction must move every copy the movement code keeps, or the next collision pass pulls
@@ -88,6 +88,10 @@ struct InputMsg {
     uint8_t has_camera;
     float eye[3], target[3]; // the guest's camera, so the host turns the guest's stick the guest's way
     uint8_t away;            // the guest explores on its own (roam.cpp): its pawn goes back to its AI
+};
+struct PingMsg { // the launcher's salon: a round trip, timed by the sender (PONG echoes t)
+    Header h;
+    uint32_t t;
 };
 struct CharState {
     uint8_t valid;
@@ -135,6 +139,7 @@ struct SnapMsg {
     uint8_t down[4];          // shared world: player down, by place (revive.cpp)
     int8_t pawn_of[4];        // the pawn showing each guest (by place), -1 = none
     uint64_t steam_of[4];     // each player's Steam id (by place), 0 = none or no Steam (the salon)
+    uint16_t ping_of[4];      // the host's round trip to each guest, ms (0 = unknown), for the guests' salon
 };
 struct QuestChunkMsg { // shared world: the quest state of the player at `origin`, deflated, in pieces
     Header h;
@@ -229,9 +234,9 @@ struct SaveNeedMsg {
 #pragma pack(pop)
 
 // The message format's version: 'DDC2' since 2026-10-29 (32-bit action numbers), 'DDC3' (the held
-// monster's place), 'DDC4' (players' Steam ids in the SNAP, for the launcher's salon). Messages of another format ('DDCO', 'DDC2'...) come from a player with another mod
+// monster's place), 'DDC4' (players' Steam ids in the SNAP, for the launcher's salon), 'DDC5' (pings). Messages of another format ('DDCO', 'DDC2'...) come from a player with another mod
 // version: dropped, and said (the badge, the log).
-constexpr uint32_t kMagic = 0x34434444;
+constexpr uint32_t kMagic = 0x35434444;
 bool other_version(uint32_t magic) { return (magic & 0x00FFFFFF) == 0x00434444 && magic != kMagic; }
 volatile LONG g_old_peer = 0;
 NetRole g_role = NET_OFF;
@@ -251,6 +256,8 @@ struct Peer {
     uint64_t steam;   // Steam P2P
     uint32_t last_seq;
     DWORD last_rx;    // 0 = silent
+    uint16_t rtt;     // the last round trip to it, ms (PING / PONG once a second), 0 = none yet
+    DWORD rtt_at;     // when it was measured
     int pawn;         // host: the pawn (mCmcId) this guest drives, -1 = none
     // host: a stand-in camera holder (+0x34 -> camera, eye +0x40, target +0x60) with the guest's view
     uint8_t holder[0x40], camera[0x80];
@@ -1408,6 +1415,16 @@ void receive_all()
                 LeaveCriticalSection(&g_qb_lock);
                 quest_sync_received(state, m->crc);
             }
+        } else if ((h->type == MSG_PING || h->type == MSG_PONG) && n == int(sizeof(PingMsg))) {
+            PingMsg m = *reinterpret_cast<const PingMsg *>(buf);
+            if (h->type == MSG_PING) { // echoed at once
+                m.h = {kMagic, MSG_PONG, ++g_seq};
+                send_to(peer, &m, sizeof m);
+            } else {
+                DWORD rtt = GetTickCount() - m.t;
+                peer.rtt = uint16_t(rtt > 9999 ? 9999 : rtt < 1 ? 1 : rtt);
+                peer.rtt_at = GetTickCount() | 1;
+            }
         } else if (h->type == MSG_REVIVE && n == int(sizeof(ReviveMsg))) {
             int t = reinterpret_cast<const ReviveMsg *>(buf)->target;
             if (g_role == NET_GUEST || t == 0)
@@ -1829,6 +1846,8 @@ void salon_profile(int k, uint64_t id, std::string &persona)
     persona = names[k];
 }
 
+int host_level = 0; // write_status: the host's Arisen's level (from its own save)
+
 void write_status(DWORD now)
 {
     std::string out = "version 1\n";
@@ -1848,15 +1867,17 @@ void write_status(DWORD now)
             std::string own;
             if (g_role == NET_GUEST && storage_guest_character(own))
                 name = save_character_name(own);
-            static uint32_t host_version = 0; // host: its Arisen's name, read again when its save changes
+            static uint32_t host_version = 0; // host: its Arisen's name and level, read again when its save changes
             static std::string host_name;
             std::vector<uint8_t> file;
             uint32_t v = 0;
             if (g_role == NET_HOST && storage_own_save(file, v) && v != host_version) {
                 std::string xml, ch;
                 uint32_t head[8];
-                if (save_unpack(file, xml, head) && save_character(xml, -1, ch))
+                if (save_unpack(file, xml, head) && save_character(xml, -1, ch)) {
                     host_name = save_character_name(ch);
+                    host_level = save_character_level(ch);
+                }
                 host_version = v;
             }
             if (g_role == NET_HOST)
@@ -1886,6 +1907,42 @@ void write_status(DWORD now)
         _snprintf(line, sizeof line, "player %d %d %d %d %d %ld %d %s\n", s, connected ? 1 : 0, known && info.present ? 1 : 0,
                   known && info.downed ? 1 : 0, known ? int(info.stage) : -1, ago, known && here >= 0 && info.stage == here ? 1 : 0,
                   name.c_str());
+        out += line;
+    }
+    // the launcher's salon: each player's level and ping, this player's Steam id (the host's code)
+    for (int k = 0; k < 4; ++k) {
+        int level = 0, ping = 0;
+        if (k == me) {
+            std::string own;
+            if (g_role == NET_GUEST && storage_guest_character(own))
+                level = save_character_level(own);
+            if (g_role == NET_HOST)
+                level = host_level;
+        } else if (g_role == NET_HOST) {
+            const Peer &q = g_peers[k - 1];
+            if (k >= 1 && q.used) {
+                level = q.char_data.empty() ? 0 : save_character_level(q.char_data);
+                ping = q.rtt_at && now - q.rtt_at < 5000 ? q.rtt : 0;
+            }
+        } else if (g_have_snap) {
+            EnterCriticalSection(&g_snap_lock);
+            int pawn = k == 0 ? net_guest_my_pawn() : g_snap.pawn_of[k];
+            uint16_t relayed = g_snap.ping_of[k];
+            LeaveCriticalSection(&g_snap_lock);
+            level = pawn >= 0 ? roam_pawn_level(pawn) : 0;
+            ping = k == 0 ? (g_peers[0].rtt_at && now - g_peers[0].rtt_at < 5000 ? g_peers[0].rtt : 0) : relayed;
+        }
+        if (level > 0) {
+            _snprintf(line, sizeof line, "level %d %d\n", k, level);
+            out += line;
+        }
+        if (ping > 0) {
+            _snprintf(line, sizeof line, "ping %d %d\n", k, ping);
+            out += line;
+        }
+    }
+    if (g_steam && link_steam_self()) {
+        _snprintf(line, sizeof line, "self %llu\n", (unsigned long long)link_steam_self());
         out += line;
     }
     // the launcher's salon: the game (mode, the world's clock), each player's Steam name and avatar
@@ -2184,6 +2241,11 @@ DWORD WINAPI net_thread(LPVOID)
         if (g_shared && (!next_status || int(now - next_status) >= 0)) {
             next_status = (now + 1000) | 1;
             write_status(now);
+            for (Peer &p : g_peers) // the salon's pings: a round trip to each player once a second
+                if (p.used && p.last_rx) {
+                    PingMsg m = {{kMagic, MSG_PING, ++g_seq}, GetTickCount()};
+                    send_to(p, &m, sizeof m);
+                }
         }
         for (int k = 0; k < kMaxPeers; ++k) {
             Peer &p = g_peers[k];
@@ -2332,6 +2394,8 @@ DWORD WINAPI net_thread(LPVOID)
                     m.steam_of[0] = g_steam ? link_steam_self() : 0;
                     for (int q = 0; q < kMaxPeers; ++q)
                         m.steam_of[1 + q] = g_steam && g_peers[q].used ? g_peers[q].steam : 0;
+                    for (int q = 0; q < kMaxPeers; ++q)
+                        m.ping_of[1 + q] = g_peers[q].used && g_peers[q].rtt_at && now - g_peers[q].rtt_at < 5000 ? g_peers[q].rtt : 0;
                     m.my_pawn = int8_t(peer.pawn);
                     m.char_crc = peer.char_crc;
                     send_to(peer, &m, sizeof m);

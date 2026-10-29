@@ -361,6 +361,13 @@ std::string save_character_name(const std::string &character)
     return name;
 }
 
+// The level in a character's mParam (0 = not found), for the launcher's salon.
+int save_character_level(const std::string &character)
+{
+    size_t i = character.find("name=\"mLevel\" value=\"");
+    return i == std::string::npos ? 0 : atoi(character.c_str() + i + 21);
+}
+
 // ---- quest state (shared world, quest_sync.cpp) ----
 
 namespace {

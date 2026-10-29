@@ -115,19 +115,25 @@ bool make_roam_save(std::vector<uint8_t> &out)
 // The names on the pawns of this guest's world (the host's Arisen, the other guests), for the launcher's
 // players list (coop_status.txt). Guarded by a spin lock: set on the net thread, read on another.
 static std::string g_pawn_names[kPawns];
+static int g_pawn_levels[kPawns] = {};
 static volatile LONG g_names_lock = 0;
 static void keep_pawn_names(const std::string &xml)
 {
     std::string names[kPawns];
+    int levels[kPawns] = {};
     for (int p = 0; p < kPawns; ++p) {
         std::string ch;
-        if (save_character(xml, p, ch))
+        if (save_character(xml, p, ch)) {
             names[p] = save_character_name(ch);
+            levels[p] = save_character_level(ch);
+        }
     }
     while (InterlockedExchange(&g_names_lock, 1))
         Sleep(0);
-    for (int p = 0; p < kPawns; ++p)
+    for (int p = 0; p < kPawns; ++p) {
         g_pawn_names[p] = names[p];
+        g_pawn_levels[p] = levels[p];
+    }
     InterlockedExchange(&g_names_lock, 0);
 }
 
@@ -201,6 +207,17 @@ bool roam_refresh_party(const std::vector<uint8_t> &own, const std::vector<uint8
 }
 
 bool net_guest_roaming() { return g_roaming != 0; }
+
+int roam_pawn_level(int p)
+{
+    if (p < 0 || p >= kPawns)
+        return 0;
+    while (InterlockedExchange(&g_names_lock, 1))
+        Sleep(0);
+    int n = g_pawn_levels[p];
+    InterlockedExchange(&g_names_lock, 0);
+    return n;
+}
 
 // Guest: the name on pawn p of its world ("" = not known yet).
 std::string roam_pawn_name(int p)

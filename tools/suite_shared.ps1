@@ -1,7 +1,8 @@
 # Shared world (shared_world=1), two copies: the guest (its own save: a real Arisen under another name) plays its
 # own character in its copy of the host's world; both see each other; the guest walks on its own; the
 # host goes through the iron gate to the underground and the guest stays. Prints PASS/FAIL lines.
-param([ValidateSet("udp", "mock")][string]$Transport = "udp", [int]$Latency = 0, [int]$Loss = 0, [switch]$Sprint)
+# -FixedHost: the guest looks only for the host's Steam id (peer_steamid=, what the salon's code gives)
+param([ValidateSet("udp", "mock")][string]$Transport = "udp", [int]$Latency = 0, [int]$Loss = 0, [switch]$Sprint, [switch]$FixedHost)
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
 $out = "J:\coop-test\re\runs\shared_$Transport"
@@ -11,6 +12,7 @@ if ($Transport -eq "udp") {
     Remove-Item "J:\coop-test\mock_steam\*" -ErrorAction SilentlyContinue
     $hostNet = @("transport=steam", "steam_mock=1", "mock_id=1", "mock_friends=2", "mock_latency=$Latency", "mock_loss=$Loss")
     $guestNet = @("transport=steam", "steam_mock=1", "mock_id=2", "mock_friends=1", "mock_latency=$Latency", "mock_loss=$Loss")
+    if ($FixedHost) { $guestNet += "peer_steamid=76561197960265729" } # the mock host (account 1)
 }
 $run = & (Join-Path $tools "run_pair.ps1") -Seconds 260 -OutDir $out -Shots 120, 170, 230 -GuestSavesFromRole `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests $(if ($Sprint) { "shared_guest_sprint.txt" } else { "shared_guest_walk.txt" })) `

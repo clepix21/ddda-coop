@@ -26,6 +26,7 @@ bool save_put_character_at(std::string &xml, int pawn, const std::string &charac
 bool save_swap_arisen_pawn(std::string &xml, int pawn);                       // in every player data copy
 bool save_put_arisen_everywhere(std::string &xml, const std::string &character);
 std::string save_copy_names(const std::string &xml); // for logs
+int save_character_level(const std::string &character);  // its mParam mLevel, 0 = unknown
 bool save_bag(const std::string &xml, int who, std::string &out);             // 0 = Arisen, 1 + mCmcId
 bool save_put_bag_everywhere(std::string &xml, int who, const std::string &bag);
 bool save_quest_state(const std::string &xml, std::string &out);        // shared world: quests, NPCs, talks
@@ -127,6 +128,7 @@ bool revive_down();
 bool revive_helping();                             // B held next to a downed player
 bool revive_on_damage(uintptr_t ch, float *dmg);  // game thread, the damage hook
 std::string roam_pawn_name(int p);               // roam.cpp, guest: the name on pawn p of its world
+int roam_pawn_level(int p);                       // and that character's level (0 = unknown)
 bool net_old_peer();                             // net.cpp: a player with an older mod was heard
 void overlay_install();
 // prof.cpp: the mod's own time inside the game's frame (debug_log=1: a "perf:" line every 10 s)
