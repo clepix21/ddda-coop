@@ -726,10 +726,14 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     bool player = want < 0x100;
     uintptr_t held = player ? slot_character(want) : enemy_from_share_id(want - 0x100);
     float reach = -1.f; // how far the held one is from the pawn here (for the log), -1 = not found
+    float far_at[3] = {}; // where it was, for the log (`held` is cleared when it is too far)
     if (held && held != ch) { // only within reach: never tie a character to a pawn somewhere else
         float rx = game::at<float>(held, 0x40) - game::at<float>(ch, 0x40), ry = game::at<float>(held, 0x44) - game::at<float>(ch, 0x44),
               rz = game::at<float>(held, 0x48) - game::at<float>(ch, 0x48);
         reach = std::sqrt(rx * rx + ry * ry + rz * rz);
+        far_at[0] = game::at<float>(held, 0x40);
+        far_at[1] = game::at<float>(held, 0x44);
+        far_at[2] = game::at<float>(held, 0x48);
         // a monster is carried to the pawn wherever it is: the holder's world sends a lifted monster's
         // place as it stands there, ~6000 u off (the line before a guest's crash, lift suite 2026-10-29)
         if (!(reach < 300.f) && player)
@@ -743,9 +747,9 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
             logf("net: shared: party %d holds %s %d in its world: not found here (%s)", i, player ? "player" : "enemy",
                  player ? want : want - 0x100, reach < 0.f ? "no such one" : "too far from the pawn");
             if (reach >= 0.f)
+                // from far_at: `held` is 0 here when a player was too far (reading it closed three games, 2026-10-29)
                 logf("net: shared:   it is %.0f u from the pawn: it at (%.0f, %.0f, %.0f), the pawn at (%.0f, %.0f, %.0f)", reach,
-                     game::at<float>(held, 0x40), game::at<float>(held, 0x44), game::at<float>(held, 0x48), game::at<float>(ch, 0x40),
-                     game::at<float>(ch, 0x44), game::at<float>(ch, 0x48));
+                     far_at[0], far_at[1], far_at[2], game::at<float>(ch, 0x40), game::at<float>(ch, 0x44), game::at<float>(ch, 0x48));
         }
         return;
     }
