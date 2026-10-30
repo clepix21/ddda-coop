@@ -1084,7 +1084,7 @@ Follow g_follow[kEnemySlots] = {};
 struct EnemyStats {
     int applied, matched_new, unmatched;
     float worst_err;
-    int blocked, allowed, forced, removed, puppet_blocked;
+    int blocked, allowed, forced, removed, puppet_blocked, felt;
 } g_enemy_stats = {};
 DWORD g_last_enemies_rx = 0; // guest: last ENEMIES page received (0 = none)
 
@@ -1671,9 +1671,9 @@ void log_enemy_stats(DWORD now)
     else
         logf("net: enemies: %d from the host, %d local updates applied, %d new pairs, %d unpaired updates, "
              "worst error %.1f u; local hits %d blocked, %d let through (host: dead), %d deaths forced, %d "
-             "guest-only removed, %d hits on the puppets blocked",
+             "guest-only removed, %d hits on the puppets blocked; %d blocked hits played here without the kill",
              fresh, st.applied, st.matched_new, st.unmatched, st.worst_err, st.blocked, st.allowed, st.forced, st.removed,
-             st.puppet_blocked);
+             st.puppet_blocked, st.felt);
 }
 
 // Host: one page of live enemies per call (~30 calls/s), cycling through the table.
@@ -3309,6 +3309,33 @@ bool enemy_net_block_damage(uintptr_t ch)
     }
     LeaveCriticalSection(&g_enemy_lock);
     return block;
+}
+
+// Guest, for a hit enemy_net_block_damage blocked: true when it is an enemy (not a player's pawn) whose
+// HP is the host's. The hit then plays here at once (the stagger, the sparks, the sound), its damage cut
+// so the HP stays above 0 (enemies.cpp); the host's HP comes back with the next state. Before, the hit
+// did nothing here until the host's HP arrived: "the hits land late" (evening test 2026-10-30).
+// no_hit_feel=1 in coop.ini turns it off.
+bool enemy_net_feel_hit(uintptr_t ch)
+{
+    static int off = -1;
+    if (off < 0)
+        off = early_flag("no_hit_feel") ? 1 : 0;
+    if (off || g_role != NET_GUEST || !g_enemy_ready)
+        return false;
+    for (int p = 0; p < kPawns; ++p)
+        if (ch == possess_pawn_ptr(p))
+            return false;
+    if (ch == possess_arisen())
+        return false;
+    bool enemy = false;
+    EnterCriticalSection(&g_enemy_lock);
+    for (int i = 0; i < kEnemySlots && !enemy; ++i)
+        enemy = g_follow[i].ptr == ch && g_follow[i].host_slot >= 0;
+    if (enemy)
+        ++g_enemy_stats.felt;
+    LeaveCriticalSection(&g_enemy_lock);
+    return enemy;
 }
 
 // Guest: the pawn (mCmcId) the host gave it, -1 = none yet (roam.cpp).

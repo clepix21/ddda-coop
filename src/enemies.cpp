@@ -36,7 +36,15 @@ extern "C" bool __cdecl enemies_damage_filter(uintptr_t entry, float *dmg)
     uintptr_t ch = game::at<uintptr_t>(entry, 0x1B4);
     if (ch && revive_on_damage(ch, dmg)) // shared world: down instead of dead (revive.cpp)
         return true;
-    return ch && enemy_net_block_damage(ch);
+    if (!ch || !enemy_net_block_damage(ch))
+        return false;
+    if (dmg && enemy_net_feel_hit(ch)) { // played here, never the kill: HP entry +8 stays above 0
+        float cap = game::at<float>(entry, 8) - 1.f;
+        if (*dmg > cap)
+            *dmg = cap > 0.f ? cap : 0.f;
+        return false;
+    }
+    return true;
 }
 
 // EAX = HP entry, [esp+4] damage, [esp+8] flag; the callee pops 8 bytes. EAX and the stack are

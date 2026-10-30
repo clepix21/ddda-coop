@@ -264,6 +264,7 @@ int enemies_snapshot(EnemySlot *out, int cap);
 const char *enemies_class_of(uintptr_t obj);
 // net.cpp: called under the enemy table lock, right after the enemy's own finalize.
 bool enemy_net_block_damage(uintptr_t ch);
+bool enemy_net_feel_hit(uintptr_t ch); // guest: a blocked hit on a living host enemy plays here, harmless
 void net_guest_stage(); // guest, game thread: follow the host's stage changes
 int enemy_net_follow(int local_slot); // guest: host slot it follows, -1 = none // guest: drop local damage to an enemy the host says is alive
 void enemy_net_death(uintptr_t ch); // the game's own death handler (vtable slot 0x120), no hit info
