@@ -303,9 +303,20 @@ bool g_rp_hidden[kParty] = {};
 // each player's speed, from its last two states, and when the last one came: over the internet a
 // state is 50-150 ms old when it arrives, which at a sprint put the pawn 60-100 u behind and the old
 // 50 u snap made it jump every few seconds (first real test, 2026-10-27)
+// Since 2026-10-30 the speed is taken over the states of the last 150-600 ms, not the last two: the
+// states' arrival times are all the receiver has, and over the internet they come in bunches (two 15 ms
+// apart, then nothing for 120 ms), so two states gave a speed up to 3 times too high or too low, and the
+// pawn ran ahead and was pulled back ("the friends slide and jump", first evening, 150 u behind; three
+// copies with 80 ms latency and 0-120 ms jitter: p90 168-185 u)
 float g_rp_vel[kParty][3] = {};
 DWORD g_rp_at[kParty] = {};
-float g_rp_prev[kParty][3] = {};
+struct RpSample {
+    DWORD t;
+    float pos[3];
+};
+constexpr int kRpSamples = 16; // ~0.8 s at 20 states a second
+RpSample g_rp_hist[kParty][kRpSamples] = {};
+int g_rp_hist_n[kParty] = {};
 
 // shared world loot (loot.cpp): host, the guests' pickups by place (1 + guest index) and their run;
 // guest, what it applied of each place's pickups and from which run
@@ -408,17 +419,34 @@ void shared_take(int i, const CharState &c, bool here)
     EnterCriticalSection(&g_cap_lock);
     DWORD t = GetTickCount();
     if (c.valid && here) {
-        float dt = g_rp_at[i] ? (t - g_rp_at[i]) / 1000.f : 0.f;
-        if (dt > 0.01f && dt < 0.5f) {
-            for (int a = 0; a < 3; ++a) // smoothed: half the new estimate
-                g_rp_vel[i][a] = 0.5f * g_rp_vel[i][a] + 0.5f * (c.pos[a] - g_rp_prev[i][a]) / dt;
-        } else if (dt >= 0.5f || dt == 0.f) {
+        RpSample *h = g_rp_hist[i];
+        int &n = g_rp_hist_n[i];
+        if (n) { // a gap or a jump (a load, a teleport): the old states say nothing about the speed now
+            const RpSample &last = h[n - 1];
+            float jx = c.pos[0] - last.pos[0], jz = c.pos[2] - last.pos[2];
+            if (t - last.t > 500 || jx * jx + jz * jz > 400.f * 400.f)
+                n = 0;
+        }
+        if (n == kRpSamples) {
+            memmove(h, h + 1, sizeof(RpSample) * (kRpSamples - 1));
+            --n;
+        }
+        h[n].t = t;
+        memcpy(h[n].pos, c.pos, sizeof h[n].pos);
+        ++n;
+        // the oldest state between 150 and 600 ms back: the speed over that span
+        int from = -1;
+        for (int k = 0; k < n - 1 && from < 0; ++k)
+            if (t - h[k].t <= 600 && t - h[k].t >= 150)
+                from = k;
+        if (from >= 0) {
+            float dt = (t - h[from].t) / 1000.f;
+            for (int a = 0; a < 3; ++a)
+                g_rp_vel[i][a] = (c.pos[a] - h[from].pos[a]) / dt;
+        } else if (n == 1) {
             memset(g_rp_vel[i], 0, sizeof g_rp_vel[i]);
         }
-        if (dt == 0.f || dt > 0.01f) {
-            memcpy(g_rp_prev[i], c.pos, sizeof g_rp_prev[i]);
-            g_rp_at[i] = t | 1;
-        }
+        g_rp_at[i] = t | 1;
     }
     if (!c.valid) {
         // a state without a character (its game missed a beat): the last one stays. Taking it made a

@@ -1,8 +1,9 @@
 ﻿# Shared world, three copies: the host stays in the Pawn Guild; both guests walk to the underground (stage
 # 600, small creatures) where the host is not. Guest 1 (the lowest slot there) must run the enemies of that
 # group and guest 2 must follow them (pairs with guest 1's enemies, no removals near it). Prints PASS/FAIL lines.
+# -Latency: mock transport only, ms added each way
 # -Look: guest 1 plays another character (guest_arisen.sav, Arisen "Invite")
-param([ValidateSet("udp", "mock")][string]$Transport = "udp", [switch]$Look)
+param([ValidateSet("udp", "mock")][string]$Transport = "udp", [switch]$Look, [int]$Latency = 0, [int]$Jitter = 0)
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
 $out = "J:\coop-test\re\runs\area_lead_$Transport"
@@ -10,7 +11,7 @@ if ($Transport -eq "udp") {
     $hostNet = @("transport=udp"); $g1Net = @("transport=udp", "peer=127.0.0.1"); $g2Net = $g1Net
 } else {
     Remove-Item "J:\coop-test\mock_steam\*" -ErrorAction SilentlyContinue
-    $mock = @("transport=steam", "steam_mock=1")
+    $mock = @("transport=steam", "steam_mock=1", "mock_latency=$Latency", "mock_jitter=$Jitter")
     $hostNet = $mock + @("mock_id=1", "mock_friends=2,3")
     $g1Net = $mock + @("mock_id=2", "mock_friends=1"); $g2Net = $mock + @("mock_id=3", "mock_friends=1")
 }

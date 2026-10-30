@@ -2,7 +2,8 @@
 // account) can test the Steam path. coop.ini:
 //   steam_mock=1, mock_id=<1..9> (own fake account), mock_friends=<ids, comma separated>,
 //   mock_dir=<folder shared by the copies, default ..\mock_steam>,
-//   mock_loss=<% of packets dropped>, mock_latency=<ms added on receive>.
+//   mock_loss=<% of packets dropped>, mock_latency=<ms added on receive>, mock_jitter=<up to that many ms more,
+//   random per packet: packets come in bunches and out of order, as on the internet>.
 // What it copies from real Steam (what the link relies on):
 //  - packets from a user that was neither accepted nor sent to are held, not delivered;
 //  - unreliable packets over 1200 bytes are refused;
@@ -28,7 +29,7 @@ int g_id = 1;
 int g_friends[8];
 int g_nfriends = 0;
 char g_dir[MAX_PATH] = "..\\mock_steam";
-int g_loss = 0, g_latency = 0;
+int g_loss = 0, g_latency = 0, g_jitter = 0;
 SOCKET g_sock = INVALID_SOCKET;
 bool g_accepted[16] = {}; // by mock id
 bool g_held_logged[16] = {};
@@ -69,7 +70,7 @@ void pump()
         p.from = mock_index(from);
         p.size = n - 12;
         memcpy(p.data, buf + 12, size_t(p.size));
-        p.due = GetTickCount() + DWORD(g_latency);
+        p.due = GetTickCount() + DWORD(g_latency) + (g_jitter > 0 ? DWORD(rand() % (g_jitter + 1)) : 0);
     }
 }
 
@@ -271,6 +272,8 @@ bool steam_mock_fill(SteamFns &f)
             g_loss = atoi(buf);
         if (cfg_str("mock_latency", buf, sizeof buf))
             g_latency = atoi(buf);
+        if (cfg_str("mock_jitter", buf, sizeof buf))
+            g_jitter = atoi(buf);
         CreateDirectoryA(g_dir, nullptr);
         srand(GetTickCount());
         WSADATA wsa;
@@ -284,8 +287,8 @@ bool steam_mock_fill(SteamFns &f)
         a.sin_port = htons(u_short(27300 + g_id));
         if (bind(g_sock, reinterpret_cast<sockaddr *>(&a), sizeof a) != 0)
             logf("steam mock: bind 127.0.0.1:%d failed (%d)", 27300 + g_id, WSAGetLastError());
-        logf("steam mock: fake account %d, %d friend(s), loss %d%%, latency %d ms, presence in %s", g_id, g_nfriends,
-             g_loss, g_latency, g_dir);
+        logf("steam mock: fake account %d, %d friend(s), loss %d%%, latency %d ms, jitter %d ms, presence in %s", g_id,
+             g_nfriends, g_loss, g_latency, g_jitter, g_dir);
     }
     f.net = f.user = f.friends = &g_id; // any non-null pointer
     f.GetSteamID = m_GetSteamID;
