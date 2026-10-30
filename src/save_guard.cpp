@@ -91,9 +91,11 @@ void log_callers(const char *what, void *ret, void *frame)
 std::vector<uint8_t> g_test_save;
 bool g_test_save_tried = false;
 
+bool test_no_save();
+
 bool test_save(std::vector<uint8_t> &out)
 {
-    if (!g_block)
+    if (!g_block || test_no_save())
         return false;
     EnterCriticalSection(&g_save_lock);
     if (!g_test_save_tried) {
@@ -216,7 +218,7 @@ constexpr uint32_t kRoamVersion = 0xFFFFFFFFu; // peer_save's version for the fr
 // Guest with the host's save: the bytes the game gets for DDDA.sav (false = use the real file)
 bool peer_save(std::vector<uint8_t> &out, uint32_t &version)
 {
-    if (cfg_role() != NET_GUEST)
+    if (cfg_role() != NET_GUEST || storage_guest_refused()) // no character past the tutorial: its own game
         return false;
     EnterCriticalSection(&g_save_lock);
     std::vector<uint8_t> raw;
@@ -316,8 +318,9 @@ int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, voi
             return n;
         }
     }
-    if (is_save(name) && cfg_role() == NET_GUEST && g_guest_own.empty()) {
-        // the guest's own save, once: its character goes to the host (test_save in tests)
+    if (is_save(name) && cfg_role() == NET_GUEST && g_guest_own.empty() && !test_no_save()) {
+        // the guest's own save, once: its character goes to the host (test_save in tests; none with
+        // test_no_save, as for a player who never played)
         std::vector<uint8_t> own(size_t(cap > 0 ? cap : 0));
         int32_t n = test_save(own) ? int32_t(own.size())
                                    : reinterpret_cast<int32_t(__attribute__((thiscall)) *)(void *, const char *, void *, int32_t)>(
@@ -449,10 +452,76 @@ int32_t __attribute__((thiscall)) hk_get_file_size(void *self, const char *name)
     return n;
 }
 
+// Tests (writes blocked): coop.ini test_no_save=1, the game finds no DDDA.sav and offers a new game.
+bool test_no_save()
+{
+    static int on = -1;
+    if (on < 0 && g_block) { // read once the guard is on (tests block writes)
+        char v[8] = "";
+        on = cfg_str("test_no_save", v, sizeof v) && v[0] == '1' ? 1 : 0;
+        if (on)
+            logf("storage: test_no_save: DDDA.sav is hidden (a new game)");
+    }
+    return on == 1;
+}
+
+// Guest: its own save, read once before the host's world is used (its character goes to the host).
+// Read here too, not only in FileRead: a guest with no save of its own never reads one.
+volatile LONG g_guest_refused = 0;
+
+void guest_check_own(void *self)
+{
+    static bool done = false;
+    if (done || cfg_role() != NET_GUEST)
+        return;
+    done = true;
+    char opt[8] = "1";
+    if (cfg_str("send_character", opt, sizeof opt) && opt[0] == '0')
+        return; // it plays the host's pawn: no character of its own needed
+    std::vector<uint8_t> own;
+    if (!test_no_save()) {
+        if (!test_save(own)) {
+            using E = bool(__attribute__((thiscall)) *)(void *, const char *);
+            using S = int32_t(__attribute__((thiscall)) *)(void *, const char *);
+            using R = int32_t(__attribute__((thiscall)) *)(void *, const char *, void *, int32_t);
+            if (reinterpret_cast<E>(g_orig_slot[FileExists])(self, "DDDA.sav")) {
+                int32_t size = reinterpret_cast<S>(g_orig_slot[GetFileSize])(self, "DDDA.sav");
+                if (size > 0 && size <= (4 << 20)) {
+                    own.resize(size_t(size));
+                    int32_t n = reinterpret_cast<R>(g_orig_slot[FileRead])(self, "DDDA.sav", own.data(), size);
+                    own.resize(n > 0 ? size_t(n) : 0);
+                }
+            }
+        }
+    }
+    std::string xml, arisen, pawn;
+    uint32_t head[8];
+    bool ready = !own.empty() && save_unpack(own, xml, head) && save_character(xml, -1, arisen) && save_character(xml, 0, pawn) &&
+                 !save_character_name(arisen).empty() && !save_character_name(pawn).empty();
+    if (!own.empty()) {
+        EnterCriticalSection(&g_save_lock);
+        bool first = g_guest_own.empty();
+        if (first)
+            g_guest_own = own;
+        LeaveCriticalSection(&g_save_lock);
+        if (first)
+            logf("storage: the guest's own save read (%d bytes): its character goes to the host", int(own.size()));
+    }
+    if (!ready) {
+        // a new player (no save) got a copy of the host's own Arisen and the host never saw it (test with
+        // test_no_save=1, 2026-10-30 17:03): it plays the tutorial alone first, up to its main pawn
+        InterlockedExchange(&g_guest_refused, 1);
+        logf("storage: this guest has %s: it does not join; play the tutorial alone first (up to the main pawn)",
+             own.empty() ? "no save of its own" : "no character past the tutorial yet (no main pawn)");
+    }
+}
+
 bool __attribute__((thiscall)) hk_file_exists(void *self, const char *name)
 {
     std::vector<uint8_t> host;
     uint32_t version = 0;
+    if (is_save(name))
+        guest_check_own(self);
     if (is_save(name) && peer_save(host, version)) {
         logf("storage: FileExists(\"%s\") = 1: the host's save", name);
         return true;
@@ -460,6 +529,10 @@ bool __attribute__((thiscall)) hk_file_exists(void *self, const char *name)
     std::vector<uint8_t> test;
     if (is_save(name) && test_save(test))
         return true;
+    if (is_save(name) && test_no_save()) {
+        logf("storage: FileExists(\"%s\") = 0 (test_no_save)", name);
+        return false;
+    }
     using F = bool(__attribute__((thiscall)) *)(void *, const char *);
     bool r = reinterpret_cast<F>(g_orig_slot[FileExists])(self, name);
     logf("storage: FileExists(\"%s\") = %d", name ? name : "?", r);
@@ -471,6 +544,8 @@ int32_t __attribute__((thiscall)) hk_get_file_count(void *self)
     using F = int32_t(__attribute__((thiscall)) *)(void *);
     int32_t n = reinterpret_cast<F>(g_orig_slot[GetFileCount])(self);
     logf("storage: GetFileCount() = %d", n);
+    if (test_no_save()) // the only file is DDDA.sav (2017 build): none
+        return 0;
     return n;
 }
 
@@ -564,6 +639,38 @@ long save_guard_blocked() { return g_blocked; }
 
 // Host: what the guests should load (the merged save when guests' characters are in, else its
 // latest DDDA.sav) and a version that changes with it; false when none yet.
+// Host: its game is past the tutorial: its save has the Arisen's name and a main pawn (made at the
+// Encampment). Before that (a new game: the prologue, the character's making, Cassardis) there is no
+// pawn for a guest to take, and the first save a new game writes (its options, no character) was
+// merged with a guest's character and sent: the guest's game then started a new game too (test with
+// test_no_save=1, 2026-10-30 16:14). Guests are let in only once it is ready.
+bool storage_guest_refused() { return g_guest_refused != 0; }
+
+bool storage_host_ready()
+{
+    static uint32_t checked = ~0u;
+    static bool ready = false;
+    EnterCriticalSection(&g_save_lock);
+    std::vector<uint8_t> own;
+    uint32_t version = g_own_version;
+    if (version != checked)
+        own = g_own_save;
+    LeaveCriticalSection(&g_save_lock);
+    if (version == checked)
+        return ready;
+    checked = version;
+    std::string xml, arisen, pawn;
+    uint32_t head[8];
+    bool was = ready;
+    ready = !own.empty() && save_unpack(own, xml, head) && save_character(xml, -1, arisen) && save_character(xml, 0, pawn) &&
+            !save_character_name(arisen).empty() && !save_character_name(pawn).empty();
+    if (ready != was || version == 0 || !ready)
+        logf("storage: the host's save %s (version %u): %s", own.empty() ? "is none yet" : "read", version,
+             ready ? "past the tutorial (an Arisen and a main pawn): guests may join"
+                   : "still in the tutorial (no Arisen or no main pawn yet): co-op waits for the main pawn");
+    return ready;
+}
+
 bool storage_own_save(std::vector<uint8_t> &out, uint32_t &version, uint32_t *sig)
 {
     if (!g_patched)

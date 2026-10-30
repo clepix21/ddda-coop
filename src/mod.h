@@ -34,6 +34,8 @@ bool save_put_quest_state(std::string &xml, const std::string &state);
 uint32_t save_quest_list_crc(const std::string &state);              // its quest list only
 bool save_deflate(const std::string &in, std::vector<uint8_t> &out);    // the game's zlib, length first
 bool save_inflate(const std::vector<uint8_t> &in, std::string &out);
+bool storage_host_ready(); // host: its game is past the tutorial (save_guard.cpp)
+bool storage_guest_refused(); // guest: no character of its own past the tutorial: it does not join
 std::string save_character_name(const std::string &character); // guest: accept a save owned by another Steam account (the host's)
 bool storage_own_save(std::vector<uint8_t> &out, uint32_t &version, uint32_t *sig = nullptr);
 void storage_set_peer_save(const uint8_t *data, size_t size, uint32_t version, uint32_t sig);

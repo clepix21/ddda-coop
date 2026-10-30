@@ -1216,7 +1216,7 @@ void read_stage(StageState &s)
 
 void send_to(const Peer &peer, const void *p, int n)
 {
-    if (!peer.used)
+    if (!peer.used || (g_role == NET_GUEST && storage_guest_refused())) // a guest before the end of its tutorial
         return;
     if (g_steam) {
         if (g_role == NET_GUEST ? link_steam_send(p, n) : link_steam_send_to(peer.steam, p, n))
@@ -1309,6 +1309,14 @@ void receive_all()
                                                 : p.addr.sin_addr.s_addr == from.sin_addr.s_addr &&
                                                       p.addr.sin_port == from.sin_port))
                 k = i;
+        }
+        if (k < 0 && g_role == NET_HOST && h->type == MSG_INPUT && n == sizeof(InputMsg) && !storage_host_ready()) {
+            static DWORD next_wait_log = 0; // a guest knocks while this game is in the tutorial: not let in yet
+            if (!next_wait_log || int(GetTickCount() - next_wait_log) >= 0) {
+                next_wait_log = (GetTickCount() + 10000) | 1;
+                logf("net: a guest waits: this game is before the end of the tutorial (no main pawn yet), co-op starts after it");
+            }
+            continue;
         }
         if (k < 0 && g_role == NET_HOST && h->type == MSG_INPUT && n == sizeof(InputMsg)) {
             // a new guest: a free place, the next pawn, pad slot k + 1
@@ -2040,7 +2048,8 @@ void host_save_send(DWORD now)
     HostSave &s = g_hsave;
     std::vector<uint8_t> data;
     uint32_t version = 0, sig = 0;
-    if (storage_own_save(data, version, &sig) && version != s.version) {
+    // a game back in the tutorial (a new game started with guests still connected): its save is not sent
+    if (storage_own_save(data, version, &sig) && version != s.version && storage_host_ready()) {
         s.data.swap(data);
         s.version = version;
         s.sig = sig;

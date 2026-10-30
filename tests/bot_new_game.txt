@@ -1,0 +1,13 @@
+# Boot -> title -> "Menu principal" -> first item (with no save: a new game) -> confirmations. Pad 1. A=1000
+0 0 0
+50000 0 1000
+50300 0 0
+72000 0 1000
+72300 0 0
+82000 0 1000
+82300 0 0
+92000 0 1000
+92300 0 0
+102000 0 1000
+102300 0 0
+0 1 0                  # pad 2 plugged in from the start (the game only registers pads it saw connected)

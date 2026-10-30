@@ -894,6 +894,8 @@ int number_after(const std::string &line, const char *word)
     return at == std::string::npos ? 0 : atoi(line.c_str() + at + strlen(word));
 }
 
+bool g_tutorial_wait_told = false; // a friend waited for the end of this host's tutorial (said once)
+
 void on_log_line(const std::string &l)
 {
     bool guest = guest_role();
@@ -927,6 +929,18 @@ void on_log_line(const std::string &l)
             set_state(tr(L"Connecté ! Appuie sur Start, puis choisis « Charger »."), kOk);
         add_event(g_world_received ? tr(L"Monde de l'hôte mis à jour.") : tr(L"Monde de l'hôte reçu."));
         g_world_received = true;
+    } else if (has("it does not join; play the tutorial alone first")) {
+        add_event(tr(L"Impossible de rejoindre : ton perso n'a pas encore fini le tutoriel. Joue-le d'abord seul (jusqu'à ton pion principal), puis relance en invité."));
+        set_state(tr(L"Impossible de rejoindre : ton perso n'a pas encore fini le tutoriel. Joue-le d'abord seul (jusqu'à ton pion principal), puis relance en invité."), kBad);
+    } else if (has("net: a guest waits: this game is before the end of the tutorial")) {
+        if (!g_tutorial_wait_told) {
+            g_tutorial_wait_told = true;
+            add_event(tr(L"Un ami attend : la co-op démarre quand tu auras fini le tutoriel (ton pion principal créé)."));
+        }
+        set_state(tr(L"Un ami attend : la co-op démarre quand tu auras fini le tutoriel (ton pion principal créé)."), kWarn);
+    } else if (has("past the tutorial (an Arisen and a main pawn): guests may join") && g_tutorial_wait_told) {
+        add_event(tr(L"Tutoriel terminé : tes amis peuvent te rejoindre."));
+        set_state(tr(L"Tutoriel terminé : tes amis peuvent te rejoindre."), kOk);
     } else if (has("net: guest connected from")) {
         int k = number_after(l, "(guest ");
         ++g_friends;

@@ -92,6 +92,9 @@ inline const TrRow kTr[] = {
     {L"De retour avec l'hôte.", L"Back with the host.", L"Di nuovo con l'host.", L"Zurück beim Host.", L"De vuelta con el anfitrión."},
     {L"Connecté : tu joues avec l'hôte.", L"Connected: you are playing with the host.", L"Connesso: giochi con l'host.", L"Verbunden: Du spielst mit dem Host.", L"Conectado: juegas con el anfitrión."},
     {L"Exploration : pas maintenant (dialogue, chargement ou changement de zone en cours).", L"Exploration: not now (a talk, a load or an area change is under way).", L"Esplorazione: non ora (dialogo, caricamento o cambio di zona in corso).", L"Erkundung: nicht jetzt (Gespräch, Laden oder Gebietswechsel läuft).", L"Exploración: ahora no (diálogo, carga o cambio de zona en curso)."},
+    {L"Un ami attend : la co-op démarre quand tu auras fini le tutoriel (ton pion principal créé).", L"A friend is waiting: co-op starts once you finish the tutorial (your main pawn created).", L"Un amico è in attesa: la co-op inizia quando avrai finito il tutorial (la tua pedina principale creata).", L"Ein Freund wartet: Der Co-op startet, sobald du das Tutorial beendet hast (dein Hauptvasall erstellt).", L"Un amigo está esperando: el co-op empieza cuando termines el tutorial (tu peón principal creado)."},
+    {L"Impossible de rejoindre : ton perso n'a pas encore fini le tutoriel. Joue-le d'abord seul (jusqu'à ton pion principal), puis relance en invité.", L"Cannot join: your character has not finished the tutorial yet. Play it alone first (up to your main pawn), then launch again as a guest.", L"Impossibile unirsi: il tuo personaggio non ha ancora finito il tutorial. Giocalo prima da solo (fino alla tua pedina principale), poi riavvia come ospite.", L"Beitritt nicht möglich: Deine Figur hat das Tutorial noch nicht beendet. Spiele es zuerst allein (bis zu deinem Hauptvasallen) und starte dann erneut als Gast.", L"No se puede unir: tu personaje aún no ha terminado el tutorial. Juégalo primero solo (hasta tu peón principal) y luego vuelve a iniciar como invitado."},
+    {L"Tutoriel terminé : tes amis peuvent te rejoindre.", L"Tutorial done: your friends can join you.", L"Tutorial finito: i tuoi amici possono raggiungerti.", L"Tutorial beendet: Deine Freunde können dir beitreten.", L"Tutorial terminado: tus amigos pueden unirse a ti."},
     {L" explore seul : son pion repasse à l'IA.", L" explores on their own: their pawn goes back to the AI.", L" esplora da solo: la sua pedina torna all'IA.", L" erkundet allein: Sein Vasall geht zurück an die KI.", L" explora solo: su peón vuelve a la IA."},
     {L" est revenu : il reprend son pion.", L" is back: they take their pawn again.", L" è tornato: riprende la sua pedina.", L" ist zurück: Er übernimmt wieder seinen Vasallen.", L" ha vuelto: retoma su peón."},
     {L"Gagné en exploration : +", L"Earned while exploring: +", L"Ottenuto in esplorazione: +", L"Bei der Erkundung erhalten: +", L"Ganado explorando: +"},
@@ -227,16 +230,16 @@ struct TrKeywords {
     const wchar_t *words[16];
 };
 inline const TrKeywords kTrKeywords[] = {
-    {1, 3, {L"Could not", L"not supported", L"another version", L"crashed", L"did not load", L"does not start", L"not responding", L"failed", nullptr}},
+    {1, 3, {L"Could not", L"Cannot", L"not supported", L"another version", L"crashed", L"did not load", L"does not start", L"not responding", L"failed", nullptr}},
     {1, 2, {L"disconnected", L"lost", L"not now", L"waiting", L"No ", L"not found", L"has closed", nullptr}},
     {1, 1, {L"connected", L"Connected", L"found", L"received", L"copied", L"installed", L"has arrived", L"Back with", L"is back", L"added", L"saved", nullptr}},
     {2, 3, {L"Impossibile", L"non supportata", L"altra versione", L"crash", L"non è stata caricata", L"non si avvia", L"non risponde", L"non è riuscit", nullptr}},
     {2, 2, {L"disconnesso", L"persa", L"non ora", L"in attesa", L"Nessun", L"non trovato", L"si è chiuso", nullptr}},
     {2, 1, {L"connesso", L"Connesso", L"trovato", L"ricevuto", L"copiat", L"installata", L"è arrivato", L"Di nuovo", L"è tornato", L"aggiunti", L"registrati", nullptr}},
-    {3, 3, {L"konnte nicht", L"nicht unterstützt", L"andere Version", L"abgestürzt", L"nicht geladen", L"startet nicht", L"reagiert nicht", L"fehlgeschlagen", nullptr}},
+    {3, 3, {L"konnte nicht", L"nicht möglich", L"nicht unterstützt", L"andere Version", L"abgestürzt", L"nicht geladen", L"startet nicht", L"reagiert nicht", L"fehlgeschlagen", nullptr}},
     {3, 2, {L"getrennt", L"verloren", L"nicht jetzt", L"wartet", L"Kein", L"nicht gefunden", L"beendet", nullptr}},
     {3, 1, {L"verbunden", L"Verbunden", L"gefunden", L"empfangen", L"kopiert", L"installiert", L"angekommen", L"Zurück beim", L"ist zurück", L"hinzugefügt", L"gespeichert", nullptr}},
-    {4, 3, {L"No se pudo", L"no compatible", L"otra versión", L"bloqueado", L"no se ha cargado", L"no se inicia", L"no responde", L"ha fallado", nullptr}},
+    {4, 3, {L"No se pudo", L"No se puede", L"no compatible", L"otra versión", L"bloqueado", L"no se ha cargado", L"no se inicia", L"no responde", L"ha fallado", nullptr}},
     {4, 2, {L"desconectado", L"perdida", L"ahora no", L"pendiente", L"Ningún", L"No se ha encontrado", L"no encontrado", L"se ha cerrado", nullptr}},
     {4, 1, {L"conectado", L"Conectado", L"encontrado", L"recibido", L"copiad", L"instalado", L"ha llegado", L"De vuelta", L"ha vuelto", L"añadido", L"guardado", nullptr}},
 };
