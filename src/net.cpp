@@ -1985,8 +1985,9 @@ void write_status(DWORD now)
         }
     }
     static DWORD next_ping_log = 0; // in the journal too, every 10 s (players' own reports are vague)
-    if (!pings.empty() && int(now - next_ping_log) >= 0) {
-        next_ping_log = now + 10000;
+    // 0 = not yet: int(now - 0) is negative after 24.8 days of uptime (no line at all in the 0.9.1 tests)
+    if (!pings.empty() && (!next_ping_log || int(now - next_ping_log) >= 0)) {
+        next_ping_log = (now + 10000) | 1;
         logf("net: pings (player: round trip):%s", pings.c_str());
     }
     if (g_steam && link_steam_self()) {
