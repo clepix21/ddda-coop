@@ -1,0 +1,16 @@
+# Far grab test, guest (shared world, both in Gran Soren): the guest's state says it holds the host's
+# Arisen (player 0) while the two stand apart, six times; the host's world takes the "too far" path
+# whose log closed three games on 2026-10-30. Run with the sprinting guest bot.
+wait 50000
+fakehold 0 4000
+wait 15000
+fakehold 0 4000
+wait 15000
+fakehold 0 4000
+wait 15000
+fakehold 0 4000
+wait 15000
+fakehold 0 4000
+wait 15000
+fakehold 0 4000
+wait 15000

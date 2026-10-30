@@ -406,6 +406,13 @@ void run_line(const char *line)
             logf("bridge: liftme %.0f: the Arisen at height %.0f", dy, game::at<float>(a, 0x44));
         }
         _snprintf(g_current, sizeof g_current, "liftme %.0f", dy);
+    } else if (strncmp(line, "fakehold ", 9) == 0) { // fakehold <slot> <ms>: the state sent says the Arisen holds that player
+        int s = -1, ms = 0;
+        if (sscanf(line + 9, "%d %d", &s, &ms) == 2) {
+            net_test_fake_hold(s, ms);
+            logf("bridge: fakehold: the Arisen's state says it holds player %d for %d ms", s, ms);
+        }
+        _snprintf(g_current, sizeof g_current, "fakehold %d %d", s, ms);
     } else if (sscanf(line, "grabtest %u", &slot) == 1) { // grabtest <pawn>: the Arisen holds it (forced actions)
         action_queue_grab(int(slot));
         _snprintf(g_current, sizeof g_current, "grabtest %u", slot);

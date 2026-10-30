@@ -2470,6 +2470,17 @@ DWORD WINAPI net_thread(LPVOID)
 
 } // namespace
 
+// Tests (bridge "fakehold <slot> <ms>"): for that long the Arisen's state sent says it holds that player
+// (RT from behind, 0xA9), wherever the two stand: the other worlds' "too far" path, whose log closed three
+// games in the evening test (2026-10-30), without a pad on each PC.
+volatile LONG g_fake_hold_slot = -1;
+volatile LONG g_fake_hold_until = 0;
+void net_test_fake_hold(int slot, int ms)
+{
+    g_fake_hold_slot = slot;
+    g_fake_hold_until = LONG(GetTickCount() + DWORD(ms));
+}
+
 // Host, game thread (possess_pre, before the character's own update): copy its state for the SNAP.
 void net_capture(uintptr_t ch, int i)
 {
@@ -2488,6 +2499,11 @@ void net_capture(uintptr_t ch, int i)
                 s.hold_slot = int8_t(party_to_slot(1 + p));
         if (held && s.hold_slot < 0)
             s.hold_enemy = int16_t(enemy_share_id(held));
+        if (g_fake_hold_slot >= 0 && int(GetTickCount() - DWORD(g_fake_hold_until)) < 0) {
+            s.action = 0xA9;
+            s.hold_slot = int8_t(g_fake_hold_slot);
+            held = 0;
+        }
         if (held && s.hold_slot < 0) {
             float fx, fz;
             facing(ch, fx, fz);

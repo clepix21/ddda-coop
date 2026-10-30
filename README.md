@@ -62,7 +62,7 @@ Le fichier `LISEZMOI.txt` du zip détaille tout, touches comprises.
 
 - Avec 3 joueurs, les autres joueurs peuvent glisser ou sauter un peu, et les coups touchent avec
   un léger retard. C'est en cours d'analyse.
-- Pas encore testés : les arcs, la Mort (le boss qui rôde la nuit), l'eau profonde, les longues
+- Pas encore testés : les arcs, la Mort (sur l'Île du Crépuscule), l'eau profonde, les longues
   sessions.
 - Une seule caméra par PC, qui suit ton propre perso. Les cinématiques sont jouées par chaque jeu
   de son côté.

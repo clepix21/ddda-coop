@@ -49,6 +49,7 @@ uintptr_t current_stage_area();            // net.cpp: the current aStage, 0 els
 // (host_loaded_sig: what the host's game shows, from its SNAP).
 void rejoin_tick(int role, uint32_t host_loaded_sig);
 void net_capture(uintptr_t ch, int i); // host, game thread: party member i (0 = Arisen, 1 + pawn) for the SNAP
+void net_test_fake_hold(int slot, int ms); // tests (bridge fakehold): the Arisen's state says it holds that player
 bool rejoin_busy(); // a reload of rejoin_tick is under way (guests: no stage following meanwhile)
 uint32_t rejoin_loaded_sig(); // host: the signature of the characters its game shows
 void storage_set_party_character(int pawn, const std::string &character); // host; empty = the host's own pawn

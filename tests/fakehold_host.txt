@@ -1,0 +1,13 @@
+# Far grab test, host: the same with the host's state saying it holds the guest (player 1), between the
+# guest's turns.
+wait 57000
+fakehold 1 4000
+wait 15000
+fakehold 1 4000
+wait 15000
+fakehold 1 4000
+wait 15000
+fakehold 1 4000
+wait 15000
+fakehold 1 4000
+wait 15000
