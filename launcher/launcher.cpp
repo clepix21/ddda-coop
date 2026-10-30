@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "../src/version.h"
+#include "i18n.h"
 #include "theme.h"
 
 namespace {
@@ -37,7 +38,7 @@ const char kOurMarker[] = "ddda-pawn-coop loaded"; // a string only our dinput8.
 enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
     ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP,
-    ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_BACKUP_LIST, ID_UPDATE, ID_CHECK_UPDATES, ID_PROJECT,
+    ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_BACKUP_LIST, ID_UPDATE, ID_CHECK_UPDATES, ID_PROJECT, ID_LANG,
     ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
 };
 // the screens, in the sidebar's order
@@ -114,6 +115,7 @@ int px(int v) { return MulDiv(v, g_dpi, 96); }
 std::wstring g_exe_dir, g_game_dir, g_steam_dir, g_docs_dir;
 bool g_no_launch = false;
 std::wstring g_test_update; // --test-update <tag>
+int g_start_page = 0;       // --page <n>: the screen shown first (after a change of language)
 bool g_supported = false;
 COLORREF g_state_color = kMuted;
 FILETIME g_launch_time = {};
@@ -418,6 +420,12 @@ int event_kind(const std::wstring &t)
     if (has(L"connecté") || has(L"Connecté") || has(L"trouvé") || has(L"reçu") || has(L"copiées") || has(L"installé") ||
         has(L"est arrivé") || has(L"De retour") || has(L"revenu") || has(L"ajoutée") || has(L"enregistrée") || has(L"copié"))
         return 1;
+    for (int kind = 3; kind >= 1; --kind) // the same kinds in the chosen language
+        for (const TrKeywords &k : kTrKeywords)
+            if (k.lang == g_lang && k.kind == kind)
+                for (const wchar_t *const *w = k.words; *w; ++w)
+                    if (has(*w))
+                        return kind;
     return 0;
 }
 
@@ -472,7 +480,7 @@ void draw_backup(const DRAWITEMSTRUCT *d)
         SetTextColor(d->hDC, kMuted);
         RECT n = row;
         n.right -= px(12);
-        DrawTextW(d->hDC, L"la plus récente", -1, &n, DT_RIGHT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        DrawTextW(d->hDC, tr(L"la plus récente"), -1, &n, DT_RIGHT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     }
     SelectObject(d->hDC, old);
 }
@@ -531,13 +539,13 @@ void check_game()
     g_supported = false;
     g_game_state = 0;
     if (g_game_dir.empty() || !exists(g_game_dir + L"\\DDDA.exe")) {
-        SetWindowTextW(g_version, L"DDDA.exe introuvable dans ce dossier.");
+        SetWindowTextW(g_version, tr(L"DDDA.exe introuvable dans ce dossier."));
     } else {
-        SetWindowTextW(g_version, L"Vérification de DDDA.exe…");
+        SetWindowTextW(g_version, tr(L"Vérification de DDDA.exe…"));
         UpdateWindow(g_version);
         g_supported = sha256_file(g_game_dir + L"\\DDDA.exe") == kSupportedSha;
-        SetWindowTextW(g_version, g_supported ? L"Version du jeu prise en charge."
-                                              : L"Version de DDDA.exe non prise en charge : le mod ne marcherait pas.");
+        SetWindowTextW(g_version, g_supported ? tr(L"Version du jeu prise en charge.")
+                                              : tr(L"Version de DDDA.exe non prise en charge : le mod ne marcherait pas."));
         g_game_state = g_supported ? 2 : 1;
     }
     update_controls();
@@ -663,17 +671,16 @@ bool install_dll()
 {
     std::wstring src = g_exe_dir + L"\\dinput8.dll", dst = g_game_dir + L"\\dinput8.dll";
     if (!exists(src)) {
-        ask(L"dinput8.dll manque à côté de DDDA-Coop.exe : garde les deux fichiers dans le même dossier.", MB_ICONERROR);
+        ask(tr(L"dinput8.dll manque à côté de DDDA-Coop.exe : garde les deux fichiers dans le même dossier."), MB_ICONERROR);
         return false;
     }
     if (exists(dst) && !our_dll(dst)) {
-        ask(L"Le dossier du jeu contient déjà un autre dinput8.dll (un autre mod ?).\n\n"
-            L"Déplace-le ailleurs toi-même, puis réessaie. DDDA Coop ne le remplace pas.",
+        ask(tr(L"Le dossier du jeu contient déjà un autre dinput8.dll (un autre mod ?).\n\nDéplace-le ailleurs toi-même, puis réessaie. DDDA Coop ne le remplace pas."),
             MB_ICONWARNING);
         return false;
     }
     if (!CopyFileW(src.c_str(), dst.c_str(), FALSE)) {
-        ask(L"Impossible de copier dinput8.dll dans le dossier du jeu.", MB_ICONERROR);
+        ask(tr(L"Impossible de copier dinput8.dll dans le dossier du jeu."), MB_ICONERROR);
         return false;
     }
     return true;
@@ -683,8 +690,8 @@ bool install_dll()
 void show_backup_note()
 {
     std::wstring when = setting(L"last_backup_time", L""), where = setting(L"last_backup", L"");
-    std::wstring text = when.empty() ? L"Copie de secours automatique de tes sauvegardes à chaque lancement (aucune encore)."
-                                     : L"Dernière copie de secours : " + when + L" \u2192 " + where;
+    std::wstring text = when.empty() ? tr(L"Copie de secours automatique de tes sauvegardes à chaque lancement (aucune encore).")
+                                     : tr(L"Dernière copie de secours : ") + when + L" \u2192 " + where;
     if (g_backup_note)
         SetWindowTextW(g_backup_note, text.c_str());
 }
@@ -740,18 +747,8 @@ void note_backup(const std::wstring &where)
 void show_help()
 {
     MessageBoxW(g_wnd,
-                L"Dans le jeu\n"
-                L"  \u2022 Invité : attends « Connecté ! » dans cette fenêtre avant d'appuyer sur Start.\n"
-                L"  \u2022 Explorer seul / revenir : LB + RB + Y maintenus 1,5 s (ou F7).\n"
-                L"  \u2022 Relever un joueur à terre : maintiens B à côté de lui (3 s).\n"
-                L"  \u2022 Saisir un joueur ou un petit monstre : RT.\n"
-                L"  \u2022 Le bandeau « DDDA Coop actif » (écran titre, menu pause, carte) dit que le mod tourne.\n\n"
-                L"Ici\n"
-                L"  \u2022 Une copie de secours de tes sauvegardes est faite à chaque lancement ;\n"
-                L"    « Copier mes sauvegardes » en fait une tout de suite et ouvre le dossier.\n"
-                L"  \u2022 En cas de souci : « Exporter le journal » et envoie le fichier.\n"
-                L"  \u2022 Clavier : Alt + la lettre soulignée, Tab pour passer d'un élément à l'autre.",
-                L"DDDA Coop \u2013 Aide", MB_ICONINFORMATION | MB_OK);
+                tr(L"Dans le jeu\n  \u2022 Invité : attends « Connecté ! » dans cette fenêtre avant d'appuyer sur Start.\n  \u2022 Explorer seul / revenir : LB + RB + Y maintenus 1,5 s (ou F7).\n  \u2022 Relever un joueur à terre : maintiens B à côté de lui (3 s).\n  \u2022 Saisir un joueur ou un petit monstre : RT.\n  \u2022 Le bandeau « DDDA Coop actif » (écran titre) dit que le mod tourne.\n\nIci\n  \u2022 Une copie de secours de tes sauvegardes est faite à chaque lancement ;\n    « Copier mes sauvegardes » en fait une tout de suite et ouvre le dossier.\n  \u2022 En cas de souci : « Exporter le journal » et envoie le fichier.\n  \u2022 Clavier : Alt + la lettre soulignée, Tab pour passer d'un élément à l'autre."),
+                tr(L"DDDA Coop \u2013 Aide"), MB_ICONINFORMATION | MB_OK);
 }
 
 void on_launch()
@@ -760,30 +757,30 @@ void on_launch()
     if (!g_supported)
         return;
     if (game_running()) {
-        ask(L"Le jeu est déjà lancé. Quitte-le d'abord : les réglages ne s'appliquent qu'au démarrage.", MB_ICONINFORMATION);
+        ask(tr(L"Le jeu est déjà lancé. Quitte-le d'abord : les réglages ne s'appliquent qu'au démarrage."), MB_ICONINFORMATION);
         return;
     }
     int accounts = 0;
     std::wstring backup = backup_saves(&accounts);
     if (backup.empty() &&
-        ask(L"La copie de secours de tes sauvegardes n'a pas marché (aucune trouvée, ou erreur).\n\nLancer quand même ?",
+        ask(tr(L"La copie de secours de tes sauvegardes n'a pas marché (aucune trouvée, ou erreur).\n\nLancer quand même ?"),
             MB_ICONWARNING | MB_YESNO) != IDYES)
         return;
     if (!backup.empty()) {
-        add_event(L"Sauvegardes copiées dans " + backup);
+        add_event(tr(L"Sauvegardes copiées dans ") + backup);
         note_backup(backup);
     }
     if (!install_dll())
         return;
     if (!write_coop_ini()) {
-        ask(L"Impossible d'écrire coop.ini dans le dossier du jeu.", MB_ICONERROR);
+        ask(tr(L"Impossible d'écrire coop.ini dans le dossier du jeu."), MB_ICONERROR);
         return;
     }
     save_settings();
     bool guest = guest_role();
-    add_event(guest ? L"Mod installé en invité." : solo_role() ? L"Mod installé pour jouer seul." : L"Mod installé en hôte.");
+    add_event(guest ? tr(L"Mod installé en invité.") : solo_role() ? tr(L"Mod installé pour jouer seul.") : tr(L"Mod installé en hôte."));
     if (solo_role() && exists(g_game_dir + L"\\coop_progress\\pending.txt"))
-        add_event(L"Ta progression co-op sera ajoutée à ta partie quand tu la chargeras.");
+        add_event(tr(L"Ta progression co-op sera ajoutée à ta partie quand tu la chargeras."));
 
     GetSystemTimeAsFileTime(&g_launch_time);
     g_launch_tick = GetTickCount();
@@ -796,9 +793,9 @@ void on_launch()
     g_world_received = false;
     if (!g_no_launch)
         ShellExecuteW(g_wnd, L"open", L"steam://rungameid/367500", nullptr, nullptr, SW_SHOWNORMAL);
-    add_event(L"Lancement du jeu par Steam…");
-    set_state(guest ? L"Lancement… Reste sur l'écran titre jusqu'à ce que l'hôte soit trouvé."
-                    : L"Lancement… Charge ta partie normalement.",
+    add_event(tr(L"Lancement du jeu par Steam…"));
+    set_state(guest ? tr(L"Lancement… Reste sur l'écran titre jusqu'à ce que l'hôte soit trouvé.")
+                    : tr(L"Lancement… Charge ta partie normalement."),
               kMuted);
 }
 
@@ -808,35 +805,32 @@ void on_remove()
     if (g_game_dir.empty())
         return;
     if (game_running()) {
-        ask(L"Quitte le jeu d'abord.", MB_ICONINFORMATION);
+        ask(tr(L"Quitte le jeu d'abord."), MB_ICONINFORMATION);
         return;
     }
     std::wstring dll = g_game_dir + L"\\dinput8.dll", ini = g_game_dir + L"\\coop.ini";
     if (!exists(dll) && !exists(ini)) {
-        ask(L"Le mod n'est pas installé dans ce dossier.", MB_ICONINFORMATION);
+        ask(tr(L"Le mod n'est pas installé dans ce dossier."), MB_ICONINFORMATION);
         return;
     }
     // always confirmed, "Non" by default (owner's direction, 2026-10-29)
-    if (ask((L"Retirer DDDA Coop de ce dossier ?\n\n" + g_game_dir +
-                L"\n\nLe jeu redémarrera en solo normal. Tes sauvegardes ne sont pas touchées ; tu pourras réinstaller le mod "
-                L"en relançant depuis cette fenêtre.")
+    if (ask((tr(L"Retirer DDDA Coop de ce dossier ?\n\n") + g_game_dir +
+                tr(L"\n\nLe jeu redémarrera en solo normal. Tes sauvegardes ne sont pas touchées ; tu pourras réinstaller le mod en relançant depuis cette fenêtre."))
                 .c_str(),
             MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
         return;
     if (exists(dll) && !our_dll(dll)) {
-        ask(L"Le dinput8.dll du dossier du jeu n'est pas celui de DDDA Coop : je n'y touche pas.", MB_ICONWARNING);
+        ask(tr(L"Le dinput8.dll du dossier du jeu n'est pas celui de DDDA Coop : je n'y touche pas."), MB_ICONWARNING);
         return;
     }
     if (exists(g_game_dir + L"\\coop_progress\\pending.txt") &&
-        ask(L"Ta progression gagnée en co-op n'est pas encore dans ta partie.\n\n"
-            L"Pour l'ajouter : choisis « Seul », lance le jeu, charge ta partie puis sauvegarde. "
-            L"Si tu retires le mod maintenant, elle reste en attente pour plus tard.\n\nRetirer le mod quand même ?",
+        ask(tr(L"Ta progression gagnée en co-op n'est pas encore dans ta partie.\n\nPour l'ajouter : choisis « Seul », lance le jeu, charge ta partie puis sauvegarde. Si tu retires le mod maintenant, elle reste en attente pour plus tard.\n\nRetirer le mod quand même ?"),
             MB_ICONQUESTION | MB_YESNO) != IDYES)
         return;
     bool ok = (!exists(dll) || DeleteFileW(dll.c_str())) && (!exists(ini) || DeleteFileW(ini.c_str()));
     g_watching = false;
-    add_event(ok ? L"Mod retiré : le jeu redémarre en solo normal." : L"Impossible de supprimer dinput8.dll ou coop.ini.");
-    set_state(ok ? L"Mod retiré." : L"Erreur en retirant le mod.", ok ? kMuted : kBad);
+    add_event(ok ? tr(L"Mod retiré : le jeu redémarre en solo normal.") : tr(L"Impossible de supprimer dinput8.dll ou coop.ini."));
+    set_state(ok ? tr(L"Mod retiré.") : tr(L"Erreur en retirant le mod."), ok ? kMuted : kBad);
 }
 
 void on_backup()
@@ -844,10 +838,10 @@ void on_backup()
     int accounts = 0;
     std::wstring dest = backup_saves(&accounts);
     if (dest.empty()) {
-        ask(L"Aucune sauvegarde de Dragon's Dogma trouvée dans Steam, ou la copie a échoué.", MB_ICONWARNING);
+        ask(tr(L"Aucune sauvegarde de Dragon's Dogma trouvée dans Steam, ou la copie a échoué."), MB_ICONWARNING);
         return;
     }
-    add_event(L"Sauvegardes copiées dans " + dest);
+    add_event(tr(L"Sauvegardes copiées dans ") + dest);
     note_backup(dest);
     ShellExecuteW(g_wnd, L"open", dest.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
@@ -856,7 +850,7 @@ void on_export()
 {
     std::wstring log = g_game_dir + L"\\coop.log";
     if (!exists(log)) {
-        ask(L"Pas encore de coop.log dans le dossier du jeu : lance le jeu avec le mod d'abord.", MB_ICONINFORMATION);
+        ask(tr(L"Pas encore de coop.log dans le dossier du jeu : lance le jeu avec le mod d'abord."), MB_ICONINFORMATION);
         return;
     }
     wchar_t stamp[32];
@@ -867,10 +861,10 @@ void on_export()
     SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr);
     std::wstring dest = dir + L"\\coop-" + (guest_role() ? L"invite-" : L"hote-") + stamp + L".log";
     if (!CopyFileW(log.c_str(), dest.c_str(), FALSE)) {
-        ask(L"La copie du journal a échoué.", MB_ICONERROR);
+        ask(tr(L"La copie du journal a échoué."), MB_ICONERROR);
         return;
     }
-    add_event(L"Journal copié : " + dest);
+    add_event(tr(L"Journal copié : ") + dest);
     std::wstring arg = L"/select,\"" + dest + L"\"";
     ShellExecuteW(g_wnd, L"open", L"explorer.exe", arg.c_str(), nullptr, SW_SHOWNORMAL);
 }
@@ -879,7 +873,7 @@ void on_browse()
 {
     BROWSEINFOW bi = {};
     bi.hwndOwner = g_wnd;
-    bi.lpszTitle = L"Choisis le dossier qui contient DDDA.exe";
+    bi.lpszTitle = tr(L"Choisis le dossier qui contient DDDA.exe");
     bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
     if (PIDLIST_ABSOLUTE id = SHBrowseForFolderW(&bi)) {
         wchar_t path[MAX_PATH];
@@ -913,55 +907,53 @@ void on_log_line(const std::string &l)
     if (has("waiting for Steam") && !g_steam_wait_since)
         g_steam_wait_since = GetTickCount() | 1;
     if (has("a player has an older version of the mod")) {
-        add_event(L"Un joueur a une autre version du mod : vous ne vous voyez pas. Prenez tous le même paquet.");
-        set_state(L"Un joueur a une autre version du mod.", kBad);
+        add_event(tr(L"Un joueur a une autre version du mod : vous ne vous voyez pas. Prenez tous le même paquet."));
+        set_state(tr(L"Un joueur a une autre version du mod."), kBad);
     } else if (has("unsupported DDDA.exe")) {
-        add_event(L"Version du jeu non prise en charge : le mod s'est désactivé.");
-        set_state(L"Mod désactivé : version du jeu non prise en charge.", kBad);
+        add_event(tr(L"Version du jeu non prise en charge : le mod s'est désactivé."));
+        set_state(tr(L"Mod désactivé : version du jeu non prise en charge."), kBad);
     } else if (has("waiting for Steam")) {
-        set_state(L"En attente de Steam…", kMuted);
+        set_state(tr(L"En attente de Steam…"), kMuted);
     } else if (has("steam: link up")) {
-        add_event(L"Connecté à Steam.");
-        set_state(guest ? L"Recherche de l'hôte parmi tes amis Steam… Reste sur l'écran titre."
-                        : L"Prêt : en attente de tes amis. Tu peux jouer.",
+        add_event(tr(L"Connecté à Steam."));
+        set_state(guest ? tr(L"Recherche de l'hôte parmi tes amis Steam… Reste sur l'écran titre.")
+                        : tr(L"Prêt : en attente de tes amis. Tu peux jouer."),
                   kMuted);
     } else if (has("steam: host found")) {
-        add_event(L"Hôte trouvé, réception de son monde…");
-        set_state(L"Hôte trouvé. Réception de son monde… Reste sur l'écran titre.", kMuted);
+        add_event(tr(L"Hôte trouvé, réception de son monde…"));
+        set_state(tr(L"Hôte trouvé. Réception de son monde… Reste sur l'écran titre."), kMuted);
     } else if (has("net: save: the host's save version") && has("arrived")) {
         if (!g_world_received)
-            set_state(L"Connecté ! Appuie sur Start, puis choisis « Charger ».", kOk);
-        add_event(g_world_received ? L"Monde de l'hôte mis à jour." : L"Monde de l'hôte reçu.");
+            set_state(tr(L"Connecté ! Appuie sur Start, puis choisis « Charger »."), kOk);
+        add_event(g_world_received ? tr(L"Monde de l'hôte mis à jour.") : tr(L"Monde de l'hôte reçu."));
         g_world_received = true;
     } else if (has("net: guest connected from")) {
         int k = number_after(l, "(guest ");
         ++g_friends;
-        add_event(L"Ami " + std::to_wstring(k) + L" connecté.");
-        set_state(std::to_wstring(g_friends) + (g_friends > 1 ? L" amis connectés." : L" ami connecté."), kOk);
+        add_event(tr(L"Ami ") + std::to_wstring(k) + tr(L" connecté."));
+        set_state(std::to_wstring(g_friends) + (plural(g_friends) ? tr(L" amis connectés.") : tr(L" ami connecté.")), kOk);
     } else if (has("net: guest ") && has(", dropped")) {
         int k = number_after(l, "net: guest ");
         g_friends = g_friends > 0 ? g_friends - 1 : 0;
-        add_event(L"Ami " + std::to_wstring(k) + L" déconnecté (plus de nouvelles depuis 10 s). Il peut revenir : il "
-                  L"relance le jeu et charge, comme au début.");
-        set_state(g_friends ? std::to_wstring(g_friends) + (g_friends > 1 ? L" amis connectés." : L" ami connecté.")
-                            : L"En attente de tes amis. Tu peux jouer.",
+        add_event(tr(L"Ami ") + std::to_wstring(k) + tr(L" déconnecté (plus de nouvelles depuis 10 s). Il peut revenir : il relance le jeu et charge, comme au début."));
+        set_state(g_friends ? std::to_wstring(g_friends) + (plural(g_friends) ? tr(L" amis connectés.") : tr(L" ami connecté."))
+                            : tr(L"En attente de tes amis. Tu peux jouer."),
                   g_friends ? kOk : kMuted);
     } else if (has("'s character arrived")) {
         int k = number_after(l, "net: guest ");
-        add_event(L"Le perso de l'ami " + std::to_wstring(k) + L" est arrivé : il remplace un pion.");
+        add_event(tr(L"Le perso de l'ami ") + std::to_wstring(k) + tr(L" est arrivé : il remplace un pion."));
     } else if (has("rejoin: idle -> saving")) {
-        add_event(L"Sauvegarde et rechargement pour faire entrer un ami (quelques secondes)…");
+        add_event(tr(L"Sauvegarde et rechargement pour faire entrer un ami (quelques secondes)…"));
     } else if (has("rejoin: world reloaded")) {
-        add_event(L"Monde rechargé.");
+        add_event(tr(L"Monde rechargé."));
     } else if (has("net: peer silent")) {
-        add_event(L"Connexion à l'hôte perdue : reconnexion automatique… Si ça dure plus d'une minute, vérifie ta "
-                  L"connexion internet et que l'hôte est toujours en jeu.");
-        set_state(L"Connexion à l'hôte perdue, reconnexion automatique…", kWarn);
+        add_event(tr(L"Connexion à l'hôte perdue : reconnexion automatique… Si ça dure plus d'une minute, vérifie ta connexion internet et que l'hôte est toujours en jeu."));
+        set_state(tr(L"Connexion à l'hôte perdue, reconnexion automatique…"), kWarn);
         g_world_received = false;
     } else if (has("net: stage: guest in ") && has(" jumps to ")) {
-        add_event(L"Changement de zone avec l'hôte.");
+        add_event(tr(L"Changement de zone avec l'hôte."));
     } else if (has("net: send_character=0")) {
-        add_event(L"Tu joues le pion de l'hôte tel quel (sans ton propre perso).");
+        add_event(tr(L"Tu joues le pion de l'hôte tel quel (sans ton propre perso)."));
     } else if (has("steam: friends in Dragon's Dogma:")) {
         // " ...1234 (host) ...5678 (guest) ...9012 (no mod)" or " none"
         std::string list = l.substr(l.find("Dragon's Dogma:") + 15), fr;
@@ -977,42 +969,42 @@ void on_log_line(const std::string &l)
         std::wstring w(n > 0 ? n - 1 : 0, L'\0');
         if (n > 1)
             MultiByteToWideChar(CP_UTF8, 0, fr.c_str(), -1, &w[0], n);
-        add_event(fr.empty() ? L"Aucun ami Steam dans Dragon's Dogma pour l'instant."
-                             : L"Amis Steam dans le jeu (fin de leur identifiant) : " + w);
+        add_event(fr.empty() ? tr(L"Aucun ami Steam dans Dragon's Dogma pour l'instant.")
+                             : tr(L"Amis Steam dans le jeu (fin de leur identifiant) : ") + w);
     } else if (has("roam: exploring alone")) {
-        add_event(L"Tu explores seul, avec ton perso et ton sac. LB + RB + Y (ou F7) pour revenir chez l'hôte.");
-        set_state(L"Exploration libre : ce que tu fais ne compte que chez toi (sauf ta progression).", kInfo);
+        add_event(tr(L"Tu explores seul, avec ton perso et ton sac. LB + RB + Y (ou F7) pour revenir chez l'hôte."));
+        set_state(tr(L"Exploration libre : ce que tu fais ne compte que chez toi (sauf ta progression)."), kInfo);
     } else if (has("roam: back with the host")) {
-        add_event(L"De retour avec l'hôte.");
-        set_state(L"Connecté : tu joues avec l'hôte.", kOk);
+        add_event(tr(L"De retour avec l'hôte."));
+        set_state(tr(L"Connecté : tu joues avec l'hôte."), kOk);
     } else if (has("roam: not now")) {
-        add_event(L"Exploration : pas maintenant (dialogue, chargement ou changement de zone en cours).");
+        add_event(tr(L"Exploration : pas maintenant (dialogue, chargement ou changement de zone en cours)."));
     } else if (has("explores on its own")) {
-        add_event(L"Ami " + std::to_wstring(number_after(l, "net: guest ")) + L" explore seul : son pion repasse à l'IA.");
+        add_event(tr(L"Ami ") + std::to_wstring(number_after(l, "net: guest ")) + tr(L" explore seul : son pion repasse à l'IA."));
     } else if (has("is back: it drives its pawn again")) {
-        add_event(L"Ami " + std::to_wstring(number_after(l, "net: guest ")) + L" est revenu : il reprend son pion.");
+        add_event(tr(L"Ami ") + std::to_wstring(number_after(l, "net: guest ")) + tr(L" est revenu : il reprend son pion."));
     } else if (has("progress: free roam:")) {
         long long exp = 0, jp = 0;
         int kinds = 0;
         size_t at = l.find("free roam: +");
         if (at != std::string::npos)
             sscanf(l.c_str() + at, "free roam: +%lld exp, +%lld discipline, %d new item", &exp, &jp, &kinds);
-        add_event(L"Gagné en exploration : +" + std::to_wstring(exp) + L" exp, +" + std::to_wstring(jp) +
-                  L" discipline, " + std::to_wstring(kinds) + L" sorte(s) d'objets (gardé pour ta partie).");
+        add_event(tr(L"Gagné en exploration : +") + std::to_wstring(exp) + tr(L" exp, +") + std::to_wstring(jp) +
+                  tr(L" discipline, ") + std::to_wstring(kinds) + tr(L" sorte(s) d'objets (gardé pour ta partie)."));
     } else if (has("progress: from the host:")) {
         long long exp = 0, jp = 0;
         int kinds = 0;
         size_t at = l.find("pending in total +");
         if (at != std::string::npos)
             sscanf(l.c_str() + at, "pending in total +%lld exp, +%lld discipline, %d item", &exp, &jp, &kinds);
-        add_event(L"Progression gardée pour ton perso : +" + std::to_wstring(exp) + L" exp, +" + std::to_wstring(jp) +
-                  L" discipline, " + std::to_wstring(kinds) + L" sorte(s) d'objets.");
+        add_event(tr(L"Progression gardée pour ton perso : +") + std::to_wstring(exp) + tr(L" exp, +") + std::to_wstring(jp) +
+                  tr(L" discipline, ") + std::to_wstring(kinds) + tr(L" sorte(s) d'objets."));
     } else if (has("progress: added to ")) {
-        add_event(L"Progression co-op ajoutée à ta partie (copie de secours dans coop_progress\\backups).");
+        add_event(tr(L"Progression co-op ajoutée à ta partie (copie de secours dans coop_progress\\backups)."));
     } else if (has("progress: the game saved with the gains")) {
-        add_event(L"Progression co-op enregistrée dans ta sauvegarde.");
+        add_event(tr(L"Progression co-op enregistrée dans ta sauvegarde."));
     } else if (has("progress: pending gains are for")) {
-        add_event(L"Progression co-op en attente : elle appartient à un autre perso, rien n'a été ajouté.");
+        add_event(tr(L"Progression co-op en attente : elle appartient à un autre perso, rien n'a été ajouté."));
     }
 }
 
@@ -1063,28 +1055,25 @@ void check_watchers()
     if (running)
         g_game_seen = true;
     if (g_game_seen && !running && !g_told_closed) {
-        tell(g_told_closed, L"Le jeu s'est fermé.",
-             L"Le jeu s'est fermé. S'il a planté, clique sur « Exporter le journal » et envoie le fichier à l'hôte.", kWarn);
+        tell(g_told_closed, tr(L"Le jeu s'est fermé."),
+             tr(L"Le jeu s'est fermé. S'il a planté, clique sur « Exporter le journal » et envoie le fichier à l'hôte."), kWarn);
         g_watching = false;
         return;
     }
     if (g_game_seen && !g_mod_loaded && since > 90000)
-        tell(g_told_no_mod, L"Le mod ne s'est pas chargé.",
-             L"Le jeu tourne depuis 1 min 30 mais le mod ne s'est pas chargé : vérifie que dinput8.dll est bien dans le "
-             L"dossier du jeu (relance avec « Lancer le jeu ») et qu'aucun antivirus ne l'a supprimé.",
+        tell(g_told_no_mod, tr(L"Le mod ne s'est pas chargé."),
+             tr(L"Le jeu tourne depuis 1 min 30 mais le mod ne s'est pas chargé : vérifie que dinput8.dll est bien dans le dossier du jeu (relance avec « Lancer le jeu ») et qu'aucun antivirus ne l'a supprimé."),
              kBad);
     if (!g_game_seen && since > 120000)
-        tell(g_told_no_mod, L"Le jeu ne démarre pas.",
-             L"Le jeu n'a pas démarré en 2 minutes : vérifie que Steam est ouvert et connecté, puis relance.", kBad);
+        tell(g_told_no_mod, tr(L"Le jeu ne démarre pas."),
+             tr(L"Le jeu n'a pas démarré en 2 minutes : vérifie que Steam est ouvert et connecté, puis relance."), kBad);
     if (g_steam_wait_since && !g_link_up && GetTickCount() - g_steam_wait_since > 30000)
-        tell(g_told_steam, L"Steam ne répond pas.",
-             L"Le mod attend Steam depuis 30 s : vérifie que Steam est ouvert, connecté (pas en mode hors ligne), puis "
-             L"relance le jeu.",
+        tell(g_told_steam, tr(L"Steam ne répond pas."),
+             tr(L"Le mod attend Steam depuis 30 s : vérifie que Steam est ouvert, connecté (pas en mode hors ligne), puis relance le jeu."),
              kBad);
     if (guest_role() && g_link_up && !g_host_found && since > 90000)
-        tell(g_told_no_host, L"Hôte introuvable pour l'instant.",
-             L"Aucun hôte trouvé : vérifie que l'hôte a lancé le jeu avec « L'hôte », que vous êtes amis sur Steam, et que "
-             L"son statut Steam n'est pas « Invisible ». La recherche continue.",
+        tell(g_told_no_host, tr(L"Hôte introuvable pour l'instant."),
+             tr(L"Aucun hôte trouvé : vérifie que l'hôte a lancé le jeu avec « L'hôte », que vous êtes amis sur Steam, et que son statut Steam n'est pas « Invisible ». La recherche continue."),
              kWarn);
 }
 
@@ -1098,7 +1087,7 @@ struct Seat {
 };
 
 Seat g_seats[4];
-std::wstring g_salon_info = L"Le jeu n'est pas lancé.";
+std::wstring g_salon_info = tr(L"Le jeu n'est pas lancé.");
 HBITMAP g_avatar[4] = {};
 FILETIME g_avatar_time[4] = {};
 
@@ -1192,14 +1181,14 @@ void update_players()
         ++count;
         r.me = slot == me;
         r.down = present && down;
-        r.role = slot == 0 ? L"HÔTE" : L"INVITÉ " + std::to_wstring(slot);
+        r.role = slot == 0 ? tr(L"HÔTE") : tr(L"INVITÉ ") + std::to_wstring(slot);
         r.host = slot == 0;
         r.character = widen_utf8(name);
-        r.zone = r.me ? L"Ta zone" : !present ? L"Zone inconnue" : same ? L"Même zone"
-                                                                        : L"Autre zone (n° " + std::to_wstring(stage) + L")";
-        r.state = !present ? L"" : down ? L"\u26A0 À terre" : L"Debout";
-        r.link = r.me ? L"Toi" : ago < 0 ? L"Connexion inconnue" : ago < 1500 ? L"Bonne connexion" : ago < 5000 ? L"Connexion lente"
-                                                                                                              : L"Coupée (" + std::to_wstring(ago / 1000) + L" s)";
+        r.zone = r.me ? tr(L"Ta zone") : !present ? tr(L"Zone inconnue") : same ? tr(L"Même zone")
+                                                                        : tr(L"Autre zone (n° ") + std::to_wstring(stage) + L")";
+        r.state = !present ? L"" : down ? tr(L"\u26A0 À terre") : tr(L"Debout");
+        r.link = r.me ? tr(L"Toi") : ago < 0 ? tr(L"Connexion inconnue") : ago < 1500 ? tr(L"Bonne connexion") : ago < 5000 ? tr(L"Connexion lente")
+                                                                                                              : tr(L"Coupée (") + std::to_wstring(ago / 1000) + L" s)";
         r.link_color = r.me ? kInfo : ago < 0 ? kMuted : ago < 1500 ? kOk : ago < 5000 ? kWarn : kBad;
     }
     for (int k = 0; k < 4; ++k) {
@@ -1211,27 +1200,27 @@ void update_players()
         load_avatar(k, seats[k].used);
     }
     if (!g_watching) {
-        g_salon_info = L"Le jeu n'est pas lancé.";
+        g_salon_info = tr(L"Le jeu n'est pas lancé.");
     } else if (stale || !count) {
-        g_salon_info = L"Salon vide pour l'instant : il se remplit une fois en jeu.";
+        g_salon_info = tr(L"Salon vide pour l'instant : il se remplit une fois en jeu.");
     } else {
-        g_salon_info = std::wstring(strcmp(mode, "shared") == 0 ? L"Monde partagé" : L"Mode classique") +
-                       (strcmp(link, "steam") == 0 ? L" · Steam" : L" · réseau local") + L" · " + std::to_wstring(count) +
-                       L"/4 joueurs";
+        g_salon_info = std::wstring(strcmp(mode, "shared") == 0 ? tr(L"Monde partagé") : tr(L"Mode classique")) +
+                       (strcmp(link, "steam") == 0 ? L" · Steam" : tr(L" · réseau local")) + L" · " + std::to_wstring(count) +
+                       tr(L"/4 joueurs");
         if (day >= 0 && day_ms >= 0) {
             wchar_t t[64];
-            _snwprintf(t, 64, L" · jour %d, %02d:%02d", day, day_ms / 3600000 % 24, day_ms / 60000 % 60);
+            _snwprintf(t, 64, tr(L" · jour %d, %02d:%02d"), day, day_ms / 3600000 % 24, day_ms / 60000 % 60);
             t[63] = 0;
             g_salon_info += t;
         }
-        g_salon_info += host_role ? L" · tu es l'hôte" : L" · tu es invité";
+        g_salon_info += host_role ? tr(L" · tu es l'hôte") : tr(L" · tu es invité");
     }
     // the same in words for screen readers (the salon draws itself)
-    std::wstring words = L"Salon. " + g_salon_info;
+    std::wstring words = tr(L"Salon. ") + g_salon_info;
     for (const Seat &r : g_seats)
         if (r.used)
             words += L". " + r.role + L" " + (r.steam.empty() ? r.character : r.steam) +
-                     (r.level ? L", niveau " + std::to_wstring(r.level) : L"") + L", " + r.zone + L", " + r.state + L", " +
+                     (r.level ? tr(L", niveau ") + std::to_wstring(r.level) : L"") + L", " + r.zone + L", " + r.state + L", " +
                      (r.ping ? std::to_wstring(r.ping) + L" ms" : r.link);
     SetWindowTextW(g_players, words.c_str());
     InvalidateRect(g_players, nullptr, FALSE);
@@ -1270,7 +1259,7 @@ void paint_salon(HWND h, HDC dc)
             SetTextColor(mem, kMuted);
             SelectObject(mem, g_font);
             RECT t = c;
-            DrawTextW(mem, L"Place libre", -1, &t, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+            DrawTextW(mem, tr(L"Place libre"), -1, &t, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
             continue;
         }
         theme::round_rect(mem, c, px(theme::kRadiusCard), kCard, r.me ? theme::kAccent : theme::kBorder, r.me ? 1.5f : 1.f);
@@ -1302,7 +1291,7 @@ void paint_salon(HWND h, HDC dc)
         SelectClipRgn(mem, nullptr);
         DeleteObject(clip);
         // the ping on the right, in a pill coloured by its value (or the link's words without one)
-        std::wstring ping = r.me ? L"toi" : r.ping ? std::to_wstring(r.ping) + L" ms" : r.link;
+        std::wstring ping = r.me ? tr(L"toi") : r.ping ? std::to_wstring(r.ping) + L" ms" : r.link;
         COLORREF pc = r.me ? kInfo : r.ping ? (r.ping < 90 ? kOk : r.ping < 180 ? kWarn : kBad) : r.link_color;
         SelectObject(mem, g_small);
         SIZE ps = {};
@@ -1317,7 +1306,7 @@ void paint_salon(HWND h, HDC dc)
         RECT t = {x, ty, pill.left - px(8), ty + lh};
         SelectObject(mem, g_bold);
         SetTextColor(mem, kText);
-        std::wstring title = (r.steam.empty() ? (r.character.empty() ? r.role : r.character) : r.steam) + (r.me ? L" (toi)" : L"");
+        std::wstring title = (r.steam.empty() ? (r.character.empty() ? r.role : r.character) : r.steam) + (r.me ? tr(L" (toi)") : L"");
         DrawTextW(mem, title.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         if (r.host) { // the host's star after the name
             SIZE ts = {};
@@ -1333,7 +1322,7 @@ void paint_salon(HWND h, HDC dc)
         SelectObject(mem, g_font);
         SetTextColor(mem, kMuted);
         std::wstring line2 = r.role + (r.character.empty() ? L"" : L" \u00b7 " + r.character) +
-                             (r.level ? L" \u00b7 niveau " + std::to_wstring(r.level) : L"");
+                             (r.level ? tr(L" \u00b7 niveau ") + std::to_wstring(r.level) : L"");
         DrawTextW(mem, line2.c_str(), -1, &t, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         OffsetRect(&t, 0, lh);
         SetTextColor(mem, r.down ? kBad : kMuted);
@@ -1464,12 +1453,12 @@ void draw_button(const DRAWITEMSTRUCT *d)
         SelectObject(dc, g_head);
         RECT tt = {ic.right + px(12), card.top + pad, card.right - pad, card.top + pad + px(32)};
         // the title with its Alt letter
-        static const wchar_t *titles[3] = {L"&Hôte", L"&Invité", L"&Seul"};
+        static const wchar_t *titles[3] = {tr(L"&Hôte"), tr(L"&Invité"), tr(L"&Seul")};
         DrawTextW(dc, titles[role], -1, &tt, DT_LEFT | DT_SINGLELINE | DT_VCENTER | ((d->itemState & ODS_NOACCEL) ? DT_HIDEPREFIX : 0));
         SelectObject(dc, g_font);
         SetTextColor(dc, theme::kMuted);
         RECT dt = {card.left + pad, ic.bottom + px(10), card.right - pad, card.bottom - px(10)};
-        DrawTextW(dc, rc.text, -1, &dt, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX | DT_END_ELLIPSIS);
+        DrawTextW(dc, tr(rc.text), -1, &dt, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX | DT_END_ELLIPSIS);
         SelectObject(dc, old);
         return;
     }
@@ -1505,7 +1494,8 @@ void draw_button(const DRAWITEMSTRUCT *d)
         return;
     }
     if (kind == BTN_NAV) { // icon over a small label; the current screen on a surface with the accent bar
-        int page = int(d->CtlID) - ID_NAV;
+        bool lang = d->CtlID == ID_LANG; // the language button: a globe over the language's code
+        int page = lang ? -1 : int(d->CtlID) - ID_NAV;
         bool current = page == g_page;
         HBRUSH side = CreateSolidBrush(theme::kSidebar);
         FillRect(dc, &r, side);
@@ -1525,10 +1515,10 @@ void draw_button(const DRAWITEMSTRUCT *d)
         SetTextColor(dc, current ? theme::kText : theme::kMuted);
         HGDIOBJ old = SelectObject(dc, g_icon);
         RECT ic = {card.left, card.top + px(8), card.right, card.top + px(32)};
-        DrawTextW(dc, kPageIcons[page], -1, &ic, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        DrawTextW(dc, lang ? L"\uE774" : kPageIcons[page], -1, &ic, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
         SelectObject(dc, g_small);
         RECT lb = {r.left + px(1), card.top + px(34), r.right - px(1), card.bottom - px(4)}; // the whole width: "Sauvegardes" in Inter
-        DrawTextW(dc, kPageNames[page], -1, &lb, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+        DrawTextW(dc, lang ? kLangCodes[g_lang] : tr(kPageNames[page]), -1, &lb, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
         if (page == PAGE_LOG && g_log_unseen) {
             RECT dot = {ic.right - px(26), ic.top, ic.right - px(18), ic.top + px(8)};
             theme::circle(dc, dot, theme::kWarn);
@@ -1597,7 +1587,7 @@ HWND make(const wchar_t *cls, const wchar_t *text, DWORD style, int x, int y, in
 
 ButtonKind kind_of(int id)
 {
-    if (id >= ID_NAV && id < ID_NAV + PAGE_COUNT)
+    if ((id >= ID_NAV && id < ID_NAV + PAGE_COUNT) || id == ID_LANG)
         return BTN_NAV;
     if (id == ID_HOST || id == ID_GUEST || id == ID_SOLO)
         return BTN_ROLE;
@@ -1645,14 +1635,14 @@ void show_page(int page)
 void refresh_names()
 {
     HWND cards[3] = {g_host, g_guest, g_solo};
-    const wchar_t *names[3] = {L"&Hôte", L"&Invité", L"&Seul"};
+    const wchar_t *names[3] = {tr(L"&Hôte"), tr(L"&Invité"), tr(L"&Seul")};
     for (int k = 0; k < 3; ++k) {
-        std::wstring t = std::wstring(names[k]) + (k == g_role ? L", choisi" : L"") + L". " + kRoles[k].text;
+        std::wstring t = std::wstring(names[k]) + (k == g_role ? tr(L", choisi") : L"") + L". " + tr(kRoles[k].text);
         SetWindowTextW(cards[k], t.c_str());
         InvalidateRect(cards[k], nullptr, FALSE);
     }
     for (const Switch &w : g_switches) {
-        SetWindowTextW(w.h, (w.label + (w.on ? L" : activé" : L" : désactivé")).c_str());
+        SetWindowTextW(w.h, (w.label + (w.on ? tr(L" : activé") : tr(L" : désactivé"))).c_str());
         InvalidateRect(w.h, nullptr, FALSE);
     }
     update_controls();
@@ -1662,61 +1652,64 @@ void build_window()
 {
     // the sidebar (always shown); Ctrl+1..5 and Ctrl+Tab move between screens too (the message loop)
     for (int k = 0; k < PAGE_COUNT; ++k) {
-        HWND nav = make(L"BUTTON", kPageNames[k], BS_PUSHBUTTON | WS_TABSTOP | (k == 0 ? WS_GROUP : 0), 0, 12 + k * 64, kSide, 62,
+        HWND nav = make(L"BUTTON", tr(kPageNames[k]), BS_PUSHBUTTON | WS_TABSTOP | (k == 0 ? WS_GROUP : 0), 0, 12 + k * 64, kSide, 62,
                         ID_NAV + k);
         (void)nav;
     }
     const int L = kX, W = kCW;
 
+    // the language, at the bottom of the sidebar: a menu of the five, then the launcher starts again in it
+    make(L"BUTTON", (std::wstring(tr(L"Langue")) + L" : " + kLangNames[g_lang]).c_str(), BS_PUSHBUTTON | WS_TABSTOP, 0, kH - 74, kSide,
+         62, ID_LANG);
+
     // ---- Jouer: the header (gradient, room for an artwork), the role, the launch, the state ----
     g_building = PAGE_PLAY;
     g_header_rect = {px(kSide), 0, px(kW), px(kHeaderH)};
     int y = kHeaderH + 16;
-    add(make(L"STATIC", L"Ton rôle", 0, L, y, W, 24, 0, g_head));
+    add(make(L"STATIC", tr(L"Ton rôle"), 0, L, y, W, 24, 0, g_head));
     y += 32;
     int cw = (W - 2 * theme::kGapSmall) / 3, ch = 124;
-    g_host = add(make(L"BUTTON", L"&Hôte", BS_PUSHBUTTON | WS_TABSTOP | WS_GROUP, L, y, cw, ch, ID_HOST));
-    g_guest = add(make(L"BUTTON", L"&Invité", BS_PUSHBUTTON | WS_TABSTOP, L + cw + theme::kGapSmall, y, cw, ch, ID_GUEST));
-    g_solo = add(make(L"BUTTON", L"&Seul", BS_PUSHBUTTON | WS_TABSTOP, L + 2 * (cw + theme::kGapSmall), y, cw, ch, ID_SOLO));
+    g_host = add(make(L"BUTTON", tr(L"&Hôte"), BS_PUSHBUTTON | WS_TABSTOP | WS_GROUP, L, y, cw, ch, ID_HOST));
+    g_guest = add(make(L"BUTTON", tr(L"&Invité"), BS_PUSHBUTTON | WS_TABSTOP, L + cw + theme::kGapSmall, y, cw, ch, ID_GUEST));
+    g_solo = add(make(L"BUTTON", tr(L"&Seul"), BS_PUSHBUTTON | WS_TABSTOP, L + 2 * (cw + theme::kGapSmall), y, cw, ch, ID_SOLO));
     y += ch + 10;
     // the guest's own options (shown only under its card, update_controls)
     g_own_char = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, y, W, 30, ID_OWN_CHAR));
     g_keep = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, y + 32, W, 30, ID_KEEP));
-    g_switches.push_back({g_own_char, true, L"Jouer avec mon &propre perso (sinon je joue le pion de l'hôte)"});
-    g_switches.push_back({g_keep, true, L"&Garder la progression de mon perso gagnée chez un ami (exp, discipline, objets)"});
+    g_switches.push_back({g_own_char, true, tr(L"Jouer avec mon &propre perso (sinon je joue le pion de l'hôte)")});
+    g_switches.push_back({g_keep, true, tr(L"&Garder la progression de mon perso gagnée chez un ami (exp, discipline, objets)")});
     y += 68;
-    g_launch = add(make(L"BUTTON", L"&Lancer le jeu", BS_DEFPUSHBUTTON | WS_TABSTOP, L, y, 300, 52, ID_LAUNCH, g_head));
-    add(make(L"BUTTON", L"? A&ide", BS_PUSHBUTTON | WS_TABSTOP, L + W - 100, y + 4, 100, 44, ID_HELP));
+    g_launch = add(make(L"BUTTON", tr(L"&Lancer le jeu"), BS_DEFPUSHBUTTON | WS_TABSTOP, L, y, 300, 52, ID_LAUNCH, g_head));
+    add(make(L"BUTTON", tr(L"? A&ide"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 100, y + 4, 100, 44, ID_HELP));
     // shown when the check found a newer release (WM_UPDATE_FOUND)
     g_update = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L + W - 280, 34, 280, 40, ID_UPDATE));
     y += 64;
     g_state_rect = {px(L), px(y), px(L + W), px(y + 56)};
     g_state = add(make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_CENTERIMAGE, L + 28, y + 8, W - 40, 40, 0, g_bold));
-    set_state(L"Choisis ton rôle puis lance le jeu.", kMuted);
+    set_state(tr(L"Choisis ton rôle puis lance le jeu."), kMuted);
 
     // ---- Salon ----
     g_building = PAGE_SALON;
-    g_players = add(make(L"DDDACoopSalon", L"Salon", 0, L, 76, W, 296, ID_PLAYERS));
+    g_players = add(make(L"DDDACoopSalon", tr(L"Salon"), 0, L, 76, W, 296, ID_PLAYERS));
     // the connection block under the cards (drawn by paint; controls by role, update_controls)
-    g_copy_code = add(make(L"BUTTON", L"&Copier le code", BS_PUSHBUTTON | WS_TABSTOP, L + W - 170 - 18, 444, 170, 38, ID_COPY_CODE));
+    g_copy_code = add(make(L"BUTTON", tr(L"&Copier le code"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 170 - 18, 444, 170, 38, ID_COPY_CODE));
     g_code_edit = add(make(L"EDIT", setting(L"host_code", L"").c_str(), WS_BORDER | WS_TABSTOP | ES_UPPERCASE | ES_AUTOHSCROLL, L + 18,
                            444, 200, 36, ID_CODE_EDIT, g_code_font));
     SendMessageW(g_code_edit, EM_LIMITTEXT, 12, 0);
     SendMessageW(g_code_edit, EM_SETCUEBANNER, TRUE, LPARAM(L"ABC-DEFG"));
-    g_code_clear = add(make(L"BUTTON", L"&Effacer", BS_PUSHBUTTON | WS_TABSTOP, L + 230, 444, 110, 36, ID_CODE_CLEAR));
+    g_code_clear = add(make(L"BUTTON", tr(L"&Effacer"), BS_PUSHBUTTON | WS_TABSTOP, L + 230, 444, 110, 36, ID_CODE_CLEAR));
 
     // ---- Sauvegardes ----
     g_building = PAGE_SAVES;
     add(make(L"STATIC",
-             L"Une copie de secours de tes sauvegardes Steam de Dragon's Dogma est faite à chaque lancement. Tu peux en faire une "
-             L"tout de suite.",
+             tr(L"Une copie de secours de tes sauvegardes Steam de Dragon's Dogma est faite à chaque lancement. Tu peux en faire une tout de suite."),
              0, L, 76, W, 44, 0));
-    add(make(L"BUTTON", L"Copier mes s&auvegardes", BS_PUSHBUTTON | WS_TABSTOP, L, 126, 230, 40, ID_BACKUP));
-    add(make(L"BUTTON", L"&Ouvrir le dossier", BS_PUSHBUTTON | WS_TABSTOP, L + 242, 126, 180, 40, ID_OPEN_BACKUPS));
+    add(make(L"BUTTON", tr(L"Copier mes s&auvegardes"), BS_PUSHBUTTON | WS_TABSTOP, L, 126, 230, 40, ID_BACKUP));
+    add(make(L"BUTTON", tr(L"&Ouvrir le dossier"), BS_PUSHBUTTON | WS_TABSTOP, L + 242, 126, 180, 40, ID_OPEN_BACKUPS));
     g_backup_note = add(make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_PATHELLIPSIS, L, 178, W, 22, 0));
     show_backup_note();
-    add(make(L"STATIC", L"Copies de secours (double-clic : ouvrir)", 0, L, 214, W, 22, 0, g_bold));
-    g_backup_list = add(make(L"LISTBOX", L"Copies de secours", WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOTIFY |
+    add(make(L"STATIC", tr(L"Copies de secours (double-clic : ouvrir)"), 0, L, 214, W, 22, 0, g_bold));
+    g_backup_list = add(make(L"LISTBOX", tr(L"Copies de secours"), WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOTIFY |
                                                                  LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
                              L + 1, 244, W - 2, kH - 244 - 28, ID_BACKUP_LIST));
     SetWindowTheme(g_backup_list, L"DarkMode_Explorer", nullptr); // dark scroll bars (Windows 10 1809+)
@@ -1724,40 +1717,37 @@ void build_window()
 
     // ---- Paramètres ----
     g_building = PAGE_SETTINGS;
-    add(make(L"STATIC", L"Dossier du jeu", 0, L, 76, W, 22, 0, g_bold));
+    add(make(L"STATIC", tr(L"Dossier du jeu"), 0, L, 76, W, 22, 0, g_bold));
     g_game_edit = add(make(L"EDIT", g_game_dir.c_str(), WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, L, 102, W - 132, 30, ID_GAME_EDIT));
-    add(make(L"BUTTON", L"&Changer…", BS_PUSHBUTTON | WS_TABSTOP, L + W - 120, 102, 120, 30, ID_BROWSE));
+    add(make(L"BUTTON", tr(L"&Changer…"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 120, 102, 120, 30, ID_BROWSE));
     g_version = add(make(L"STATIC", L"", 0, L, 140, W, 22, 0));
     g_debug = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 176, W, 32, ID_DEBUG));
-    g_switches.push_back({g_debug, true, L"&Journal détaillé (utile pour signaler un problème)"});
+    g_switches.push_back({g_debug, true, tr(L"&Journal détaillé (utile pour signaler un problème)")});
     g_check_updates = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 212, W, 32, ID_CHECK_UPDATES));
-    g_switches.push_back({g_check_updates, true, L"&Vérifier les mises à jour au démarrage (GitHub)"});
+    g_switches.push_back({g_check_updates, true, tr(L"&Vérifier les mises à jour au démarrage (GitHub)")});
     // the sensitive part in a card of its own (painted), red-tinted
-    add(make(L"STATIC", L"Zone sensible", 0, L + 18, kDangerY + 14, W - 36, 22, 0, g_bold));
+    add(make(L"STATIC", tr(L"Zone sensible"), 0, L + 18, kDangerY + 14, W - 36, 22, 0, g_bold));
     add(make(L"STATIC",
-             L"Retire dinput8.dll et coop.ini du dossier du jeu : le jeu redémarre en solo normal. Tes sauvegardes ne sont pas "
-             L"touchées. Une confirmation est demandée.",
+             tr(L"Retire dinput8.dll et coop.ini du dossier du jeu : le jeu redémarre en solo normal. Tes sauvegardes ne sont pas touchées. Une confirmation est demandée."),
              0, L + 18, kDangerY + 40, W - 36 - 200, 44, 0));
-    add(make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L + W - 18 - 180, kDangerY + 38, 180, 40, ID_REMOVE));
+    add(make(L"BUTTON", tr(L"&Retirer le mod"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 18 - 180, kDangerY + 38, 180, 40, ID_REMOVE));
     // credits
     int ay = kDangerY + 96 + 22;
-    add(make(L"STATIC", L"À propos", 0, L, ay, W, 22, 0, g_bold));
+    add(make(L"STATIC", tr(L"À propos"), 0, L, ay, W, 22, 0, g_bold));
     add(make(L"STATIC",
              (L"DDDA Coop v" + widen(DDDA_COOP_VERSION) +
-              L", par clepix21.\nTesteurs : GrosGadjo et yaybba.\nDéveloppé avec l'aide de Claude (Anthropic).\n"
-              L"Police Inter (SIL Open Font License 1.1) et MinHook (licence BSD) : voir LICENCES.txt. "
-              L"Mod non officiel, sans lien avec Capcom ; Dragon's Dogma: Dark Arisen © Capcom.")
+              tr(L", par clepix21.\nTesteurs : GrosGadjo et yaybba.\nDéveloppé avec l'aide de Claude (Anthropic).\nPolice Inter (SIL Open Font License 1.1) et MinHook (licence BSD) : voir LICENCES.txt. Mod non officiel, sans lien avec Capcom ; Dragon's Dogma: Dark Arisen © Capcom."))
                  .c_str(),
              SS_NOPREFIX, L, ay + 28, W - 200, 88, 0));
-    add(make(L"BUTTON", L"Page du &projet", BS_PUSHBUTTON | WS_TABSTOP, L + W - 180, ay + 30, 180, 40, ID_PROJECT));
+    add(make(L"BUTTON", tr(L"Page du &projet"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 180, ay + 30, 180, 40, ID_PROJECT));
 
     // ---- Journal ----
     g_building = PAGE_LOG;
-    g_events = add(make(L"LISTBOX", L"Journal", WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL | LBS_OWNERDRAWFIXED |
+    g_events = add(make(L"LISTBOX", tr(L"Journal"), WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_NOSEL | LBS_OWNERDRAWFIXED |
                                                    LBS_HASSTRINGS,
                         L + 8, 110, W - 16, kH - 110 - 84, ID_EVENTS));
     SetWindowTheme(g_events, L"DarkMode_Explorer", nullptr);
-    add(make(L"BUTTON", L"E&xporter le journal", BS_PUSHBUTTON | WS_TABSTOP, L, kH - 60, 200, 40, ID_EXPORT));
+    add(make(L"BUTTON", tr(L"E&xporter le journal"), BS_PUSHBUTTON | WS_TABSTOP, L, kH - 60, 200, 40, ID_EXPORT));
 
     std::wstring role = setting(L"role", L"host"); // the last role chosen
     g_role = role == L"guest" ? ROLE_GUEST : role == L"solo" ? ROLE_SOLO : ROLE_HOST;
@@ -1797,9 +1787,9 @@ void paint(HWND h)
         // "✓ DDDA détecté · Mod v0.9.0" (or what is wrong, in its colour)
         SelectObject(dc, g_font);
         std::wstring mod = L"Mod v" + widen(DDDA_COOP_VERSION);
-        std::wstring line = g_game_state == 2 ? L"\u2714  DDDA détecté \u00b7 " + mod
-                            : g_game_state == 1 ? L"\u2716  Version de DDDA.exe non prise en charge \u00b7 " + mod
-                                                : L"\u2716  DDDA.exe introuvable : choisis son dossier dans Paramètres \u00b7 " + mod;
+        std::wstring line = g_game_state == 2 ? tr(L"\u2714  DDDA détecté \u00b7 ") + mod
+                            : g_game_state == 1 ? tr(L"\u2716  Version de DDDA.exe non prise en charge \u00b7 ") + mod
+                                                : tr(L"\u2716  DDDA.exe introuvable : choisis son dossier dans Paramètres \u00b7 ") + mod;
         SetTextColor(dc, g_game_state == 2 ? theme::kOk : theme::kBad);
         RECT st = {px(kX), px(60), px(kX + kCW), px(84)};
         DrawTextW(dc, line.c_str(), -1, &st, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
@@ -1810,19 +1800,19 @@ void paint(HWND h)
     } else {
         SetTextColor(dc, kText);
         RECT t = {px(kX), px(22), px(kX + kCW), px(58)};
-        DrawTextW(dc, kPageNames[g_page], -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        DrawTextW(dc, tr(kPageNames[g_page]), -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         if (g_page == PAGE_SALON) { // the connection block
             RECT card = {px(kX), px(384), px(kX + kCW), px(500)};
             theme::round_rect(dc, card, px(theme::kRadiusCard), kCard, theme::kBorder);
             SelectObject(dc, g_head);
             SetTextColor(dc, kText);
             RECT t = {card.left + px(18), card.top + px(12), card.right - px(18), card.top + px(40)};
-            DrawTextW(dc, L"Connexion", -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            DrawTextW(dc, tr(L"Connexion"), -1, &t, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
             SelectObject(dc, g_font);
             SetTextColor(dc, kMuted);
             RECT hint = {card.left + px(18), card.top + px(40), card.right - px(18), card.top + px(58)};
             if (g_role == ROLE_HOST) {
-                DrawTextW(dc, L"Donne ce code à tes amis : ils le collent dans leur salon pour te rejoindre toi précisément.", -1,
+                DrawTextW(dc, tr(L"Donne ce code à tes amis : ils le collent dans leur salon pour te rejoindre toi précisément."), -1,
                           &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
                 RECT code = {card.left + px(18), px(444), card.right - px(220), px(482)};
                 SelectObject(dc, g_code_font);
@@ -1832,20 +1822,20 @@ void paint(HWND h)
                 if (!g_self_steam) {
                     SelectObject(dc, g_small);
                     RECT why = {code.left + px(150), code.top, code.right, code.bottom};
-                    DrawTextW(dc, L"lance le jeu en hôte (Steam) pour l'obtenir", -1, &why, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+                    DrawTextW(dc, tr(L"lance le jeu en hôte (Steam) pour l'obtenir"), -1, &why, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
                 }
             } else if (g_role == ROLE_GUEST) {
-                DrawTextW(dc, L"Le code de ton hôte pour le rejoindre lui précisément ; vide : le premier ami Steam qui héberge.",
+                DrawTextW(dc, tr(L"Le code de ton hôte pour le rejoindre lui précisément ; vide : le premier ami Steam qui héberge."),
                           -1, &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
                 std::wstring txt = window_text(g_code_edit);
                 uint64_t id = 0;
                 bool ok = steam_from_code(txt, id);
                 RECT v = {px(kX + 356), px(444), card.right - px(18), px(480)};
                 SetTextColor(dc, txt.empty() ? kMuted : ok ? kOk : kBad);
-                DrawTextW(dc, txt.empty() ? L"●  recherche automatique" : ok ? L"✔  code valide" : L"✖  code incomplet ou invalide",
+                DrawTextW(dc, txt.empty() ? tr(L"●  recherche automatique") : ok ? tr(L"✔  code valide") : tr(L"✖  code incomplet ou invalide"),
                           -1, &v, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
             } else {
-                DrawTextW(dc, L"Seul : pas de connexion.", -1, &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+                DrawTextW(dc, tr(L"Seul : pas de connexion."), -1, &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
             }
         }
         if (g_page == PAGE_SETTINGS) { // the sensitive part: a card with a red outline
@@ -1859,7 +1849,7 @@ void paint(HWND h)
                 SelectObject(dc, g_font);
                 SetTextColor(dc, kMuted);
                 RECT e = card;
-                DrawTextW(dc, L"Aucune copie pour l'instant.", -1, &e, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+                DrawTextW(dc, tr(L"Aucune copie pour l'instant."), -1, &e, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
             }
         }
         if (g_page == PAGE_LOG) { // the counts by kind, then the events in a card
@@ -1870,19 +1860,19 @@ void paint(HWND h)
                 bad += kind == 3;
             }
             SelectObject(dc, g_font);
-            std::wstring counts = std::to_wstring(n) + (n > 1 ? L" événements" : L" événement");
+            std::wstring counts = std::to_wstring(n) + (plural(n) ? tr(L" événements") : tr(L" événement"));
             SetTextColor(dc, kMuted);
             RECT c = {px(kX), px(74), px(kX + kCW), px(98)};
             DrawTextW(dc, counts.c_str(), -1, &c, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
             SIZE cs = {};
             GetTextExtentPoint32W(dc, counts.c_str(), int(counts.size()), &cs);
             c.left += cs.cx + px(16);
-            std::wstring w = L"\u26A0 " + std::to_wstring(warn) + (warn > 1 ? L" avertissements" : L" avertissement");
+            std::wstring w = L"\u26A0 " + std::to_wstring(warn) + (plural(warn) ? tr(L" avertissements") : tr(L" avertissement"));
             SetTextColor(dc, warn ? kWarn : kMuted);
             DrawTextW(dc, w.c_str(), -1, &c, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
             GetTextExtentPoint32W(dc, w.c_str(), int(w.size()), &cs);
             c.left += cs.cx + px(16);
-            std::wstring e = L"\u2716 " + std::to_wstring(bad) + (bad > 1 ? L" erreurs" : L" erreur");
+            std::wstring e = L"\u2716 " + std::to_wstring(bad) + (plural(bad) ? tr(L" erreurs") : tr(L" erreur"));
             SetTextColor(dc, bad ? kBad : kMuted);
             DrawTextW(dc, e.c_str(), -1, &c, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
             RECT card = {px(kX), px(104), px(kX + kCW), px(kH - 74)};
@@ -1890,13 +1880,38 @@ void paint(HWND h)
             if (n == 0) {
                 SetTextColor(dc, kMuted);
                 RECT ec = card;
-                DrawTextW(dc, L"Rien pour l'instant : les événements arrivent au lancement du jeu.", -1, &ec,
+                DrawTextW(dc, tr(L"Rien pour l'instant : les événements arrivent au lancement du jeu."), -1, &ec,
                           DT_CENTER | DT_SINGLELINE | DT_VCENTER);
             }
         }
     }
     SelectObject(dc, old);
     EndPaint(h, &ps);
+}
+
+// The language button: a menu of the five languages, each in its own name. The window's texts are made
+// once, so after a change the launcher starts again in that language, on the same screen.
+void pick_language(HWND h)
+{
+    RECT r;
+    GetWindowRect(GetDlgItem(h, ID_LANG), &r);
+    HMENU menu = CreatePopupMenu();
+    for (int k = 0; k < LANG_COUNT; ++k)
+        AppendMenuW(menu, MF_STRING | (k == g_lang ? MF_CHECKED : 0), UINT_PTR(1 + k), kLangNames[k]);
+    int pick = int(TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_BOTTOMALIGN | TPM_NONOTIFY, r.right, r.bottom, 0, h, nullptr));
+    DestroyMenu(menu);
+    if (pick < 1 || pick - 1 == g_lang)
+        return;
+    WritePrivateProfileStringW(L"launcher", L"lang", kLangCodes[pick - 1], settings_path().c_str());
+    std::wstring cmd = std::wstring(GetCommandLineW()) + L" --page " + std::to_wstring(g_page);
+    STARTUPINFOW si = {};
+    si.cb = sizeof si;
+    PROCESS_INFORMATION pi = {};
+    if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        DestroyWindow(h);
+    }
 }
 
 LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
@@ -1914,12 +1929,14 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
             WritePrivateProfileStringW(L"launcher", L"help_seen", L"1", settings_path().c_str());
             PostMessageW(h, WM_COMMAND, ID_HELP, 0);
         }
+        if (g_start_page > 0 && g_start_page < PAGE_COUNT)
+            show_page(g_start_page);
         return 0;
     case WM_UPDATE_FOUND:
-        SetWindowTextW(g_update, (L"Mise à jour " + g_update_tag + L" disponible  ›").c_str());
+        SetWindowTextW(g_update, (tr(L"Mise à jour ") + g_update_tag + tr(L" disponible  ›")).c_str());
         if (g_page == PAGE_PLAY)
             ShowWindow(g_update, SW_SHOW);
-        add_event(L"Une nouvelle version du mod est disponible : " + g_update_tag + L" (bouton en haut de « Jouer »).");
+        add_event(tr(L"Une nouvelle version du mod est disponible : ") + g_update_tag + tr(L" (bouton en haut de « Jouer »)."));
         return 0;
     case WM_MEASUREITEM:
         if (w == ID_BACKUP_LIST) {
@@ -1983,6 +2000,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_REMOVE: on_remove(); break;
         case ID_BACKUP: on_backup(); break;
         case ID_HELP: show_help(); break;
+        case ID_LANG: pick_language(h); break;
         case ID_UPDATE: // the release's page, to download it
             ShellExecuteW(h, L"open", (std::wstring(kRepoUrl) + L"/releases/tag/" + g_update_tag).c_str(), nullptr, nullptr,
                           SW_SHOWNORMAL);
@@ -1998,7 +2016,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
                     SetClipboardData(CF_UNICODETEXT, mem);
                 }
                 CloseClipboard();
-                add_event(L"Code de connexion copié : " + c);
+                add_event(tr(L"Code de connexion copié : ") + c);
             }
             break;
         case ID_CODE_CLEAR:
@@ -2136,8 +2154,25 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
             g_no_launch = true;
         else if (a == L"--test-update" && i + 1 < argc) // tests: as if GitHub had this release, no network
             g_test_update = argv[++i];
+        else if (a == L"--page" && i + 1 < argc)
+            g_start_page = _wtoi(argv[++i]);
     }
     LocalFree(argv);
+    // the language: the one chosen in the window (lang= in DDDA-Coop.ini), else Windows' if it is one of
+    // the five, else English
+    std::wstring lang = setting(L"lang", L"");
+    g_lang = -1;
+    for (int k = 0; k < LANG_COUNT; ++k)
+        if (_wcsicmp(lang.c_str(), kLangCodes[k]) == 0)
+            g_lang = k;
+    if (g_lang < 0)
+        switch (PRIMARYLANGID(GetUserDefaultUILanguage())) {
+        case LANG_FRENCH: g_lang = LANG_FR; break;
+        case LANG_ITALIAN: g_lang = LANG_IT; break;
+        case LANG_GERMAN: g_lang = LANG_DE; break;
+        case LANG_SPANISH: g_lang = LANG_ES; break;
+        default: g_lang = LANG_EN; break;
+        }
     g_steam_dir = steam_arg.empty() ? steam_dir() : steam_arg;
     g_game_dir = !game_arg.empty() ? game_arg : setting(L"game", L"");
     if (g_game_dir.empty())

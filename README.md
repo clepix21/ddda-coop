@@ -31,6 +31,7 @@
   installe le mod et lance le jeu par Steam.
 - **Un salon** : photos de profil Steam, niveau et ping de chaque joueur, et un code pour rejoindre
   un ami précis.
+- **En 5 langues** : la fenêtre existe en français, anglais, italien, allemand et espagnol.
 
 ## Installation
 
