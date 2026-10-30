@@ -1,0 +1,10 @@
+# Deep water test, host (saves/ocean.sav: the owner's save facing the sea, 2026-10-30 22:30): walks straight
+# ahead into the sea. Deep water must put it down where it last stood (revive), not drown it, and the
+# guest must see the same.
+wait 20000
+pad 0 0 0 32000 0 0 0 0 10000
+wait 12000
+pad 0 0 0 32000 0 0 0 0 10000
+wait 12000
+pad 0 0 0 32000 0 0 0 0 10000
+wait 25000

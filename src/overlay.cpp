@@ -263,11 +263,14 @@ void draw_badge(IDirect3DDevice9 *dev)
     bb->Release();
 }
 
+// The "DDDA Coop actif" badge is no longer drawn anywhere (owner, 2026-10-30: in game first, then the title
+// screen too). The Present hooks stay: they count the frames for the perf lines (prof.cpp). show_badge=1 in
+// coop.ini draws it again (tests, screenshots of the old look).
 bool badge_on()
 {
-    static int on = -1; // tests: test_badge_noop=1 hooks but draws nothing
+    static int on = -1;
     if (on < 0)
-        on = early_flag("test_badge_noop") ? 0 : 1;
+        on = early_flag("show_badge") ? 1 : 0;
     return on != 0;
 }
 

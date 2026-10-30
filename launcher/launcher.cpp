@@ -747,7 +747,7 @@ void note_backup(const std::wstring &where)
 void show_help()
 {
     MessageBoxW(g_wnd,
-                tr(L"Dans le jeu\n  \u2022 Invité : attends « Connecté ! » dans cette fenêtre avant d'appuyer sur Start.\n  \u2022 Explorer seul / revenir : LB + RB + Y maintenus 1,5 s (ou F7).\n  \u2022 Relever un joueur à terre : maintiens B à côté de lui (3 s).\n  \u2022 Saisir un joueur ou un petit monstre : RT.\n  \u2022 Le bandeau « DDDA Coop actif » (écran titre) dit que le mod tourne.\n\nIci\n  \u2022 Une copie de secours de tes sauvegardes est faite à chaque lancement ;\n    « Copier mes sauvegardes » en fait une tout de suite et ouvre le dossier.\n  \u2022 En cas de souci : « Exporter le journal » et envoie le fichier.\n  \u2022 Clavier : Alt + la lettre soulignée, Tab pour passer d'un élément à l'autre."),
+                tr(L"Dans le jeu\n  \u2022 Invité : attends « Connecté ! » dans cette fenêtre avant d'appuyer sur Start.\n  \u2022 Explorer seul / revenir : LB + RB + Y maintenus 1,5 s (ou F7).\n  \u2022 Relever un joueur à terre : maintiens B à côté de lui (3 s).\n  \u2022 Saisir un joueur ou un petit monstre : RT.\n\nIci\n  \u2022 Une copie de secours de tes sauvegardes est faite à chaque lancement ;\n    « Copier mes sauvegardes » en fait une tout de suite et ouvre le dossier.\n  \u2022 En cas de souci : « Exporter le journal » et envoie le fichier.\n  \u2022 Clavier : Alt + la lettre soulignée, Tab pour passer d'un élément à l'autre."),
                 tr(L"DDDA Coop \u2013 Aide"), MB_ICONINFORMATION | MB_OK);
 }
 

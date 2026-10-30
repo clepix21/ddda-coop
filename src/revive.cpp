@@ -231,7 +231,19 @@ void revive_game_tick(uintptr_t arisen)
         ++stood_n;
     }
     if (g_down && InterlockedExchange(&g_move_back, 0) && stood_n > 0) {
-        const float *to = stood[stood_n >= 2 ? 0 : 1];
+        // the older of the last two, or the newer, whichever is within 2000 u: a sample far from here (a load, a
+        // teleport in between) is not a place to put it back. (Stage 100's ground is near y 29850: the sea test
+        // put it back at y 29849, which is right there.)
+        const float *here = reinterpret_cast<const float *>(arisen + 0x40);
+        auto close_by = [&](const float *p) {
+            float dx = p[0] - here[0], dy = p[1] - here[1], dz = p[2] - here[2];
+            return dx * dx + dy * dy + dz * dz < 2000.f * 2000.f;
+        };
+        const float *to = stood_n >= 2 && close_by(stood[0]) ? stood[0] : close_by(stood[1]) ? stood[1] : nullptr;
+        if (!to) {
+            logf("revive: no place it stood near (%.0f, %.0f, %.0f): left where it is", here[0], here[1], here[2]);
+            to = here;
+        }
         memcpy(reinterpret_cast<void *>(arisen + 0x40), to, 12);
         for (uintptr_t off : {uintptr_t(0xE70), uintptr_t(0xE80), uintptr_t(0x1990)})
             memcpy(reinterpret_cast<void *>(arisen + off), to, 12);

@@ -1,18 +1,32 @@
-<p align="center"><b>English</b> · <a href="README.fr.md">Français</a></p>
+
 
 <p align="center">
   <img src="assets/readme/en/hero.svg" width="100%" alt="DDDA Coop: play Dragon's Dogma: Dark Arisen online with 1 to 3 friends, each with their own character in place of one of the host's pawns">
 </p>
-
+<p align="center"><b>English</b> · <a href="README.fr.md">Français</a></p>
 <p align="center">
   <a href="https://github.com/clepix21/ddda-coop/releases/latest"><b>Download</b></a> ·
   <a href="#install">Install</a> ·
   <a href="#play">Play</a> ·
   <a href="#good-to-know">Good to know</a> ·
   <a href="docs/TECHNICAL.md">Technical docs</a>
-  <br>
-  <sub>Alpha · Windows · Steam · launcher in English, français, italiano, Deutsch, español</sub>
 </p>
+
+<!-- badges: work/readme_badges.py -->
+<p align="center">
+  <img src="https://img.shields.io/badge/status-alpha-8b1e2b" alt="status: alpha">
+  <img src="https://img.shields.io/badge/version-0.9.2-8a6d3b" alt="version: 0.9.2">
+  <img src="https://img.shields.io/badge/players-2%E2%80%934-2b3137" alt="players: 2–4">
+  <img src="https://img.shields.io/badge/game-Dragon%27s%20Dogma%3A%20Dark%20Arisen-2b3137?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNic%2BPHBhdGggZmlsbD0nI2M4YTk2YScgZD0nTTggMWw2IDN2NWMwIDMtMyA1LTYgNi0zLTEtNi0zLTYtNlY0eicvPjwvc3ZnPg%3D%3D&logoColor=white" alt="game: Dragon's Dogma: Dark Arisen">
+<br>
+  <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNic%2BPHBhdGggZmlsbD0nd2hpdGUnIGQ9J00wIDBoNy41djcuNUgwek04LjUgMEgxNnY3LjVIOC41ek0wIDguNWg3LjVWMTZIMHpNOC41IDguNUgxNlYxNkg4LjV6Jy8%2BPC9zdmc%2B&logoColor=white" alt="Windows 10 / 11">
+  <img src="https://img.shields.io/badge/Steam-P2P-171a21?logo=steam&logoColor=white" alt="Steam P2P">
+  <img src="assets/readme/en/badge-languages.svg" alt="launcher: English, français, italiano, Deutsch, español">
+<br>
+  <img src="https://img.shields.io/badge/C%2B%2B-00599C?logo=cplusplus&logoColor=white" alt="C++">
+  <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python">
+</p>
+<!-- /badges -->
 
 <p align="center">
   <img src="assets/readme/en/launcher.png" width="100%" alt="The DDDA Coop window: the Play screen with the Host, Guest and Solo roles, and the lobby with the connected friends, their level and their ping">
