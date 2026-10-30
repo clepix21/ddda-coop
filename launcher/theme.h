@@ -29,9 +29,10 @@ constexpr int kRadiusCard = 14, kRadiusButton = 9, kRadiusSmall = 6;
 constexpr int kPadCard = 18, kGapSection = 24, kGapSmall = 12;
 
 // type: one family, few sizes
-// Inter, inside the exe (launcher.rc); without it Segoe UI Variable Text (Windows 11), then Segoe UI
-constexpr const wchar_t *kFontInter = L"Inter";
-constexpr const wchar_t *kFontInterSemiBold = L"Inter SemiBold"; // its own family name for GDI
+// Roboto (owner's choice over Inter, 2026-10-30), inside the exe (launcher.rc); without it Segoe UI Variable
+// Text (Windows 11), then Segoe UI
+constexpr const wchar_t *kFontRoboto = L"Roboto";
+constexpr const wchar_t *kFontRobotoMedium = L"Roboto Medium"; // Roboto has no SemiBold: Medium (500), its own family
 constexpr const wchar_t *kFontFamily = L"Segoe UI Variable Text";
 constexpr const wchar_t *kFontFallback = L"Segoe UI";
 constexpr int kSizeSmall = 9, kSizeBody = 10, kSizeTitle = 13, kSizeDisplay = 20; // points

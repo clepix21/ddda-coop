@@ -114,7 +114,7 @@ The build gives `build\dinput8.dll` (the mod), `build\DDDA-Coop.exe` (the window
 - **GrosGadjo** and **yaybba**: testers.
 - Developed with the help of **Claude** (Anthropic).
 - [MinHook](https://github.com/TsudaKageyu/minhook) (BSD 2-Clause licence) and the
-  [Inter](https://github.com/rsms/inter) font (SIL Open Font License 1.1): their licences are in
+  [Roboto](https://github.com/googlefonts/roboto-3-classic) font (SIL Open Font License 1.1): their licences are in
   [dist/LICENCES.txt](dist/LICENCES.txt).
 
 <sub>Unofficial mod, not affiliated with Capcom. Dragon's Dogma: Dark Arisen © Capcom. You need your

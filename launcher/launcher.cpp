@@ -1531,7 +1531,7 @@ void draw_button(const DRAWITEMSTRUCT *d)
         RECT ic = {card.left, card.top + px(8), card.right, card.top + px(32)};
         DrawTextW(dc, lang ? L"\uE774" : kPageIcons[page], -1, &ic, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
         SelectObject(dc, g_small);
-        RECT lb = {r.left + px(1), card.top + px(34), r.right - px(1), card.bottom - px(4)}; // the whole width: "Sauvegardes" in Inter
+        RECT lb = {r.left + px(1), card.top + px(34), r.right - px(1), card.bottom - px(4)}; // the whole width: "Sauvegardes" in a wide font
         DrawTextW(dc, lang ? kLangCodes[g_lang] : tr(kPageNames[page]), -1, &lb, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
         if (page == PAGE_LOG && g_log_unseen) {
             RECT dot = {ic.right - px(26), ic.top, ic.right - px(18), ic.top + px(8)};
@@ -1750,7 +1750,7 @@ void build_window()
     add(make(L"STATIC", tr(L"À propos"), 0, L, ay, W, 22, 0, g_bold));
     add(make(L"STATIC",
              (L"DDDA Coop v" + widen(DDDA_COOP_VERSION) +
-              tr(L", par clepix21.\nTesteurs : GrosGadjo et yaybba.\nDéveloppé avec l'aide de Claude (Anthropic).\nPolice Inter (SIL Open Font License 1.1) et MinHook (licence BSD) : voir LICENCES.txt. Mod non officiel, sans lien avec Capcom ; Dragon's Dogma: Dark Arisen © Capcom."))
+              tr(L", par clepix21.\nTesteurs : GrosGadjo et yaybba.\nDéveloppé avec l'aide de Claude (Anthropic).\nPolice Roboto (SIL Open Font License 1.1) et MinHook (licence BSD) : voir LICENCES.txt. Mod non officiel, sans lien avec Capcom ; Dragon's Dogma: Dark Arisen © Capcom."))
                  .c_str(),
              SS_NOPREFIX, L, ay + 28, W - 200, 88, 0));
     add(make(L"BUTTON", tr(L"Page du &projet"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 180, ay + 30, 180, 40, ID_PROJECT));
@@ -1917,7 +1917,13 @@ void pick_language(HWND h)
     if (pick < 1 || pick - 1 == g_lang)
         return;
     WritePrivateProfileStringW(L"launcher", L"lang", kLangCodes[pick - 1], settings_path().c_str());
-    std::wstring cmd = std::wstring(GetCommandLineW()) + L" --page " + std::to_wstring(g_page);
+    // the same command line without an earlier " --page N" (one more was added at each change)
+    std::wstring cmd = GetCommandLineW();
+    for (size_t at; (at = cmd.find(L" --page ")) != std::wstring::npos;) {
+        size_t end = cmd.find(L' ', at + 8);
+        cmd.erase(at, end == std::wstring::npos ? std::wstring::npos : end - at);
+    }
+    cmd += L" --page " + std::to_wstring(g_page);
     STARTUPINFOW si = {};
     si.cb = sizeof si;
     PROCESS_INFORMATION pi = {};
@@ -2108,8 +2114,8 @@ int CALLBACK font_found(const LOGFONTW *, const TEXTMETRICW *, DWORD, LPARAM l)
     return 0;
 }
 
-// Inter's three weights from the exe's resources (201-203), for this process only.
-bool load_inter()
+// Roboto's three weights from the exe's resources (201-203), for this process only.
+bool load_roboto()
 {
     for (int id = 201; id <= 203; ++id) {
         HRSRC r = FindResourceW(nullptr, MAKEINTRESOURCEW(id), MAKEINTRESOURCEW(10)); // RT_RCDATA
@@ -2196,13 +2202,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     g_dpi = GetDeviceCaps(screen, LOGPIXELSY);
     ReleaseDC(nullptr, screen);
     // 10 pt (a little larger than the system's 9 pt), headings 12 pt, title 18 pt
-    static bool inter = load_inter();
+    static bool roboto = load_roboto();
     auto font = [](int pt, int weight) {
         LOGFONTW f = {};
         f.lfHeight = -MulDiv(pt, g_dpi, 72);
         f.lfWeight = weight;
         f.lfQuality = CLEARTYPE_QUALITY;
-        wcscpy(f.lfFaceName, !inter ? font_family() : weight == FW_SEMIBOLD ? theme::kFontInterSemiBold : theme::kFontInter);
+        wcscpy(f.lfFaceName, !roboto ? font_family() : weight == FW_SEMIBOLD ? theme::kFontRobotoMedium : theme::kFontRoboto);
         return CreateFontIndirectW(&f);
     };
     g_font = font(theme::kSizeBody, FW_NORMAL);

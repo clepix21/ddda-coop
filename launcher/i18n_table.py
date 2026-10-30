@@ -427,11 +427,11 @@ T = [
      'Quita dinput8.dll y coop.ini de la carpeta del juego: el juego vuelve a iniciarse en modo normal de un jugador. Tus partidas no se tocan. Se pide confirmación.'),
     (r'&Retirer le mod', '&Remove the mod', '&Rimuovi la mod', 'Mod &entfernen', '&Quitar el mod'),
     (r'À propos', 'About', 'Informazioni', 'Über', 'Acerca de'),
-    (r', par clepix21.\nTesteurs : GrosGadjo et yaybba.\nDéveloppé avec l\'aide de Claude (Anthropic).\nPolice Inter (SIL Open Font License 1.1) et MinHook (licence BSD) : voir LICENCES.txt. Mod non officiel, sans lien avec Capcom ; Dragon\'s Dogma: Dark Arisen © Capcom.',
-     ', by clepix21.\nTesters: GrosGadjo and yaybba.\nDeveloped with the help of Claude (Anthropic).\nInter font (SIL Open Font License 1.1) and MinHook (BSD licence): see LICENCES.txt. Unofficial mod, not affiliated with Capcom; Dragon\'s Dogma: Dark Arisen © Capcom.',
-     ', di clepix21.\nTester: GrosGadjo e yaybba.\nSviluppata con l\'aiuto di Claude (Anthropic).\nFont Inter (SIL Open Font License 1.1) e MinHook (licenza BSD): vedi LICENCES.txt. Mod non ufficiale, non affiliata a Capcom; Dragon\'s Dogma: Dark Arisen © Capcom.',
-     ', von clepix21.\nTester: GrosGadjo und yaybba.\nEntwickelt mit Hilfe von Claude (Anthropic).\nSchrift Inter (SIL Open Font License 1.1) und MinHook (BSD-Lizenz): siehe LICENCES.txt. Inoffizielle Mod, nicht mit Capcom verbunden; Dragon\'s Dogma: Dark Arisen © Capcom.',
-     ', por clepix21.\nProbadores: GrosGadjo y yaybba.\nDesarrollado con la ayuda de Claude (Anthropic).\nFuente Inter (SIL Open Font License 1.1) y MinHook (licencia BSD): consulta LICENCES.txt. Mod no oficial, sin relación con Capcom; Dragon\'s Dogma: Dark Arisen © Capcom.'),
+    (r', par clepix21.\nTesteurs : GrosGadjo et yaybba.\nDéveloppé avec l\'aide de Claude (Anthropic).\nPolice Roboto (SIL Open Font License 1.1) et MinHook (licence BSD) : voir LICENCES.txt. Mod non officiel, sans lien avec Capcom ; Dragon\'s Dogma: Dark Arisen © Capcom.',
+     ', by clepix21.\nTesters: GrosGadjo and yaybba.\nDeveloped with the help of Claude (Anthropic).\nRoboto font (SIL Open Font License 1.1) and MinHook (BSD licence): see LICENCES.txt. Unofficial mod, not affiliated with Capcom; Dragon\'s Dogma: Dark Arisen © Capcom.',
+     ', di clepix21.\nTester: GrosGadjo e yaybba.\nSviluppata con l\'aiuto di Claude (Anthropic).\nFont Roboto (SIL Open Font License 1.1) e MinHook (licenza BSD): vedi LICENCES.txt. Mod non ufficiale, non affiliata a Capcom; Dragon\'s Dogma: Dark Arisen © Capcom.',
+     ', von clepix21.\nTester: GrosGadjo und yaybba.\nEntwickelt mit Hilfe von Claude (Anthropic).\nSchrift Roboto (SIL Open Font License 1.1) und MinHook (BSD-Lizenz): siehe LICENCES.txt. Inoffizielle Mod, nicht mit Capcom verbunden; Dragon\'s Dogma: Dark Arisen © Capcom.',
+     ', por clepix21.\nProbadores: GrosGadjo y yaybba.\nDesarrollado con la ayuda de Claude (Anthropic).\nFuente Roboto (SIL Open Font License 1.1) y MinHook (licencia BSD): consulta LICENCES.txt. Mod no oficial, sin relación con Capcom; Dragon\'s Dogma: Dark Arisen © Capcom.'),
     (r'Page du &projet', '&Project page', 'Pagina del &progetto', '&Projektseite', 'Página del &proyecto'),
 
     # log screen
