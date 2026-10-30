@@ -2252,6 +2252,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     RECT need = {0, 0, MulDiv(kW, g_dpi, 96), MulDiv(g_height, g_dpi, 96)};
     AdjustWindowRect(&need, style, FALSE);
     SetWindowPos(h, nullptr, 0, 0, need.right - need.left, need.bottom - need.top, SWP_NOMOVE | SWP_NOZORDER);
+    // the title bar's and taskbar's small icon from its own 16/24 px frame (Windows would shrink the 32 px one)
+    if (HANDLE small = LoadImageW(inst, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
+                                  GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR))
+        SendMessageW(h, WM_SETICON, ICON_SMALL, LPARAM(small));
     BOOL dark = TRUE; // a dark title bar to match (DWMWA_USE_IMMERSIVE_DARK_MODE, Windows 10 2004+)
     DwmSetWindowAttribute(h, 20, &dark, sizeof dark);
     // Alt letters and focus rings hidden until the keyboard is used, as Windows does in dialogs

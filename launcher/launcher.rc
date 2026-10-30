@@ -1,5 +1,7 @@
 #include <winuser.h>
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "launcher.manifest"
+// the window, taskbar and file icon: Dark Arisen's dragon (SteamGridDB icon ed6aaa88...) with a white "+"
+1 ICON "launcher.ico"
 // Inter 4.1 (SIL Open Font License 1.1, fonts/Inter-OFL.txt), loaded for this window only
 201 RCDATA "fonts/Inter-Regular.ttf"
 202 RCDATA "fonts/Inter-SemiBold.ttf"
