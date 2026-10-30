@@ -1,7 +1,7 @@
 r"""Checks a special deaths run (suite_revive_special.ps1, shared world): the guest's game death action
 (cPlActDead, as an instant death) puts it down and the host helps it up; a lethal fall puts it down
-where it last stood and after 60 s alone it comes back next to the host; the game's own death never
-runs. Prints PASS/FAIL lines. Usage: check_revive_special.py <dir>"""
+where it last stood and after 60 s alone it comes back next to the host; deep water puts it back on the
+shore at once; the game's own death never runs. Prints PASS/FAIL lines. Usage: check_revive_special.py <dir>"""
 import re
 import sys
 
@@ -33,8 +33,10 @@ if len(wh) >= 4 and lift:
 else:
     check(False, f"after the fall it is back on the ground (where lines: {len(wh)})")
 check(any("revive: up again (next to another player)" in ln for ln in guest), "nobody helped: after 60 s it came back next to the host")
-check(any("revive: down (cPlActDipWater)" in ln for ln in guest), "deep water (the game's drowning action) put the guest down instead")
-check(sum("revive: up again (next to another player)" in ln for ln in guest) >= 2, "after the water too it came back next to the host")
+# deep water: back on the shore at once, standing (owner, 2026-10-30), no down and no 60 s wait
+check(any("revive: deep water (cPlActDipWater): back on the shore" in ln for ln in guest)
+      and any("revive: back on the shore at" in ln for ln in guest), "deep water (the game's drowning action) put the guest back on the shore at once")
+check(not any("revive: down (cPlActDipWater)" in ln for ln in guest), "deep water did not put it down")
 check(not any("every player is down" in ln for ln in guest), "the game's own death never ran")
 hw = [(float(m[1]), float(m[2])) for ln in host for m in [re.search(r"bridge: where (-?\d+) -?\d+ (-?\d+)", ln)] if m]
 if wh and hw:

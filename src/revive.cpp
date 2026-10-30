@@ -33,6 +33,7 @@ DWORD g_down_at = 0;
 volatile LONG g_get_up = 0;        // game thread: 1 = helped up here, 2 = come back next to `g_to`
 volatile LONG g_die = 0;           // game thread: every player is down, let the game's death run
 volatile LONG g_move_back = 0;     // game thread: down by a fall, water or an instant death: put it back
+volatile LONG g_shore = 0;         // game thread: out of deep water, back on its feet where it last stood
 float g_to[3] = {};
 int32_t g_to_stage = -1;
 DWORD g_help_since = 0;
@@ -95,6 +96,13 @@ bool revive_on_fatal(uintptr_t ch, const char *why, bool move_back)
         return false;
     if (g_down)
         return true;
+    // deep water (the sea gives cPlActDmgHugebleDead, ocean test 2026-10-30): no death and no wait, back on
+    // the shore at once with a little less HP (owner: 60 s down in the sea was too long), alone or not
+    if (why && (strstr(why, "DipWater") || strstr(why, "HugebleDead"))) {
+        if (!InterlockedExchange(&g_shore, 1))
+            logf("revive: deep water (%s): back on the shore", why);
+        return true;
+    }
     if (someone_up(false, nullptr) < 0)
         return false; // nobody to help: the game's own death
     g_down_at = GetTickCount() | 1;
@@ -229,6 +237,25 @@ void revive_game_tick(uintptr_t arisen)
         memcpy(stood[1], reinterpret_cast<void *>(arisen + 0x40), sizeof stood[1]);
         stood_at = now | 1;
         ++stood_n;
+    }
+    if (InterlockedExchange(&g_shore, 0)) {
+        const float *here = reinterpret_cast<const float *>(arisen + 0x40);
+        const float *to = here;
+        for (int k = 0; k < 2 && to == here; ++k) { // the older place first: the newer one may be in the water
+            const float *p = stood[k];
+            float dx = p[0] - here[0], dy = p[1] - here[1], dz = p[2] - here[2];
+            if (stood_n > 1 - k && dx * dx + dy * dy + dz * dz < 2000.f * 2000.f)
+                to = p;
+        }
+        float at[3] = {to[0], to[1], to[2]};
+        for (uintptr_t off : {uintptr_t(0x40), uintptr_t(0xE70), uintptr_t(0xE80), uintptr_t(0x1990)})
+            memcpy(reinterpret_cast<void *>(arisen + off), at, 12);
+        action_set(arisen, 0); // standing
+        if (float *hp = enemies_hp(arisen)) { // a tenth of its HP, never the last one
+            float cut = hp[1] > 0.f ? hp[1] * 0.1f : 0.f;
+            hp[0] = hp[0] - cut < 1.f ? 1.f : hp[0] - cut;
+        }
+        logf("revive: back on the shore at (%.0f, %.0f, %.0f)%s", at[0], at[1], at[2], to == here ? " (no place it stood near)" : "");
     }
     if (g_down && InterlockedExchange(&g_move_back, 0) && stood_n > 0) {
         // the older of the last two, or the newer, whichever is within 2000 u: a sample far from here (a load, a
