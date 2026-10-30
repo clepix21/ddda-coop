@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">DDDA Coop</title>
+  <desc id="desc">DDDA Coop, online co-op for Dragon's Dogma: Dark Arisen on PC. The host's party has four places: the host's Arisen, and up to three friends who each take the place of a pawn with their own character.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22161b"/>
+      <stop offset="0.55" stop-color="#16181c"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="420" rx="24" fill="url(#bg)"/>
+
+  <!-- title block -->
+  <g id="title-block" font-family="Segoe UI, -apple-system, BlinkMacSystemFont, sans-serif">
+    <text x="60" y="78" fill="#9aa0a6" font-family="ui-monospace, SFMono-Regular, Consolas, Menlo, monospace" font-size="18" letter-spacing="2">MOD CO-OP · DRAGON'S DOGMA: DARK ARISEN · PC STEAM</text>
+    <text x="56" y="168" fill="#e6e6e6" font-size="84" font-weight="700">DDDA Coop</text>
+    <rect x="60" y="192" width="88" height="6" rx="3" fill="#8b1e2b"/>
+    <text x="60" y="246" fill="#e6e6e6" font-size="28">Play online with 1 to 3 friends.</text>
+    <text x="60" y="284" fill="#b9bec4" font-size="24">Each keeps their own character, level and gear,</text>
+    <text x="60" y="316" fill="#b9bec4" font-size="24">and takes the place of one of the host's pawns.</text>
+    <text x="60" y="372" fill="#9aa0a6" font-family="ui-monospace, SFMono-Regular, Consolas, Menlo, monospace" font-size="18">2–4 players · shared world · launcher in 5 languages</text>
+  </g>
+
+  <!-- the host's party: four places -->
+  <g id="party" font-family="Segoe UI, -apple-system, BlinkMacSystemFont, sans-serif" transform="translate(720 52)">
+    <text x="0" y="22" fill="#9aa0a6" font-family="ui-monospace, SFMono-Regular, Consolas, Menlo, monospace" font-size="18" letter-spacing="2">THE HOST'S PARTY</text>
+
+    <!-- 1: the host's Arisen -->
+    <g transform="translate(0 44)">
+      <rect width="420" height="64" rx="14" fill="#1f2228" stroke="#c8a96a" stroke-width="2"/>
+      <path d="M38 14 L54 22 L54 40 Q54 50 38 56 Q22 50 22 40 L22 22 Z" fill="#c8a96a"/>
+      <text x="76" y="30" fill="#e6e6e6" font-size="22" font-weight="600">The host</text>
+      <text x="76" y="52" fill="#9aa0a6" font-size="18">their Arisen, their world</text>
+    </g>
+
+    <!-- 2-4: pawns taken by friends -->
+    <g transform="translate(0 122)">
+      <rect width="420" height="64" rx="14" fill="#2a1d22" stroke="#8b1e2b" stroke-width="2"/>
+      <path d="M38 14 L54 22 L54 40 Q54 50 38 56 Q22 50 22 40 L22 22 Z" fill="#8b1e2b"/>
+      <text x="76" y="30" fill="#e6e6e6" font-size="22" font-weight="600">Friend 1</text>
+      <text x="76" y="52" fill="#9aa0a6" font-size="18">their own character</text>
+      <text x="404" y="42" fill="#7c8188" font-size="18" text-anchor="end"><tspan text-decoration="line-through">main pawn</tspan></text>
+    </g>
+    <g transform="translate(0 200)">
+      <rect width="420" height="64" rx="14" fill="#2a1d22" stroke="#8b1e2b" stroke-width="2"/>
+      <path d="M38 14 L54 22 L54 40 Q54 50 38 56 Q22 50 22 40 L22 22 Z" fill="#8b1e2b"/>
+      <text x="76" y="30" fill="#e6e6e6" font-size="22" font-weight="600">Friend 2</text>
+      <text x="76" y="52" fill="#9aa0a6" font-size="18">their own character</text>
+      <text x="404" y="42" fill="#7c8188" font-size="18" text-anchor="end"><tspan text-decoration="line-through">hired pawn</tspan></text>
+    </g>
+    <g transform="translate(0 278)">
+      <rect width="420" height="64" rx="14" fill="none" stroke="#3a3f47" stroke-width="2" stroke-dasharray="8 7"/>
+      <path d="M38 14 L54 22 L54 40 Q54 50 38 56 Q22 50 22 40 L22 22 Z" fill="none" stroke="#5a6068" stroke-width="2"/>
+      <text x="76" y="30" fill="#b9bec4" font-size="22" font-weight="600">Friend 3</text>
+      <text x="76" y="52" fill="#7c8188" font-size="18">free slot</text>
+      <text x="404" y="42" fill="#7c8188" font-size="18" text-anchor="end">hired pawn</text>
+    </g>
+  </g>
+</svg>

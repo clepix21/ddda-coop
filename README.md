@@ -1,110 +1,121 @@
-<h1 align="center">DDDA Coop</h1>
+<p align="center"><b>English</b> · <a href="README.fr.md">Français</a></p>
 
 <p align="center">
-  <b>Le co-op en ligne pour Dragon's Dogma: Dark Arisen.</b><br>
-  De 2 à 4 joueurs sur Steam, chacun sur son PC, chacun avec son propre perso.
+  <img src="assets/readme/en/hero.svg" width="100%" alt="DDDA Coop: play Dragon's Dogma: Dark Arisen online with 1 to 3 friends, each with their own character in place of one of the host's pawns">
 </p>
 
 <p align="center">
-  <a href="https://github.com/clepix21/ddda-coop/releases/latest">Télécharger</a> ·
-  <a href="#installation">Installation</a> ·
-  <a href="#problèmes-connus">Problèmes connus</a> ·
-  <a href="docs/TECHNICAL.md">Documentation technique (en anglais)</a>
+  <a href="https://github.com/clepix21/ddda-coop/releases/latest"><b>Download</b></a> ·
+  <a href="#install">Install</a> ·
+  <a href="#play">Play</a> ·
+  <a href="#good-to-know">Good to know</a> ·
+  <a href="docs/TECHNICAL.md">Technical docs</a>
+  <br>
+  <sub>Alpha · Windows · Steam · launcher in English, français, italiano, Deutsch, español</sub>
 </p>
 
-<p align="center"><img src="docs/launcher.png" alt="La fenêtre de DDDA Coop" width="720"></p>
+<p align="center">
+  <img src="assets/readme/en/launcher.png" width="100%" alt="The DDDA Coop window: the Play screen with the Host, Guest and Solo roles, and the lobby with the connected friends, their level and their ping">
+</p>
 
-> **Alpha.** Testé surtout par des bots, et lors d'une première soirée entre amis. Attends-toi à des
-> bugs, et garde le « Journal détaillé » activé pour pouvoir les signaler.
+<!-- In-game screenshots: replace assets/readme/en/ingame-1.svg, -2 and -3 (and fr/ for the French page)
+     with your screenshots (same name as .png or .jpg, and change the extension below). 16:9, 1280 px wide. -->
+<p align="center">
+  <img src="assets/readme/en/ingame-1.svg" width="32%" alt="In-game screenshot to come: fighting together">
+  <img src="assets/readme/en/ingame-2.svg" width="32%" alt="In-game screenshot to come: helping a friend up">
+  <img src="assets/readme/en/ingame-3.svg" width="32%" alt="In-game screenshot to come: everyone's own character">
+</p>
 
-## Ce que ça fait
+## In short
 
-- **Joue ensemble** : l'hôte joue son Insurgé (Arisen) comme d'habitude. Jusqu'à trois amis le
-  rejoignent, et chacun prend la place d'un de ses pions.
-- **Ton propre perso** : chaque invité arrive avec le sien (apparence, nom, vocation, niveau,
-  équipement), tiré de sa propre sauvegarde.
-- **Un monde partagé** : ennemis, butin, quêtes et expérience sont synchronisés. Chacun peut partir
-  explorer de son côté.
-- **Ta progression est gardée** : ce que ton perso gagne chez un ami (expérience, discipline,
-  objets) est ajouté à ta partie solo.
-- **Rien à configurer** : la fenêtre trouve le jeu, sauvegarde tes parties avant chaque lancement,
-  installe le mod et lance le jeu par Steam.
-- **Un salon** : photos de profil Steam, niveau et ping de chaque joueur, et un code pour rejoindre
-  un ami précis.
-- **En 5 langues** : la fenêtre existe en français, anglais, italien, allemand et espagnol.
+The host plays their game as usual. Up to three Steam friends join, each on their own PC and with
+**their own character** (look, vocation, level, gear) taking the place of a pawn. Monsters, loot,
+quests and experience are shared. What your character earns at a friend's comes back to your solo game.
 
-## Installation
+## How it works
 
-1. Télécharge le dernier `DDDA-Coop-vX.Y.Z.zip` dans les
-   [Releases](https://github.com/clepix21/ddda-coop/releases) et dézippe-le où tu veux.
-2. Ouvre `DDDA-Coop.exe`.
-3. Choisis ton rôle (**Hôte**, **Invité** ou **Seul**), puis clique sur **Lancer le jeu**.
+<p align="center">
+  <img src="assets/readme/en/how-it-works.svg" width="100%" alt="The host's PC keeps the reference world. Over Steam, each friend receives a copy of that world and plays their own character in it. Positions, actions and skills go both ways; monsters come from the host; loot, quests and experience are shared; a downed player can be helped up.">
+</p>
 
-Tout le monde doit avoir **la même version** du mod. Si ce n'est pas le cas, la fenêtre le dit.
+Only the host saves: a guest's game is never overwritten. Each player can also go off exploring on
+their own and come back whenever they like.
 
-**Prérequis :** Dragon's Dogma: Dark Arisen sur **Steam**, version PC actuelle (build 2364871).
-Sur une autre version du jeu, le mod se désactive tout seul.
+## Install
 
-## Jouer
+1. Download `DDDA-Coop-vX.Y.Z.zip` from the [Releases](https://github.com/clepix21/ddda-coop/releases)
+   and unzip it anywhere.
+2. Open `DDDA-Coop.exe`. It finds the game by itself and backs up your saves before each launch.
+3. Choose your role (**Host**, **Guest** or **Solo**), then click **Launch the game**.
 
-| | Hôte | Invité |
-|---|---|---|
-| Avant | Lance le jeu et charge ta partie | Lance le jeu et reste sur l'écran titre |
-| Connexion | Les amis Steam qui ont le mod te rejoignent tout seuls | Attends « Connecté ! » dans la fenêtre, puis appuie sur Start |
-| Pendant | Tu joues normalement | Tu remplaces un des pions de l'hôte |
-| Sauvegarde | Ta partie est sauvegardée normalement | Ta partie n'est jamais écrasée, et tes gains sont gardés pour ta partie solo |
+You need Dragon's Dogma: Dark Arisen on **Steam** (build 2364871, the current PC version). Everyone
+needs **the same version of the mod**: the window warns you otherwise.
 
-Si plusieurs amis hébergent en même temps : l'hôte ouvre **Salon** et clique sur **Copier le
-code**, puis l'invité colle ce code dans son propre **Salon** avant de lancer.
+## Play
 
-Le fichier `LISEZMOI.txt` du zip détaille tout, touches comprises.
+**The host** launches the game and loads their save. Their Steam friends who have the mod join by
+themselves.
 
-## Problèmes connus
+**A guest** launches the game and stays on the title screen until the window shows "Connected!",
+then presses Start and loads a game: the host's world is what comes in.
 
-- Avec 3 joueurs, les autres joueurs peuvent glisser ou sauter un peu, et les coups touchent avec
-  un léger retard. C'est en cours d'analyse.
-- Pas encore testés : les arcs, la Mort (sur l'Île du Crépuscule), l'eau profonde, les longues
-  sessions.
-- Une seule caméra par PC, qui suit ton propre perso. Les cinématiques sont jouées par chaque jeu
-  de son côté.
-- Les fonctions en ligne du jeu (la Faille, les pions d'autres joueurs) ne sont pas prises en
-  charge par le mod. Évite-les pendant une partie en co-op.
+Several friends hosting at the same time? The host opens **Lobby** › **Copy the code**, and the guest
+pastes that code in their own **Lobby** before launching.
 
-Un bug ? Ouvre une [issue](https://github.com/clepix21/ddda-coop/issues) et joins le journal
-(écran **Journal** du launcher, bouton **Exporter le journal**).
+The controls and every detail are in `LISEZMOI.txt` (French), inside the zip.
 
-## Questions fréquentes
+## Good to know
 
-**Est-ce que ça touche à mes sauvegardes ?** Avant chaque lancement, la fenêtre copie tes
-sauvegardes dans `Documents\DDDA Coop\Sauvegardes`. Le jeu d'un invité ne sauvegarde jamais.
+- **After the tutorial only.** Co-op starts once the host and each guest have a character that has
+  finished the tutorial, that is, with its main pawn. On a new game, play it alone first.
+- **Alpha.** Tested mostly by bots and during one evening with friends. Keep "Detailed log" on
+  (Settings) so you can report a bug.
+- Other players may still slide a little on an uneven connection (improved in 0.9.2).
+- Not tested yet: Death (Bitterblack Isle), deep water, long sessions.
+- The game's online features (the Rift, other players' pawns) are not supported by the mod: avoid them
+  during a co-op game.
 
-**Comment revenir au jeu normal ?** Ouvre **Paramètres**, puis clique sur **Retirer le mod**. Tu
-peux aussi supprimer `dinput8.dll` et `coop.ini` du dossier du jeu.
+Found a bug? Open an [issue](https://github.com/clepix21/ddda-coop/issues) and attach the log (**Log**
+screen › **Export the log**).
 
-**Est-ce que ça marche hors de Steam ?** Non pour le moment. Il y a un mode réseau local pour les
-tests (voir la documentation technique).
+<details>
+<summary><b>FAQ</b></summary>
 
-## Compiler depuis les sources
+**Does it touch my saves?** Before each launch, the window copies your saves to
+`Documents\DDDA Coop\Sauvegardes`. A guest's game never saves.
 
-Il faut Windows, [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) et
-[MinHook](https://github.com/TsudaKageyu/minhook) 1.3.4 :
+**How do I go back to the normal game?** **Settings** › **Remove the mod**. You can also delete
+`dinput8.dll` and `coop.ini` from the game folder.
+
+**Does it work outside Steam?** Not for now. There is a local network mode for tests (see the
+technical docs).
+
+</details>
+
+<details>
+<summary><b>Build from source</b></summary>
+
+You need Windows, [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) and
+[MinHook](https://github.com/TsudaKageyu/minhook) 1.3.4:
 
 ```powershell
-.\build.ps1 -Toolchain <dossier llvm-mingw> -MinHook <dossier minhook>
+.\build.ps1 -Toolchain <llvm-mingw folder> -MinHook <minhook folder>
 ```
 
-La compilation donne `build\dinput8.dll` (le mod), `build\DDDA-Coop.exe` (la fenêtre) et
-`build\DDDA-Coop.zip`. Le fonctionnement et les tests automatiques sont décrits dans
+The build gives `build\dinput8.dll` (the mod), `build\DDDA-Coop.exe` (the window) and
+`build\DDDA-Coop.zip`. How it works and the automated tests are described in
 [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
-## Crédits
+</details>
 
-- **clepix21** : auteur du mod.
-- **GrosGadjo** et **yaybba** : testeurs.
-- Développé avec l'aide de **Claude** (Anthropic).
-- [MinHook](https://github.com/TsudaKageyu/minhook) (licence BSD 2-Clause) et la police
-  [Inter](https://github.com/rsms/inter) (SIL Open Font License 1.1). Les textes de ces licences
-  sont dans [dist/LICENCES.txt](dist/LICENCES.txt).
+## Credits
 
-Mod non officiel, sans lien avec Capcom. Dragon's Dogma: Dark Arisen © Capcom. Il te faut ta propre
-copie du jeu : ce dépôt ne contient aucun fichier du jeu.
+- **clepix21**: author of the mod.
+- **GrosGadjo** and **yaybba**: testers.
+- Developed with the help of **Claude** (Anthropic).
+- [MinHook](https://github.com/TsudaKageyu/minhook) (BSD 2-Clause licence) and the
+  [Inter](https://github.com/rsms/inter) font (SIL Open Font License 1.1): their licences are in
+  [dist/LICENCES.txt](dist/LICENCES.txt).
+
+<sub>Unofficial mod, not affiliated with Capcom. Dragon's Dogma: Dark Arisen © Capcom. You need your
+own copy of the game: this repository contains no game files.</sub>

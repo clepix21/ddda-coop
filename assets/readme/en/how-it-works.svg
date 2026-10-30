@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc">
+  <title id="title">How DDDA Coop works</title>
+  <desc id="desc">The host's PC holds the reference world. Over Steam, each friend's PC receives a copy of that world and plays its own character in it. Positions, actions and skills go both ways; enemies, their health and deaths come from the host; loot, quests and experience are shared; a downed player can be helped up by another.</desc>
+
+  <rect width="1200" height="500" rx="24" fill="#16181c"/>
+
+  <g font-family="Segoe UI, -apple-system, BlinkMacSystemFont, sans-serif">
+    <!-- the host's PC -->
+    <g id="host" transform="translate(48 56)">
+      <rect width="330" height="388" rx="18" fill="#1f2228" stroke="#c8a96a" stroke-width="2"/>
+      <path d="M44 34 L62 43 L62 63 Q62 74 44 80 Q26 74 26 63 L26 43 Z" fill="#c8a96a"/>
+      <text x="80" y="54" fill="#e6e6e6" font-size="26" font-weight="700">Host's PC</text>
+      <text x="80" y="80" fill="#9aa0a6" font-size="20">the reference world</text>
+      <g fill="#b9bec4" font-size="21">
+        <text x="28" y="150">• their game and save</text>
+        <text x="28" y="194">• the monsters and their HP</text>
+        <text x="28" y="238">• loot and quests</text>
+        <text x="28" y="282">• the time of day</text>
+      </g>
+      <text x="28" y="350" fill="#7c8188" font-size="18">Only the host saves.</text>
+    </g>
+
+    <!-- the links over Steam -->
+    <g id="links" transform="translate(402 70)">
+      <text x="198" y="16" fill="#9aa0a6" font-family="ui-monospace, SFMono-Regular, Consolas, Menlo, monospace" font-size="18" letter-spacing="2" text-anchor="middle">OVER STEAM</text>
+      <g font-size="20" fill="#e6e6e6">
+        <g transform="translate(0 52)">
+          <path d="M8 22 H388" stroke="#8b1e2b" stroke-width="3"/><path d="M376 13 L392 22 L376 31 Z" fill="#8b1e2b"/>
+          <text x="198" y="10" text-anchor="middle">their world, at the start</text>
+        </g>
+        <g transform="translate(0 118)">
+          <path d="M8 22 H388" stroke="#8b1e2b" stroke-width="3"/><path d="M376 13 L392 22 L376 31 Z" fill="#8b1e2b"/><path d="M20 13 L4 22 L20 31 Z" fill="#8b1e2b"/>
+          <text x="198" y="10" text-anchor="middle">positions, actions, skills</text>
+        </g>
+        <g transform="translate(0 184)">
+          <path d="M8 22 H388" stroke="#8b1e2b" stroke-width="3"/><path d="M376 13 L392 22 L376 31 Z" fill="#8b1e2b"/>
+          <text x="198" y="10" text-anchor="middle">monsters: place, HP, death</text>
+        </g>
+        <g transform="translate(0 250)">
+          <path d="M8 22 H388" stroke="#8b1e2b" stroke-width="3"/><path d="M376 13 L392 22 L376 31 Z" fill="#8b1e2b"/><path d="M20 13 L4 22 L20 31 Z" fill="#8b1e2b"/>
+          <text x="198" y="10" text-anchor="middle">loot, quests, experience</text>
+        </g>
+        <g transform="translate(0 316)">
+          <path d="M8 22 H388" stroke="#8b1e2b" stroke-width="3"/><path d="M376 13 L392 22 L376 31 Z" fill="#8b1e2b"/><path d="M20 13 L4 22 L20 31 Z" fill="#8b1e2b"/>
+          <text x="198" y="10" text-anchor="middle">downed, helped up</text>
+        </g>
+      </g>
+    </g>
+
+    <!-- each friend's PC -->
+    <g id="friend" transform="translate(822 56)">
+      <rect width="330" height="388" rx="18" fill="#2a1d22" stroke="#8b1e2b" stroke-width="2"/>
+      <path d="M44 34 L62 43 L62 63 Q62 74 44 80 Q26 74 26 63 L26 43 Z" fill="#8b1e2b"/>
+      <text x="80" y="54" fill="#e6e6e6" font-size="26" font-weight="700">A friend's PC</text>
+      <text x="80" y="80" fill="#9aa0a6" font-size="20">up to three</text>
+      <g fill="#b9bec4" font-size="21">
+        <text x="28" y="150">• a copy of the host's world</text>
+        <text x="28" y="194">• their own character, in</text>
+        <text x="40" y="222">place of a pawn</text>
+        <text x="28" y="266">• can explore on their own</text>
+      </g>
+      <text x="28" y="350" fill="#7c8188" font-size="18">Gains go to their solo game.</text>
+    </g>
+  </g>
+</svg>
