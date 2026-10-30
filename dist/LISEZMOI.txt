@@ -1,4 +1,4 @@
-DDDA Coop 0.9.0 (alpha) - Dragon's Dogma: Dark Arisen à 2 à 4 joueurs, sur Steam
+DDDA Coop 0.9.1 (alpha) - Dragon's Dogma: Dark Arisen à 2 à 4 joueurs, sur Steam
 ==========================================================================
 
 Chaque joueur a le jeu sur Steam, sur son propre PC. Les invités doivent être amis Steam avec
@@ -7,13 +7,13 @@ l'hôte. Pas d'adresse IP ni de port à régler.
 Dans ce dossier : DDDA-Coop.exe (la fenêtre de réglage), dinput8.dll (le mod), coop.ini (modèle).
 Garde les trois fichiers ensemble, n'importe où (Bureau, Documents...).
 
-Tout le monde doit avoir cette version (0.9.0) : une autre version ne se connecte pas, et la
+Tout le monde doit avoir cette version (0.9.1) : une autre version ne se connecte pas, et la
 fenêtre le dit.
 
 La fenêtre
 ----------
 À gauche, une barre d'écrans : Jouer, Salon, Sauvegardes, Paramètres, Journal (Ctrl+1 à 5).
-En haut de « Jouer » : « DDDA détecté · Mod v0.9.0 ». Le bouton « ? Aide » rappelle les touches.
+En haut de « Jouer » : « DDDA détecté · Mod v0.9.1 ». Le bouton « ? Aide » rappelle les touches.
 
 Pour jouer
 ----------

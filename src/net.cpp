@@ -1006,7 +1006,10 @@ void shared_apply_transform(uintptr_t ch, int i)
     static DWORD next_log[kParty] = {};
     if (!next_log[i] || int(GetTickCount() - next_log[i]) >= 0) {
         next_log[i] = GetTickCount() + 1000;
-        logf("net: shared: party %d shows another player, error %.1f u before correction, HP %.1f", i, err, s.hp);
+        // age and speed: a steady ~150 u error with three players on Steam (evening test 2026-10-30) is
+        // unexplained; a state 0.24 s old or more puts the target the whole 0.3 s ahead
+        logf("net: shared: party %d shows another player, error %.1f u before correction, HP %.1f (state %d ms old, %.0f u/s)",
+             i, err, s.hp, int(age * 1000.f), std::sqrt(vel[0] * vel[0] + vel[2] * vel[2]));
     }
 }
 
@@ -1254,8 +1257,13 @@ void receive_all()
         if (n < int(sizeof(Header)))
             continue;
         auto h = reinterpret_cast<const Header *>(buf);
-        if (other_version(h->magic) && !InterlockedExchange(&g_old_peer, 1))
-            logf("net: a player has an older version of the mod (its messages are not read): every player needs this one");
+        // the host's 9-byte hello (steam_link.cpp) keeps the first format, 'DDCO' type 0: not another version
+        // (it raised the alarm on every guest, evening test 2026-10-30)
+        bool hello = h->magic == 0x4F434444 && h->type == 0 && n == 9;
+        if (!hello && other_version(h->magic) && !InterlockedExchange(&g_old_peer, 1))
+            logf("net: a player has an older version of the mod (its messages are not read): every player needs this one"
+                 " (format %08X, %d bytes, type %u, from ...%04u)",
+                 unsigned(h->magic), n, unsigned(h->type), unsigned(from_steam % 10000));
         if (h->magic != kMagic)
             continue;
         // which player sent it: the guest has one peer, its host
@@ -1914,6 +1922,7 @@ void write_status(DWORD now)
         out += line;
     }
     // the launcher's salon: each player's level and ping, this player's Steam id (the host's code)
+    std::string pings;
     for (int k = 0; k < 4; ++k) {
         int level = 0, ping = 0;
         if (k == me) {
@@ -1943,7 +1952,14 @@ void write_status(DWORD now)
         if (ping > 0) {
             _snprintf(line, sizeof line, "ping %d %d\n", k, ping);
             out += line;
+            _snprintf(line, sizeof line, " %d: %d ms", k, ping);
+            pings += line;
         }
+    }
+    static DWORD next_ping_log = 0; // in the journal too, every 10 s (players' own reports are vague)
+    if (!pings.empty() && int(now - next_ping_log) >= 0) {
+        next_ping_log = now + 10000;
+        logf("net: pings (player: round trip):%s", pings.c_str());
     }
     if (g_steam && link_steam_self()) {
         _snprintf(line, sizeof line, "self %llu\n", (unsigned long long)link_steam_self());
