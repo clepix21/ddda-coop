@@ -1,0 +1,19 @@
+# Lantern test, host (saves/cutscene.sav: Cassardis at night): the game's own lantern actions, with the
+# Arisen's words that change (chsnap/chdiff) to find where "lit" is kept; the guest's pawn of the host must
+# play the same actions.
+wait 20000
+chsnap
+actc 0 cPlActUseLantern
+wait 4000
+chdiff
+chsnap
+wait 10000
+actc 0 cPlActPutAwayLantern
+wait 4000
+chdiff
+chsnap
+wait 10000
+actc 0 cPlActUseLantern
+wait 4000
+chdiff
+wait 20000

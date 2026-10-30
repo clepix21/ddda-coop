@@ -1,0 +1,11 @@
+# Lantern test, guest: the same bytes of its pawns (one shows the host) while the host lights and puts away
+# its lantern.
+wait 20000
+chbytes 350 16
+wait 5000
+chbytes 350 16
+wait 16000
+chbytes 350 16
+wait 16000
+chbytes 350 16
+wait 20000

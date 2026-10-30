@@ -689,7 +689,9 @@ void shared_skill_look(uintptr_t ch, int i, const CharState &s)
     static DWORD due[kParty] = {};
     DWORD now = GetTickCount();
     unsigned table = unsigned(s.action) >> 24; // 1, 2...: weapon actions; 0xFF: none (-1, it froze the game)
-    bool weapon = table >= 1 && table <= 0x0F;
+    // and the lantern lit or put away (cPlActUseLantern 0x99, cPlActPutAwayLantern 0x9A): the pawn showing that
+    // player did not play them, so the others never saw the lantern (owner, 2026-10-30)
+    bool weapon = (table >= 1 && table <= 0x0F) || s.action == 0x99 || s.action == 0x9A;
     if (s.action != seen[i]) {
         seen[i] = s.action;
         due[i] = weapon ? (now + 200) | 1 : 0;

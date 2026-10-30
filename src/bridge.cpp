@@ -445,6 +445,43 @@ void run_line(const char *line)
                  game::at<uint32_t>(ch, 0x2740), game::at<uint8_t>(ch, 0x31EA), action_name(ch), game::at<float>(ch, 0x40),
                  game::at<float>(ch, 0x48));
         _snprintf(g_current, sizeof g_current, "flags273c %u", slot);
+    } else if (strncmp(line, "chbytes ", 8) == 0) { // chbytes <off hex> <count>: bytes of the Arisen and the pawns
+        unsigned off = 0, count = 0;
+        if (sscanf(line + 8, "%x %u", &off, &count) == 2 && count > 0 && count <= 64)
+            for (int p = -1; p < kPawns; ++p) {
+                uintptr_t ch = p < 0 ? possess_arisen() : possess_pawn_ptr(p);
+                if (!ch)
+                    continue;
+                char hex[200] = "";
+                for (unsigned k = 0; k < count; ++k)
+                    _snprintf(hex + strlen(hex), sizeof hex - strlen(hex), "%02X ", game::at<uint8_t>(ch, off + k));
+                logf("bridge: chbytes %s %d +%X: %s", p < 0 ? "arisen" : "pawn", p, off, hex);
+            }
+        _snprintf(g_current, sizeof g_current, "chbytes %X", off);
+    } else if (strcmp(line, "chsnap") == 0 || strcmp(line, "chdiff") == 0) {
+        // chsnap: keep the Arisen's first 0x4000 bytes; chdiff: log the 4-byte words that changed since (tests:
+        // which field a game action sets, e.g. the lantern lit)
+        static uint8_t snap[0x4000];
+        static bool have = false;
+        uintptr_t a = possess_arisen();
+        if (a && line[2] == 's') {
+            memcpy(snap, reinterpret_cast<void *>(a), sizeof snap);
+            have = true;
+            logf("bridge: chsnap of the Arisen %08X", unsigned(a));
+        } else if (a && have) {
+            int n = 0;
+            for (unsigned off = 0; off < sizeof snap && n < 60; off += 4) {
+                uint32_t was, now;
+                memcpy(&was, snap + off, 4);
+                memcpy(&now, reinterpret_cast<void *>(a + off), 4);
+                if (was != now) {
+                    logf("bridge: chdiff +%04X: %08X -> %08X", off, was, now);
+                    ++n;
+                }
+            }
+            logf("bridge: chdiff: %d words changed (60 shown at most)", n);
+        }
+        strcpy(g_current, line);
     } else if (strncmp(line, "actname", 7) == 0) { // the current action of the Arisen and the pawns
         for (int p = -1; p < kPawns; ++p) {
             uintptr_t ch = p < 0 ? possess_arisen() : possess_pawn_ptr(p);
