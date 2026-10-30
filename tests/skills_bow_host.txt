@@ -1,0 +1,21 @@
+# Bow test, host (saves/ranger.sav: the owner's Arisen as a Strider, daggers and a shortbow; where it
+# stands is unknown, so it does not walk, and A and B alone are never pressed: the Rift stone may be near).
+# Draws its weapons (LT), then: Y held (shortbow shot, charged), X (daggers), RB + X/Y and LB + X/Y held
+# (weapon skills of either weapon); the guest's pawn of the host must play the same.
+wait 3000
+pad 0 0 0 0 0 0 255 0 300
+wait 2000
+pad 0 8000 0 0 0 0 0 0 2500
+wait 3000
+pad 0 8000 0 0 0 0 0 0 300
+wait 2000
+pad 0 4000 0 0 0 0 0 0 200
+wait 2000
+pad 0 4200 0 0 0 0 0 0 3000
+wait 4000
+pad 0 8200 0 0 0 0 0 0 3000
+wait 4000
+pad 0 4100 0 0 0 0 0 0 3000
+wait 4000
+pad 0 8100 0 0 0 0 0 0 3000
+wait 30000

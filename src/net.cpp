@@ -688,16 +688,21 @@ void shared_skill_look(uintptr_t ch, int i, const CharState &s)
     static int32_t seen[kParty] = {};
     static DWORD due[kParty] = {};
     DWORD now = GetTickCount();
+    unsigned table = unsigned(s.action) >> 24; // 1, 2...: weapon actions; 0xFF: none (-1, it froze the game)
+    bool weapon = table >= 1 && table <= 0x0F;
     if (s.action != seen[i]) {
         seen[i] = s.action;
-        unsigned table = unsigned(s.action) >> 24; // 1, 2...: weapon actions; 0xFF: none (-1, it froze the game)
-        due[i] = table >= 1 && table <= 0x0F ? (now + 200) | 1 : 0;
+        due[i] = weapon ? (now + 200) | 1 : 0;
         return;
     }
+    int32_t mine = game::at<int32_t>(ch, 0x2DD4);
+    // the same weapon action again (a second shot while aiming): the number does not change, so a pawn
+    // that left it while its player stays in it is put back after 400 ms (the 4th shot of the bow test)
+    if (!due[i] && weapon && mine != s.action)
+        due[i] = (now + 400) | 1;
     if (!due[i] || int(now - due[i]) < 0)
         return;
     due[i] = 0;
-    int32_t mine = game::at<int32_t>(ch, 0x2DD4);
     if (mine == s.action)
         return;
     logf("net: shared: party %d plays its player's 0x%X (it was in %s 0x%X)", i, unsigned(s.action), action_name(ch),
@@ -3370,6 +3375,25 @@ bool net_puppet_ptr(uintptr_t ch)
     for (int p = 0; p < kPawns; ++p)
         if (ch == possess_pawn_ptr(p) && net_puppet(1 + p))
             return true;
+    return false;
+}
+
+// A pawn showing a player whose last state is a weapon action (action number with a table in the high
+// byte: 0x2060000 aiming the shortbow). actions.cpp refuses that pawn a grab then: RT shoots while aiming
+// and grabs otherwise, and the replayed RT came a moment after the pawn's aim ended (bow test on the
+// owner's Strider, 2026-10-30: cPlActGrabStart instead of the 4th shot).
+bool net_puppet_in_weapon_action(uintptr_t ch)
+{
+    if (!g_shared || g_role == NET_OFF || !ch)
+        return false;
+    for (int p = 0; p < kPawns; ++p)
+        if (ch == possess_pawn_ptr(p) && net_puppet(1 + p)) {
+            EnterCriticalSection(&g_cap_lock);
+            unsigned table = unsigned(g_rp[1 + p].action) >> 24;
+            bool valid = g_rp[1 + p].valid;
+            LeaveCriticalSection(&g_cap_lock);
+            return valid && table >= 1 && table <= 0x0F;
+        }
     return false;
 }
 

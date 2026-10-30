@@ -1,0 +1,17 @@
+# Bow shots, host (saves/ranger.sav, Strider; does not walk, never A or B alone: the Rift stone is near):
+# draws (LT), then aims the shortbow (LB held) and shoots (RT) three times, then a triple shot (LB + X)
+# and a held one (LB + Y); the guest's pawn of the host must play the same.
+wait 3000
+pad 0 0 0 0 0 0 255 0 300
+wait 2000
+pad 0 0100 0 0 0 0 0 0 1500
+pad 0 0100 0 0 0 0 0 255 300
+pad 0 0100 0 0 0 0 0 0 800
+pad 0 0100 0 0 0 0 0 255 300
+pad 0 0100 0 0 0 0 0 0 800
+pad 0 0100 0 0 0 0 0 255 300
+wait 3000
+pad 0 4100 0 0 0 0 0 0 2500
+wait 4000
+pad 0 8100 0 0 0 0 0 0 3000
+wait 30000

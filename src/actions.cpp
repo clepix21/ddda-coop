@@ -216,6 +216,12 @@ bool refuse(uintptr_t ch, int n)
             logf("actions: a pawn showing a player asked for %s (0x%X): refused (%ld so far)", action_class(n), unsigned(n), k);
         return true;
     }
+    if (n == 0x39 && net_puppet_in_weapon_action(ch)) { // cPlActGrabStart while its player aims or swings
+        static LONG k = 0;
+        if (++k <= 20 || k % 100 == 0)
+            logf("actions: a pawn showing a player asked for a grab while its player is in a weapon action: refused (%ld so far)", k);
+        return true;
+    }
     if (!net_hidden_pawn_ptr(ch) || sleeping_may(n))
         return false;
     LONG k = InterlockedIncrement(&g_refused);
