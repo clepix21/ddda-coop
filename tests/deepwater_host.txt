@@ -1,0 +1,40 @@
+# Deep water search, host (saves/cutscene.sav, shared world): onto the pier (Olra's cutscene, ~25 s), then
+# 2000 and 3500 u from the pier in 8 directions, from y 500, 7 s each (none within 900 u, 12:47).
+wait 20000
+warpat 3490 381 3663
+wait 3000
+warpat 4158 169 2811
+wait 32000
+warpat 6158 500 2811
+wait 7000
+warpat 5572 500 4225
+wait 7000
+warpat 4158 500 4811
+wait 7000
+warpat 2744 500 4225
+wait 7000
+warpat 2158 500 2811
+wait 7000
+warpat 2744 500 1397
+wait 7000
+warpat 4158 500 811
+wait 7000
+warpat 5572 500 1397
+wait 7000
+warpat 7658 500 2811
+wait 7000
+warpat 6633 500 5286
+wait 7000
+warpat 4158 500 6311
+wait 7000
+warpat 1683 500 5286
+wait 7000
+warpat 658 500 2811
+wait 7000
+warpat 1683 500 336
+wait 7000
+warpat 4158 500 -689
+wait 7000
+warpat 6633 500 336
+wait 7000
+wait 15000

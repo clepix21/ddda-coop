@@ -406,6 +406,28 @@ void run_line(const char *line)
             logf("bridge: liftme %.0f: the Arisen at height %.0f", dy, game::at<float>(a, 0x44));
         }
         _snprintf(g_current, sizeof g_current, "liftme %.0f", dy);
+    } else if (strncmp(line, "warp ", 5) == 0) { // warp <dx> <dz> <dy>: the Arisen moved that far (tests: over the sea)
+        float dx = 0.f, dz = 0.f, dy = 0.f;
+        uintptr_t a = possess_arisen();
+        if (sscanf(line + 5, "%f %f %f", &dx, &dz, &dy) == 3 && a) {
+            for (uintptr_t off : {uintptr_t(0x40), uintptr_t(0xE70), uintptr_t(0xE80), uintptr_t(0x1990)}) {
+                game::at<float>(a, off) += dx;
+                game::at<float>(a, off + 4) += dy;
+                game::at<float>(a, off + 8) += dz;
+            }
+            logf("bridge: warp: the Arisen at (%.0f, %.0f, %.0f)", game::at<float>(a, 0x40), game::at<float>(a, 0x44),
+                 game::at<float>(a, 0x48));
+        }
+        _snprintf(g_current, sizeof g_current, "warp %.0f %.0f %.0f", dx, dz, dy);
+    } else if (strncmp(line, "warpat ", 7) == 0) { // warpat <x> <y> <z>: the Arisen put there
+        float to[3] = {};
+        uintptr_t a = possess_arisen();
+        if (sscanf(line + 7, "%f %f %f", &to[0], &to[1], &to[2]) == 3 && a) {
+            for (uintptr_t off : {uintptr_t(0x40), uintptr_t(0xE70), uintptr_t(0xE80), uintptr_t(0x1990)})
+                memcpy(reinterpret_cast<void *>(a + off), to, sizeof to);
+            logf("bridge: warpat: the Arisen at (%.0f, %.0f, %.0f)", to[0], to[1], to[2]);
+        }
+        _snprintf(g_current, sizeof g_current, "warpat %.0f %.0f %.0f", to[0], to[1], to[2]);
     } else if (strncmp(line, "fakehold ", 9) == 0) { // fakehold <slot> <ms>: the state sent says the Arisen holds that player
         int s = -1, ms = 0;
         if (sscanf(line + 9, "%d %d", &s, &ms) == 2) {
