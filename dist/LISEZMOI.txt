@@ -14,6 +14,10 @@ La fenêtre
 ----------
 À gauche, une barre d'écrans : Jouer, Salon, Sauvegardes, Paramètres, Journal (Ctrl+1 à 5).
 En haut de « Jouer » : « DDDA détecté · Mod v0.9.1 ». Le bouton « ? Aide » rappelle les touches.
+Au démarrage, la fenêtre regarde sur GitHub s'il existe une version plus récente ; si oui, un bouton
+« Mise à jour … disponible » apparaît en haut à droite de « Jouer » (désactivable dans Paramètres).
+Le badge « DDDA Coop actif » n'apparaît plus que sur l'écran titre (en jeu : seulement si un joueur a
+une autre version du mod). Crédits et licences : Paramètres, « À propos », et LICENCES.txt.
 
 Pour jouer
 ----------

@@ -48,9 +48,9 @@ struct Vtx {
 
 // What the badge says now (called once a second), or false when it is not shown. Shown out of the
 // play areas (the title screen, its main menu, loads: their current area is no aStage, 0 on the
-// title, 2026-10-29), and in a play area while the game is paused (the pause menu "Menu pause" and
-// its pages, the map): the game's clock (sGameSys, ms into the day) has not moved for two seconds. No
-// fixed word in the game's globals told the menu apart (snapshot diffs with the menu shut, open, shut).
+// title, 2026-10-29). Until 2026-10-30 also in a play area while the game was paused (the pause menu, the
+// map): the game's clock (sGameSys, ms into the day) had not moved for two seconds, still logged. No fixed
+// word in the game's globals told the menu apart (snapshot diffs with the menu shut, open, shut).
 bool badge_text(wchar_t *out, size_t cap)
 {
     uintptr_t area = game::at<uintptr_t>(game::kArea, 0);
@@ -67,7 +67,9 @@ bool badge_text(wchar_t *out, size_t cap)
     if (strncmp(cls, "aStage", 6) == 0 && paused != was_paused)
         logf("overlay: the game's clock %s", paused ? "stopped (paused)" : "runs again");
     was_paused = paused;
-    if (strncmp(cls, "aStage", 6) == 0 && !paused)
+    // in a play area, paused or not: only to say a player has another version (the owner found the badge
+    // useless in game and in the pause menu, 2026-10-30); the title screen and its menu keep it
+    if (strncmp(cls, "aStage", 6) == 0 && !net_old_peer())
         return false;
     NetRole role = net_role();
     int players = 0;

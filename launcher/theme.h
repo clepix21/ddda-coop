@@ -29,7 +29,10 @@ constexpr int kRadiusCard = 14, kRadiusButton = 9, kRadiusSmall = 6;
 constexpr int kPadCard = 18, kGapSection = 24, kGapSmall = 12;
 
 // type: one family, few sizes
-constexpr const wchar_t *kFontFamily = L"Segoe UI Variable Text"; // falls back to Segoe UI (Inter: owner's call)
+// Inter, inside the exe (launcher.rc); without it Segoe UI Variable Text (Windows 11), then Segoe UI
+constexpr const wchar_t *kFontInter = L"Inter";
+constexpr const wchar_t *kFontInterSemiBold = L"Inter SemiBold"; // its own family name for GDI
+constexpr const wchar_t *kFontFamily = L"Segoe UI Variable Text";
 constexpr const wchar_t *kFontFallback = L"Segoe UI";
 constexpr int kSizeSmall = 9, kSizeBody = 10, kSizeTitle = 13, kSizeDisplay = 20; // points
 

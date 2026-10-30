@@ -15,6 +15,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <tlhelp32.h>
+#include <winhttp.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -36,7 +37,8 @@ const char kOurMarker[] = "ddda-pawn-coop loaded"; // a string only our dinput8.
 enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
     ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP,
-    ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_BACKUP_LIST, ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
+    ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_BACKUP_LIST, ID_UPDATE, ID_CHECK_UPDATES, ID_PROJECT,
+    ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
 };
 // the screens, in the sidebar's order
 enum Page { PAGE_PLAY, PAGE_SALON, PAGE_SAVES, PAGE_SETTINGS, PAGE_LOG, PAGE_COUNT };
@@ -99,7 +101,7 @@ int g_game_state = 0;     // 0 DDDA.exe not found, 1 found but another version, 
 bool g_log_unseen = false; // a warning or an error in the journal since it was last shown (a dot on its icon)
 
 HWND g_wnd, g_game_edit, g_version, g_host, g_guest, g_solo, g_own_char, g_keep, g_debug, g_launch, g_state, g_events,
-    g_players, g_backup_note;
+    g_players, g_backup_note, g_update, g_check_updates;
 HFONT g_font, g_bold, g_head, g_title, g_icon, g_small, g_small_icon, g_code_font;
 HBRUSH g_bg_brush, g_card_brush;
 int g_dpi = 96;
@@ -111,6 +113,7 @@ const COLORREF kBg = theme::kBg, kCard = theme::kSurface, kText = theme::kText, 
 int px(int v) { return MulDiv(v, g_dpi, 96); }
 std::wstring g_exe_dir, g_game_dir, g_steam_dir, g_docs_dir;
 bool g_no_launch = false;
+std::wstring g_test_update; // --test-update <tag>
 bool g_supported = false;
 COLORREF g_state_color = kMuted;
 FILETIME g_launch_time = {};
@@ -311,6 +314,77 @@ void save_settings()
     WritePrivateProfileStringW(L"launcher", L"keep_progress", switch_on(g_keep) ? L"1" : L"0", p.c_str());
     WritePrivateProfileStringW(L"launcher", L"own_character", switch_on(g_own_char) ? L"1" : L"0", p.c_str());
     WritePrivateProfileStringW(L"launcher", L"debug_log", switch_on(g_debug) ? L"1" : L"0", p.c_str());
+    WritePrivateProfileStringW(L"launcher", L"check_updates", switch_on(g_check_updates) ? L"1" : L"0", p.c_str());
+}
+
+// ---- the update check: the project's newest release on GitHub (a release from the public repo) ----
+
+const wchar_t *const kRepoUrl = L"https://github.com/clepix21/ddda-coop";
+const UINT WM_UPDATE_FOUND = WM_APP + 7; // the check found a newer version: g_update_tag
+std::wstring g_update_tag;               // "v0.9.2", set once by the check's thread before it posts
+
+// "v0.9.2" or "0.9.2" -> {0, 9, 2}; false when it is not that shape
+bool parse_version(const std::string &t, int out[3])
+{
+    size_t i = t.size() && (t[0] == 'v' || t[0] == 'V') ? 1 : 0;
+    for (int k = 0; k < 3; ++k) {
+        if (i >= t.size() || !isdigit(static_cast<unsigned char>(t[i])))
+            return false;
+        out[k] = 0;
+        while (i < t.size() && isdigit(static_cast<unsigned char>(t[i])))
+            out[k] = out[k] * 10 + (t[i++] - '0');
+        if (k < 2 && (i >= t.size() || t[i++] != '.'))
+            return false;
+    }
+    return true;
+}
+
+// The newest release, drafts aside (prereleases count: the mod is an alpha). Quiet on every failure
+// (no network, the repo still private: 404); the launcher works the same without it.
+DWORD WINAPI check_updates(void *)
+{
+    std::string body;
+    if (!g_test_update.empty())
+        body = "[{\"tag_name\": \"" + std::string(g_test_update.begin(), g_test_update.end()) + "\"}]";
+    else {
+    HINTERNET s = WinHttpOpen((L"DDDA-Coop/" + widen(DDDA_COOP_VERSION)).c_str(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                              WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    HINTERNET c = s ? WinHttpConnect(s, L"api.github.com", INTERNET_DEFAULT_HTTPS_PORT, 0) : nullptr;
+    HINTERNET r = c ? WinHttpOpenRequest(c, L"GET", L"/repos/clepix21/ddda-coop/releases?per_page=1", nullptr,
+                                         WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)
+                    : nullptr;
+    DWORD status = 0, size = sizeof status;
+    if (r) {
+        WinHttpSetTimeouts(r, 5000, 5000, 5000, 5000);
+        if (WinHttpSendRequest(r, L"Accept: application/vnd.github+json\r\n", DWORD(-1), WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+            WinHttpReceiveResponse(r, nullptr) &&
+            WinHttpQueryHeaders(r, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status,
+                                &size, WINHTTP_NO_HEADER_INDEX) &&
+            status == 200) {
+            char buf[4096];
+            DWORD got = 0;
+            while (body.size() < 256 * 1024 && WinHttpReadData(r, buf, sizeof buf, &got) && got)
+                body.append(buf, got);
+        }
+    }
+    for (HINTERNET x : {r, c, s})
+        if (x)
+            WinHttpCloseHandle(x);
+    }
+    size_t k = body.find("\"tag_name\"");
+    size_t q1 = k == std::string::npos ? k : body.find('"', body.find(':', k) + 1);
+    size_t q2 = q1 == std::string::npos ? q1 : body.find('"', q1 + 1);
+    if (q2 == std::string::npos || q2 - q1 > 32)
+        return 0;
+    std::string tag = body.substr(q1 + 1, q2 - q1 - 1);
+    int have[3], got[3];
+    if (!parse_version(DDDA_COOP_VERSION, have) || !parse_version(tag, got))
+        return 0;
+    if (std::lexicographical_compare(have, have + 3, got, got + 3)) {
+        g_update_tag = widen(tag);
+        PostMessageW(g_wnd, WM_UPDATE_FOUND, 0, 0);
+    }
+    return 0;
 }
 
 // ---- state shown in the window ----
@@ -447,6 +521,7 @@ void update_controls()
     // the guest's own options only under the guest's card
     ShowWindow(g_own_char, g_page == PAGE_PLAY && guest_role() ? SW_SHOW : SW_HIDE);
     ShowWindow(g_keep, g_page == PAGE_PLAY && guest_role() ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_update, g_page == PAGE_PLAY && !g_update_tag.empty() ? SW_SHOW : SW_HIDE);
     EnableWindow(g_launch, g_supported);
 }
 
@@ -1452,7 +1527,7 @@ void draw_button(const DRAWITEMSTRUCT *d)
         RECT ic = {card.left, card.top + px(8), card.right, card.top + px(32)};
         DrawTextW(dc, kPageIcons[page], -1, &ic, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
         SelectObject(dc, g_small);
-        RECT lb = {card.left, card.top + px(34), card.right, card.bottom - px(4)};
+        RECT lb = {r.left + px(1), card.top + px(34), r.right - px(1), card.bottom - px(4)}; // the whole width: "Sauvegardes" in Inter
         DrawTextW(dc, kPageNames[page], -1, &lb, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
         if (page == PAGE_LOG && g_log_unseen) {
             RECT dot = {ic.right - px(26), ic.top, ic.right - px(18), ic.top + px(8)};
@@ -1526,7 +1601,7 @@ ButtonKind kind_of(int id)
         return BTN_NAV;
     if (id == ID_HOST || id == ID_GUEST || id == ID_SOLO)
         return BTN_ROLE;
-    if (id == ID_OWN_CHAR || id == ID_KEEP || id == ID_DEBUG)
+    if (id == ID_OWN_CHAR || id == ID_KEEP || id == ID_DEBUG || id == ID_CHECK_UPDATES)
         return BTN_SWITCH;
     return id == ID_LAUNCH ? BTN_PRIMARY : id == ID_REMOVE ? BTN_DANGER : id == ID_EVENTS_TOGGLE ? BTN_GHOST : BTN_SECONDARY;
 }
@@ -1535,6 +1610,7 @@ ButtonKind kind_of(int id)
 // time, so the window fits a laptop's screen (~768 px high) without scrolling (owner's direction,
 // 2026-10-29). Each screen's controls are listed in g_pages and shown or hidden together.
 const int kW = 960, kH = 600, kSide = 84, kX = kSide + 28, kCW = kW - kX - 28, kHeaderH = 112;
+const int kDangerY = 262; // Paramètres: the sensitive card's top
 int g_height = kH;
 std::vector<HWND> g_pages[PAGE_COUNT];
 int g_building = PAGE_PLAY; // the screen the controls made now belong to
@@ -1611,6 +1687,8 @@ void build_window()
     y += 68;
     g_launch = add(make(L"BUTTON", L"&Lancer le jeu", BS_DEFPUSHBUTTON | WS_TABSTOP, L, y, 300, 52, ID_LAUNCH, g_head));
     add(make(L"BUTTON", L"? A&ide", BS_PUSHBUTTON | WS_TABSTOP, L + W - 100, y + 4, 100, 44, ID_HELP));
+    // shown when the check found a newer release (WM_UPDATE_FOUND)
+    g_update = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L + W - 280, 34, 280, 40, ID_UPDATE));
     y += 64;
     g_state_rect = {px(L), px(y), px(L + W), px(y + 56)};
     g_state = add(make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_CENTERIMAGE, L + 28, y + 8, W - 40, 40, 0, g_bold));
@@ -1652,13 +1730,26 @@ void build_window()
     g_version = add(make(L"STATIC", L"", 0, L, 140, W, 22, 0));
     g_debug = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 176, W, 32, ID_DEBUG));
     g_switches.push_back({g_debug, true, L"&Journal détaillé (utile pour signaler un problème)"});
+    g_check_updates = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 212, W, 32, ID_CHECK_UPDATES));
+    g_switches.push_back({g_check_updates, true, L"&Vérifier les mises à jour au démarrage (GitHub)"});
     // the sensitive part in a card of its own (painted), red-tinted
-    add(make(L"STATIC", L"Zone sensible", 0, L + 18, 248, W - 36, 22, 0, g_bold));
+    add(make(L"STATIC", L"Zone sensible", 0, L + 18, kDangerY + 14, W - 36, 22, 0, g_bold));
     add(make(L"STATIC",
              L"Retire dinput8.dll et coop.ini du dossier du jeu : le jeu redémarre en solo normal. Tes sauvegardes ne sont pas "
              L"touchées. Une confirmation est demandée.",
-             0, L + 18, 274, W - 36 - 200, 44, 0));
-    add(make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L + W - 18 - 180, 272, 180, 40, ID_REMOVE));
+             0, L + 18, kDangerY + 40, W - 36 - 200, 44, 0));
+    add(make(L"BUTTON", L"&Retirer le mod", BS_PUSHBUTTON | WS_TABSTOP, L + W - 18 - 180, kDangerY + 38, 180, 40, ID_REMOVE));
+    // credits
+    int ay = kDangerY + 96 + 22;
+    add(make(L"STATIC", L"À propos", 0, L, ay, W, 22, 0, g_bold));
+    add(make(L"STATIC",
+             (L"DDDA Coop v" + widen(DDDA_COOP_VERSION) +
+              L", par clepix21.\nTesteurs : GrosGadjo et yaybba.\nDéveloppé avec l'aide de Claude (Anthropic).\n"
+              L"Police Inter (SIL Open Font License 1.1) et MinHook (licence BSD) : voir LICENCES.txt. "
+              L"Mod non officiel, sans lien avec Capcom ; Dragon's Dogma: Dark Arisen © Capcom.")
+                 .c_str(),
+             SS_NOPREFIX, L, ay + 28, W - 200, 88, 0));
+    add(make(L"BUTTON", L"Page du &projet", BS_PUSHBUTTON | WS_TABSTOP, L + W - 180, ay + 30, 180, 40, ID_PROJECT));
 
     // ---- Journal ----
     g_building = PAGE_LOG;
@@ -1673,6 +1764,7 @@ void build_window()
     g_switches[0].on = setting(L"own_character", L"1") == L"1";
     g_switches[1].on = setting(L"keep_progress", L"1") == L"1";
     g_switches[2].on = setting(L"debug_log", L"1") == L"1";
+    g_switches[3].on = setting(L"check_updates", L"1") == L"1";
     refresh_names();
     update_players();
     show_page(PAGE_PLAY);
@@ -1757,7 +1849,7 @@ void paint(HWND h)
             }
         }
         if (g_page == PAGE_SETTINGS) { // the sensitive part: a card with a red outline
-            RECT card = {px(kX), px(234), px(kX + kCW), px(330)};
+            RECT card = {px(kX), px(kDangerY), px(kX + kCW), px(kDangerY + 96)};
             theme::round_rect(dc, card, px(theme::kRadiusCard), theme::mix(kCard, kBad, 0.05f), theme::mix(theme::kBorder, kBad, 0.55f));
         }
         if (g_page == PAGE_SAVES) { // the copies' list in a card
@@ -1814,10 +1906,20 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         g_wnd = h;
         build_window();
         SetTimer(h, ID_TIMER, 1000, nullptr);
+        ShowWindow(g_update, SW_HIDE);
+        if (switch_on(g_check_updates))
+            if (HANDLE t = CreateThread(nullptr, 0, check_updates, nullptr, 0, nullptr))
+                CloseHandle(t);
         if (setting(L"help_seen", L"0") != L"1") { // the help once by itself, at the first start
             WritePrivateProfileStringW(L"launcher", L"help_seen", L"1", settings_path().c_str());
             PostMessageW(h, WM_COMMAND, ID_HELP, 0);
         }
+        return 0;
+    case WM_UPDATE_FOUND:
+        SetWindowTextW(g_update, (L"Mise à jour " + g_update_tag + L" disponible  ›").c_str());
+        if (g_page == PAGE_PLAY)
+            ShowWindow(g_update, SW_SHOW);
+        add_event(L"Une nouvelle version du mod est disponible : " + g_update_tag + L" (bouton en haut de « Jouer »).");
         return 0;
     case WM_MEASUREITEM:
         if (w == ID_BACKUP_LIST) {
@@ -1870,6 +1972,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_KEEP:
         case ID_OWN_CHAR:
         case ID_DEBUG:
+        case ID_CHECK_UPDATES:
             for (Switch &sw : g_switches)
                 if (sw.h == HWND(l))
                     sw.on = !sw.on;
@@ -1880,6 +1983,11 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_REMOVE: on_remove(); break;
         case ID_BACKUP: on_backup(); break;
         case ID_HELP: show_help(); break;
+        case ID_UPDATE: // the release's page, to download it
+            ShellExecuteW(h, L"open", (std::wstring(kRepoUrl) + L"/releases/tag/" + g_update_tag).c_str(), nullptr, nullptr,
+                          SW_SHOWNORMAL);
+            break;
+        case ID_PROJECT: ShellExecuteW(h, L"open", kRepoUrl, nullptr, nullptr, SW_SHOWNORMAL); break;
         case ID_COPY_CODE:
             if (g_self_steam && OpenClipboard(h)) {
                 std::wstring c = code_from_steam(g_self_steam);
@@ -1943,9 +2051,9 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
             RECT rc;
             GetWindowRect(HWND(l), &rc);
             MapWindowPoints(nullptr, h, reinterpret_cast<POINT *>(&rc), 2);
-            if (rc.top >= px(234) && rc.bottom <= px(330)) {
+            if (rc.top >= px(kDangerY) && rc.bottom <= px(kDangerY + 96)) {
                 static HBRUSH danger = CreateSolidBrush(theme::mix(theme::kSurface, theme::kBad, 0.05f));
-                SetTextColor(HDC(w), rc.top < px(270) ? kText : kMuted);
+                SetTextColor(HDC(w), rc.top < px(kDangerY + 36) ? kText : kMuted);
                 SetBkColor(HDC(w), theme::mix(theme::kSurface, theme::kBad, 0.05f));
                 return LRESULT(danger);
             }
@@ -1966,6 +2074,20 @@ int CALLBACK font_found(const LOGFONTW *, const TEXTMETRICW *, DWORD, LPARAM l)
 {
     *reinterpret_cast<bool *>(l) = true;
     return 0;
+}
+
+// Inter's three weights from the exe's resources (201-203), for this process only.
+bool load_inter()
+{
+    for (int id = 201; id <= 203; ++id) {
+        HRSRC r = FindResourceW(nullptr, MAKEINTRESOURCEW(id), MAKEINTRESOURCEW(10)); // RT_RCDATA
+        HGLOBAL g = r ? LoadResource(nullptr, r) : nullptr;
+        void *data = g ? LockResource(g) : nullptr;
+        DWORD fonts = 0;
+        if (!data || !AddFontMemResourceEx(data, SizeofResource(nullptr, r), nullptr, &fonts) || !fonts)
+            return false;
+    }
+    return true;
 }
 
 // The theme's font if Windows has it (Segoe UI Variable: Windows 11), else its fallback.
@@ -2012,6 +2134,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
             g_docs_dir = argv[++i];
         else if (a == L"--no-launch")
             g_no_launch = true;
+        else if (a == L"--test-update" && i + 1 < argc) // tests: as if GitHub had this release, no network
+            g_test_update = argv[++i];
     }
     LocalFree(argv);
     g_steam_dir = steam_arg.empty() ? steam_dir() : steam_arg;
@@ -2022,13 +2146,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     HDC screen = GetDC(nullptr);
     g_dpi = GetDeviceCaps(screen, LOGPIXELSY);
     ReleaseDC(nullptr, screen);
-    // Segoe UI 10 pt (a little larger than the system's 9 pt), headings 12 pt, title 18 pt
+    // 10 pt (a little larger than the system's 9 pt), headings 12 pt, title 18 pt
+    static bool inter = load_inter();
     auto font = [](int pt, int weight) {
         LOGFONTW f = {};
         f.lfHeight = -MulDiv(pt, g_dpi, 72);
         f.lfWeight = weight;
         f.lfQuality = CLEARTYPE_QUALITY;
-        wcscpy(f.lfFaceName, font_family());
+        wcscpy(f.lfFaceName, !inter ? font_family() : weight == FW_SEMIBOLD ? theme::kFontInterSemiBold : theme::kFontInter);
         return CreateFontIndirectW(&f);
     };
     g_font = font(theme::kSizeBody, FW_NORMAL);

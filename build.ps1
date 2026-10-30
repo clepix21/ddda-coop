@@ -35,7 +35,7 @@ Pop-Location
 if ($rcFailed) { throw "windres failed" }
 & $cxx -O2 -std=c++17 -Wall -municode -mwindows -static -static-libgcc -static-libstdc++ `
     (Join-Path $PSScriptRoot "launcher\launcher.cpp") $res `
-    -lcomctl32 -lbcrypt -lshell32 -lole32 -luuid -lgdiplus -ldwmapi -luxtheme -lgdi32 `
+    -lcomctl32 -lwinhttp -lbcrypt -lshell32 -lole32 -luuid -lgdiplus -ldwmapi -luxtheme -lgdi32 `
     -o (Join-Path $out "DDDA-Coop.exe")
 if ($LASTEXITCODE) { throw "launcher link failed" }
 
@@ -44,7 +44,7 @@ $pkg = Join-Path $out "DDDA-Coop"
 New-Item -ItemType Directory -Force $pkg | Out-Null
 Copy-Item (Join-Path $out "DDDA-Coop.exe"), (Join-Path $out "dinput8.dll"), `
     (Join-Path $PSScriptRoot "dist\coop.ini"), (Join-Path $PSScriptRoot "dist\LISEZMOI.txt"), `
-    (Join-Path $PSScriptRoot "dist\TEST-A-PLUSIEURS.txt") $pkg
+    (Join-Path $PSScriptRoot "dist\TEST-A-PLUSIEURS.txt"), (Join-Path $PSScriptRoot "dist\LICENCES.txt") $pkg
 Compress-Archive -Path (Join-Path $pkg "*") -DestinationPath (Join-Path $out "DDDA-Coop.zip") -Force
 Get-Item (Join-Path $out "dinput8.dll"), (Join-Path $out "DDDA-Coop.exe"), (Join-Path $out "DDDA-Coop.zip") |
     Select-Object Name, Length
