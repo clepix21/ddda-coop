@@ -3095,7 +3095,9 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     f.last = now;
     if (f.host_slot >= 0 && (!g_enemy_tick[f.host_slot] || now - g_enemy_tick[f.host_slot] > 3000))
         f.host_slot = -1; // the host's enemy is gone (or the host stopped sending it)
-    if (f.host_slot < 0 && int(now - f.next_try) >= 0) {
+    // never a dead one: a guest-only enemy removed (dead here) was paired 4 s later with a living host
+    // enemy, and the two stayed "dead here, alive there" (enemy suite 2026-10-30 06:01, 9/10)
+    if (f.host_slot < 0 && !slot.died && int(now - f.next_try) >= 0) {
         f.next_try = now + 500;
         uint32_t cls = class_hash(slot.name);
         ClassSet fam = class_family(slot.name);
