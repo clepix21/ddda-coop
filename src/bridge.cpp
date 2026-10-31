@@ -460,21 +460,32 @@ void run_line(const char *line)
             logf("%s", buf);
         }
         strcpy(g_current, line);
-    } else if (strncmp(line, "equip ", 6) == 0) { // equip <member 0-3>: mpEquip[12] (bag +0x258), number:flags each
+    } else if (strncmp(line, "equip ", 6) == 0) { // equip <member 0-3>: mpEquip[12] ([0x018FA4D4] + 0x3D0 + m * 0x11E8), number:flags each
         int m = atoi(line + 6);
         uintptr_t mgr = game::at<uintptr_t>(0x018FA4D4, 0);
         if (mgr && m >= 0 && m < 4) {
-            uintptr_t bag = mgr + 0x174 + uintptr_t(m) * 0x11E8;
+            uintptr_t bag = mgr + 0x178 + uintptr_t(m) * 0x11E8; // FUN_00459100 writes mpEquip at +0x3D0
             char buf[600];
             int len = snprintf(buf, sizeof buf, "bridge: equip %d (bag %p):", m, (void *)bag);
             for (int k = 0; k < 12; ++k) {
-                uintptr_t it = game::at<uintptr_t>(bag, 0x258 + 4 * k);
+                uintptr_t it = game::at<uintptr_t>(bag, 0x258 + 4 * k); // +0x3D0 of the manager
                 if (it && mem_readable(reinterpret_cast<void *>(it), 0x24))
                     len += snprintf(buf + len, sizeof buf - len, " %d:%X", game::at<int16_t>(it, 0x10), game::at<uint32_t>(it, 0x20));
                 else
                     len += snprintf(buf + len, sizeof buf - len, " -");
             }
             logf("%s", buf);
+        }
+        strcpy(g_current, line);
+    } else if (strncmp(line, "eqset ", 6) == 0) { // eqset <member> <slot> <from member> <from slot>: copy an mpEquip pointer
+        int m = -1, k = -1, fm = -1, fk = -1;
+        uintptr_t mgr = game::at<uintptr_t>(0x018FA4D4, 0);
+        if (mgr && sscanf(line + 6, "%d %d %d %d", &m, &k, &fm, &fk) == 4 && m >= 0 && m < 4 && fm >= 0 && fm < 4 &&
+            k >= 0 && k < 12 && fk >= 0 && fk < 12) {
+            uintptr_t &to = game::at<uintptr_t>(mgr, 0x3D0 + (m * 0x47A + k) * 4);
+            uintptr_t from = game::at<uintptr_t>(mgr, 0x3D0 + (fm * 0x47A + fk) * 4);
+            logf("bridge: eqset member %d slot %d: %p -> %p", m, k, (void *)to, (void *)from);
+            to = from;
         }
         strcpy(g_current, line);
     } else if (strncmp(line, "chset ", 6) == 0) { // chset <who: -1 Arisen, 0-2 pawn> <off hex> <dword hex>: write one word

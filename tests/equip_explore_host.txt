@@ -1,24 +1,35 @@
-# Equipment exploration, host (cutscene.sav): the equipment slots of the party (bridge "equip"), then the
-# pause menu (Start 0010) and its screens (shots every 2 s), to find where gear is changed.
+# Equipment exploration, host (cutscene.sav, a test copy): a real change from the menu. Pause menu (Start
+# 0010, opens on "Carte"), right to "Équipement", A; down to the 2nd category (head), A; right to its second
+# item (a hood, not worn), A, A on "Équiper", then B until the menu is shut. The Arisen's words before and after
+# (chsnap/chdiff) and the slots (bridge "equip"). Shots every 2 s.
 # D-pad up 0001, down 0002, left 0004, right 0008, A 1000, B 2000.
 wait 20000
 equip 0
-equip 1
+chsnap
+watchg 018FA4D4 3D8 4
 pad 0 0010 0 0 0 0 0 0 150
 wait 3500
+pad 0 0008 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 3500
 pad 0 0002 0 0 0 0 0 0 150
 wait 2500
 pad 0 1000 0 0 0 0 0 0 150
 wait 3500
+pad 0 0008 0 0 0 0 0 0 150
+wait 2500
 pad 0 1000 0 0 0 0 0 0 150
-wait 3500
-pad 0 0002 0 0 0 0 0 0 150
-wait 2500
-pad 0 2000 0 0 0 0 0 0 150
-wait 2500
-pad 0 2000 0 0 0 0 0 0 150
-wait 2500
-pad 0 2000 0 0 0 0 0 0 150
-wait 3000
+wait 4500
+pad 0 1000 0 0 0 0 0 0 300
+wait 5000
 equip 0
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 4000
+equip 0
+chdiff
 wait 10000

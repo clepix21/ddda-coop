@@ -1,0 +1,21 @@
+# Equipment experiment, guest (cutscene.sav): does a character's model follow its mpEquip slots by itself?
+# The pawn showing the host (member 1 + its mCmcId: logged by chbytes 5854) gets the main pawn's (member 1,
+# Jeanne) pieces in slots 2 to 8 by pointer; shots every 2 s.
+wait 20000
+chbytes 5854 4
+equip 0
+equip 1
+equip 2
+equip 3
+wait 4000
+eqset 2 2 1 2
+eqset 2 3 1 3
+eqset 2 4 1 4
+eqset 2 5 1 5
+eqset 2 6 1 6
+eqset 2 7 1 7
+eqset 2 8 1 8
+equip 2
+wait 15000
+equip 2
+wait 10000
