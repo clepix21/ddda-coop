@@ -1,4 +1,4 @@
-DDDA Coop 0.9.2 (alpha) - Dragon's Dogma: Dark Arisen à 2 à 4 joueurs, sur Steam
+DDDA Coop 0.9.3 (alpha) - Dragon's Dogma: Dark Arisen à 2 à 4 joueurs, sur Steam
 ==========================================================================
 
 Chaque joueur a le jeu sur Steam, sur son propre PC. Les invités doivent être amis Steam avec
@@ -7,14 +7,14 @@ l'hôte. Pas d'adresse IP ni de port à régler.
 Dans ce dossier : DDDA-Coop.exe (la fenêtre de réglage), dinput8.dll (le mod), coop.ini (modèle).
 Garde les trois fichiers ensemble, n'importe où (Bureau, Documents...).
 
-Tout le monde doit avoir cette version (0.9.2) : une autre version ne se connecte pas, et la
+Tout le monde doit avoir cette version (0.9.3) : une autre version ne se connecte pas, et la
 fenêtre le dit.
 
 La fenêtre
 ----------
 À gauche, une barre d'écrans : Jouer, Salon, Sauvegardes, Paramètres, Journal (Ctrl+1 à 5).
 En bas de cette barre, le globe change la langue de la fenêtre : français, English, italiano, Deutsch, español.
-En haut de « Jouer » : « DDDA détecté · Mod v0.9.2 ». Le bouton « ? Aide » rappelle les touches.
+En haut de « Jouer » : « DDDA détecté · Mod v0.9.3 ». Le bouton « ? Aide » rappelle les touches.
 Au démarrage, la fenêtre regarde sur GitHub s'il existe une version plus récente ; si oui, un bouton
 « Mise à jour … disponible » apparaît en haut à droite de « Jouer » (désactivable dans Paramètres).
 Crédits et licences : Paramètres, « À propos », et LICENCES.txt.
@@ -86,6 +86,8 @@ Monde partagé (shared_world=1 dans coop.ini, le réglage de ce paquet)
   c'est toujours l'hôte qui décide des PV et de la mort. no_hit_feel=1 dans coop.ini revient à
   l'ancien comportement.
 - Les autres joueurs glissent moins quand la connexion est irrégulière (0.9.2).
+- La lanterne allumée d'un joueur se voit chez les autres (0.9.3) ; sa lumière y est un peu plus
+  faible que sur son propre écran.
 - La Faille est fermée pendant le co-op (la pierre ne réagit plus). allow_rift=1 la rouvre.
 - L'hôte : gardez 2 pions recrutés, sinon le 2e invité prend votre pion principal.
 

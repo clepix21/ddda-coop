@@ -15,7 +15,7 @@
 <!-- badges: work/readme_badges.py -->
 <p align="center">
   <img src="https://img.shields.io/badge/status-alpha-8b1e2b" alt="status: alpha">
-  <img src="https://img.shields.io/badge/version-0.9.2-8a6d3b" alt="version: 0.9.2">
+  <img src="https://img.shields.io/badge/version-0.9.3-8a6d3b" alt="version: 0.9.3">
   <img src="https://img.shields.io/badge/players-2%E2%80%934-2b3137" alt="players: 2–4">
   <img src="https://img.shields.io/badge/game-Dragon%27s%20Dogma%3A%20Dark%20Arisen-2b3137?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNic%2BPHBhdGggZmlsbD0nI2M4YTk2YScgZD0nTTggMWw2IDN2NWMwIDMtMyA1LTYgNi0zLTEtNi0zLTYtNlY0eicvPjwvc3ZnPg%3D%3D&logoColor=white" alt="game: Dragon's Dogma: Dark Arisen">
 <br>
