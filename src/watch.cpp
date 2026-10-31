@@ -81,6 +81,19 @@ LONG CALLBACK on_exception(EXCEPTION_POINTERS *e)
                 ++found;
             }
         logf("watch:   stack%s", len ? buf : " (none)");
+        // and the EBP chain: the values above include stale ones (2026-10-31)
+        char fr[400];
+        int fl = 0;
+        uintptr_t bp = c->Ebp;
+        for (int k = 0; k < 24 && bp && mem_readable(reinterpret_cast<void *>(bp), 8) && fl < int(sizeof fr) - 12; ++k) {
+            uintptr_t ret = reinterpret_cast<const uintptr_t *>(bp)[1], next = reinterpret_cast<const uintptr_t *>(bp)[0];
+            if (ret >= 0x00401000 && ret < 0x01300000)
+                fl += _snprintf(fr + fl, sizeof fr - fl, " %08X", unsigned(ret));
+            if (next <= bp)
+                break;
+            bp = next;
+        }
+        logf("watch:   frames%s", fl ? fr : " (none)");
     } else {
         c->Dr7 &= ~uintptr_t(0x000F0003); // disable DR0 on this thread
     }

@@ -170,7 +170,6 @@ void pads_override(unsigned slot, XINPUT_GAMEPAD g, DWORD until);
 // bridge.cpp: drive a running game from bridge_in.txt (tests only).
 void bridge_start();
 void bridge_game_tick(); // game thread (tests: rebuild)
-void net_gear_frame();    // net.cpp: Present hook, the look rebuilds
 
 // possess.cpp: player 2 drives the main pawn; also reads coop.ini.
 void possess_load_config();
@@ -181,6 +180,7 @@ int possess_bridge_sign();
 uintptr_t possess_arisen();
 DWORD possess_last_update(); // tick of the Arisen's last update (0 = never)
 void hang_note_main_thread(); // hang_watch.cpp: called on the game's main thread
+void hang_note_update_thread(); // and on the characters' updates
 void hang_watch_start();
 uintptr_t possess_main_pawn();
 void possess_set(bool on);

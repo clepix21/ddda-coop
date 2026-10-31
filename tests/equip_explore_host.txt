@@ -33,6 +33,7 @@ wait 2500
 pad 0 2000 0 0 0 0 0 0 150
 wait 2500
 chsnap
+watch arisen 3560 6
 pad 0 2000 0 0 0 0 0 0 150
 wait 4000
 equip 0

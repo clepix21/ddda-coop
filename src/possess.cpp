@@ -220,6 +220,7 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
         loot_apply_queued(); // and copies of their pickups
         quest_live_tick();
         bridge_game_tick();
+        hang_note_update_thread();
         action_tick(ch);
         revive_game_tick(ch); // getting up, coming back next to a player
     } else if (pawn >= 0) {

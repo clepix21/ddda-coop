@@ -286,7 +286,6 @@ HRESULT WINAPI hk_present(IDirect3DDevice9 *dev, const RECT *src, const RECT *ds
         draw_badge(dev);
     perf_add(PERF_BADGE, t0);
     perf_frame();
-    net_gear_frame();
     return g_present_orig(dev, src, dst, wnd, dirty);
 }
 
@@ -303,10 +302,8 @@ HRESULT WINAPI hk_swap_present(IDirect3DSwapChain9 *sc, const RECT *src, const R
         if (badge_on())
             draw_badge(dev);
         perf_add(PERF_BADGE, t0);
-        if (!g_present_orig) { // the device's own Present counts the frames when it is taken
+        if (!g_present_orig) // the device's own Present counts the frames when it is taken
             perf_frame();
-            net_gear_frame();
-        }
         dev->Release();
     }
     return g_swap_present_orig(sc, src, dst, wnd, dirty, flags);

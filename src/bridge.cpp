@@ -150,6 +150,9 @@ void run_line(const char *line)
             uintptr_t ch = strcmp(who, "pawn") == 0     ? possess_main_pawn()
                            : strcmp(who, "camera") == 0 ? (holder ? game::at<uintptr_t>(holder, 0x34) : 0)
                                                          : possess_arisen();
+            if (!ch && strcmp(who, "arisen") == 0) // in a menu: the party table ([0x018FA4EC] + 0x99C)
+                if (uintptr_t party = game::at<uintptr_t>(0x018FA4EC, 0))
+                    ch = game::at<uintptr_t>(party, 0x99C);
             if (ch)
                 watch_start(ch + off, long(count), strcmp(who, "camera") == 0 ? 0 : ch);
         }
