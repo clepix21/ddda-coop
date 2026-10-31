@@ -88,6 +88,8 @@ Monde partagé (shared_world=1 dans coop.ini, le réglage de ce paquet)
 - Les autres joueurs glissent moins quand la connexion est irrégulière (0.9.2).
 - La lanterne allumée d'un joueur se voit chez les autres (0.9.3) ; sa lumière y est un peu plus
   faible que sur son propre écran.
+- Quand un joueur change d'équipement, les autres le voient (0.9.3) ; le jeu charge la pièce
+  puis l'affiche.
 - La Faille est fermée pendant le co-op (la pierre ne réagit plus). allow_rift=1 la rouvre.
 - L'hôte : gardez 2 pions recrutés, sinon le 2e invité prend votre pion principal.
 
