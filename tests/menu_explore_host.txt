@@ -1,0 +1,19 @@
+# Menu exploration 2, host (cutscene.sav): the in-game menu opened with Back (0020), then its screens
+# (shots every 2 s). D-pad up 0001, down 0002, left 0004, right 0008, A 1000, B 2000.
+wait 20000
+pad 0 0020 0 0 0 0 0 0 150
+wait 3500
+pad 0 0002 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 3500
+pad 0 0002 0 0 0 0 0 0 150
+wait 2500
+pad 0 0002 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 15000

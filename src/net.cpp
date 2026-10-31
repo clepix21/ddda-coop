@@ -107,6 +107,7 @@ struct CharState {
     int16_t hold_enemy;             // holding an enemy: its number in the group leader's table, else -1
     int8_t hold_kind;               // ch+0x3938 (lift kind)
     float hold_off[3];              // holding an enemy: where it is from the holder (forward, up, right)
+    uint8_t lantern;                // shared world: its lantern is lit (lantern_on)
 };
 struct StageState {
     int32_t stage, point;           // current stage and entry point ([0x018FA4BC]+0x34 / +0x44)
@@ -234,9 +235,10 @@ struct SaveNeedMsg {
 #pragma pack(pop)
 
 // The message format's version: 'DDC2' since 2026-10-29 (32-bit action numbers), 'DDC3' (the held
-// monster's place), 'DDC4' (players' Steam ids in the SNAP, for the launcher's salon), 'DDC5' (pings). Messages of another format ('DDCO', 'DDC2'...) come from a player with another mod
+// monster's place), 'DDC4' (players' Steam ids in the SNAP, for the launcher's salon), 'DDC5' (pings),
+// 'DDC6' (the lantern). Messages of another format ('DDCO', 'DDC2'...) come from a player with another mod
 // version: dropped, and said (the badge, the log).
-constexpr uint32_t kMagic = 0x35434444;
+constexpr uint32_t kMagic = 0x36434444;
 bool other_version(uint32_t magic) { return (magic & 0x00FFFFFF) == 0x00434444 && magic != kMagic; }
 volatile LONG g_old_peer = 0;
 NetRole g_role = NET_OFF;
@@ -700,7 +702,9 @@ void shared_skill_look(uintptr_t ch, int i, const CharState &s)
     int32_t mine = game::at<int32_t>(ch, 0x2DD4);
     // the same weapon action again (a second shot while aiming): the number does not change, so a pawn
     // that left it while its player stays in it is put back after 400 ms (the 4th shot of the bow test)
-    if (!due[i] && weapon && mine != s.action)
+    // (weapon actions only: a lantern action stays in a player's state while its menu is open, and was played
+    // again and again on the guest, lantern test 2026-10-31 00:03)
+    if (!due[i] && table >= 1 && table <= 0x0F && mine != s.action)
         due[i] = (now + 400) | 1;
     if (!due[i] || int(now - due[i]) < 0)
         return;
@@ -710,6 +714,99 @@ void shared_skill_look(uintptr_t ch, int i, const CharState &s)
     logf("net: shared: party %d plays its player's 0x%X (it was in %s 0x%X)", i, unsigned(s.action), action_name(ch),
          unsigned(mine));
     action_set(ch, s.action);
+}
+
+// The lantern (owner, 2026-10-30: the others never saw a player's lantern lit; playing the lantern action
+// on the pawn showing that player gave the gesture but no light). The game lights a party member's lantern
+// when the lantern item it carries has bit 1 of its flags (+0x20) set: the Arisen's at [ch+0x3D70]; with
+// none there, FUN_00460900 looks in the member's item list, [0x018FA4D4] + 0x178 + member * 0x11E8 (count
+// at +8, items at +0x14, an item's number at +0x10) for the lantern numbers listed at 0x01539D94; the
+// light itself is made by FUN_00432A10 for each lit member, from the lantern object at [ch+0x3D6C] that
+// the lantern action (FUN_00B05DD0) makes with FUN_00B83480 (Ghidra, 2026-10-31).
+constexpr int16_t kLanternItems[] = {64, 65, 76, 0x72B, 0x72E, 0x72F};
+
+int party_member(uintptr_t ch) // 0 the Arisen, 1 + mCmcId a pawn, -1 neither (FUN_00B836A0's choice)
+{
+    uint8_t f = game::at<uint8_t>(ch, 0x206D);
+    return (f & 2) ? 0 : (f & 4) ? 1 + game::at<int32_t>(ch, 0x5854) : -1;
+}
+
+uintptr_t lantern_item(uintptr_t ch)
+{
+    if (uintptr_t it = game::at<uintptr_t>(ch, 0x3D70))
+        return it;
+    int m = party_member(ch);
+    uintptr_t mgr = game::at<uintptr_t>(0x018FA4D4, 0);
+    if (m < 0 || m > 3 || !mgr)
+        return 0;
+    uintptr_t list = mgr + 0x178 + uintptr_t(m) * 0x11E8;
+    uint32_t n = game::at<uint32_t>(list, 8);
+    uintptr_t *items = game::at<uintptr_t *>(list, 0x14);
+    if (n > 512 || !items || !mem_readable(items, n * sizeof *items))
+        return 0;
+    for (int16_t want : kLanternItems)
+        for (uint32_t k = 0; k < n; ++k)
+            if (items[k] && game::at<int16_t>(items[k], 0x10) == want)
+                return items[k];
+    return 0;
+}
+
+bool lantern_on(uintptr_t ch)
+{
+    uintptr_t it = lantern_item(ch);
+    return it && (game::at<uint32_t>(it, 0x20) & 2);
+}
+
+// The pawn showing a player usually carries no lantern (the test save's pawns have none in their lists), so
+// the lantern action played on it (shared_skill_look) makes the lantern object but finds no item to light:
+// it gets a lantern item of its own here, outside the game's lists, lit while its player's is. The pawn's own
+// items are left alone. Its object is made by the lantern action, played again if it has none (a player
+// whose lantern was lit before this world saw it); put away, the object goes the way FUN_00B835B0 sends it.
+void shared_lantern_look(uintptr_t ch, int i, const CharState &s)
+{
+    static uint8_t item[kParty][0x100];
+    static DWORD again[kParty] = {};
+    static int tries[kParty] = {}; // lantern actions played for this lighting (3 at most)
+    static bool lit[kParty] = {};
+    uintptr_t mine = uintptr_t(item[i]);
+    uintptr_t it = game::at<uintptr_t>(ch, 0x3D70);
+    if (it && it != mine) // a lantern of its own, lit by the game (the pawn's own lantern action)
+        return;
+    if (s.lantern) {
+        if (!lit[i]) {
+            lit[i] = true;
+            tries[i] = 0;
+            logf("net: shared: party %d: lantern lit, as its player's", i);
+        }
+        // given again while the pawn has no lantern object: the game takes it back each frame then
+        // (FUN_00B766F0, outside the lantern actions)
+        if (!it) {
+            memset(item[i], 0, sizeof item[i]);
+            *reinterpret_cast<int16_t *>(item[i] + 0x10) = kLanternItems[0];
+            *reinterpret_cast<uint32_t *>(item[i] + 0x20) = 2;
+            game::at<uintptr_t>(ch, 0x3D70) = mine;
+        }
+        int32_t act = game::at<int32_t>(ch, 0x2DD4);
+        DWORD t = GetTickCount();
+        if (!game::at<uintptr_t>(ch, 0x3D6C) && act != 0x99 && act != 0x9A && int(t - again[i]) >= 0 && tries[i] < 3) {
+            again[i] = (t + 3000) | 1;
+            ++tries[i];
+            action_set(ch, 0x99);
+            logf("net: shared: party %d: no lantern in hand: lantern action played", i);
+        }
+        return;
+    }
+    if (!lit[i])
+        return;
+    lit[i] = false;
+    if (it == mine) {
+        game::at<uintptr_t>(ch, 0x3D70) = 0;
+        if (uintptr_t obj = game::at<uintptr_t>(ch, 0x3D6C)) {
+            game::at<uint8_t>(obj, 0x29B1) = 1;
+            game::at<uintptr_t>(ch, 0x3D6C) = 0;
+        }
+    }
+    logf("net: shared: party %d: lantern put away, as its player's", i);
 }
 
 void shared_grab_look(uintptr_t ch, int i, const CharState &s)
@@ -949,6 +1046,7 @@ void shared_apply_transform(uintptr_t ch, int i)
     if (!away) {
         shared_grab_look(ch, i, s);
         shared_skill_look(ch, i, s);
+        shared_lantern_look(ch, i, s);
     }
     EnterCriticalSection(&g_cap_lock);
     float vel[3];
@@ -2538,6 +2636,7 @@ void net_capture(uintptr_t ch, int i)
     if (g_shared && i == 0) { // its action, and what it holds (shared_grab_look)
         s.action = game::at<int32_t>(ch, 0x2DD4);
         s.hold_kind = int8_t(game::at<int32_t>(ch, 0x3938));
+        s.lantern = lantern_on(ch);
         uintptr_t held = hold_action(s.action) ? game::at<uintptr_t>(ch, 0x38F0) : 0;
         for (int p = 0; held && p < kPawns; ++p)
             if (possess_pawn_ptr(p) == held)

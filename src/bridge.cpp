@@ -445,6 +445,64 @@ void run_line(const char *line)
                  game::at<uint32_t>(ch, 0x2740), game::at<uint8_t>(ch, 0x31EA), action_name(ch), game::at<float>(ch, 0x40),
                  game::at<float>(ch, 0x48));
         _snprintf(g_current, sizeof g_current, "flags273c %u", slot);
+    } else if (strncmp(line, "items ", 6) == 0) { // items <member 0-3>: [0x018FA4D4]+0x178+m*0x11E8, number:flags
+        int m = atoi(line + 6);
+        uintptr_t mgr = game::at<uintptr_t>(0x018FA4D4, 0);
+        if (mgr && m >= 0 && m < 4) {
+            uintptr_t list = mgr + 0x178 + uintptr_t(m) * 0x11E8;
+            uint32_t n = game::at<uint32_t>(list, 8);
+            uintptr_t *it = game::at<uintptr_t *>(list, 0x14);
+            char buf[1500];
+            int len = snprintf(buf, sizeof buf, "bridge: items %d: %u at %p:", m, n, (void *)it);
+            for (uint32_t k = 0; it && n <= 512 && mem_readable(it, n * sizeof *it) && k < n && len < 1400; ++k)
+                if (it[k] && mem_readable(reinterpret_cast<void *>(it[k]), 0x24))
+                    len += snprintf(buf + len, sizeof buf - len, " %d:%X", game::at<int16_t>(it[k], 0x10), game::at<uint32_t>(it[k], 0x20));
+            logf("%s", buf);
+        }
+        strcpy(g_current, line);
+    } else if (strncmp(line, "equip ", 6) == 0) { // equip <member 0-3>: mpEquip[12] (bag +0x258), number:flags each
+        int m = atoi(line + 6);
+        uintptr_t mgr = game::at<uintptr_t>(0x018FA4D4, 0);
+        if (mgr && m >= 0 && m < 4) {
+            uintptr_t bag = mgr + 0x174 + uintptr_t(m) * 0x11E8;
+            char buf[600];
+            int len = snprintf(buf, sizeof buf, "bridge: equip %d (bag %p):", m, (void *)bag);
+            for (int k = 0; k < 12; ++k) {
+                uintptr_t it = game::at<uintptr_t>(bag, 0x258 + 4 * k);
+                if (it && mem_readable(reinterpret_cast<void *>(it), 0x24))
+                    len += snprintf(buf + len, sizeof buf - len, " %d:%X", game::at<int16_t>(it, 0x10), game::at<uint32_t>(it, 0x20));
+                else
+                    len += snprintf(buf + len, sizeof buf - len, " -");
+            }
+            logf("%s", buf);
+        }
+        strcpy(g_current, line);
+    } else if (strncmp(line, "chset ", 6) == 0) { // chset <who: -1 Arisen, 0-2 pawn> <off hex> <dword hex>: write one word
+        int who = -2;
+        unsigned off = 0, v = 0;
+        if (sscanf(line + 6, "%d %x %x", &who, &off, &v) == 3 && who >= -1 && who < kPawns) {
+            uintptr_t ch = who < 0 ? possess_arisen() : possess_pawn_ptr(who);
+            if (ch && off < 0x8000) {
+                uint32_t was = game::at<uint32_t>(ch, off);
+                game::at<uint32_t>(ch, off) = v;
+                logf("bridge: chset %s %d +%X: %08X -> %08X", who < 0 ? "arisen" : "pawn", who, off, was, v);
+            }
+        }
+        strcpy(g_current, line);
+    } else if (strncmp(line, "chptr ", 6) == 0) { // chptr <ptr off hex> <off hex> <count>: bytes at [ch+ptr off]+off
+        unsigned po = 0, off = 0, count = 0;
+        if (sscanf(line + 6, "%x %x %u", &po, &off, &count) == 3 && count > 0 && count <= 64 && po < 0x8000)
+            for (int p = -1; p < kPawns; ++p) {
+                uintptr_t ch = p < 0 ? possess_arisen() : possess_pawn_ptr(p);
+                uintptr_t o = ch ? game::at<uintptr_t>(ch, po) : 0;
+                if (!o || !mem_readable(reinterpret_cast<void *>(o + off), count))
+                    continue;
+                char hex[200] = "";
+                for (unsigned k = 0; k < count; ++k)
+                    _snprintf(hex + strlen(hex), sizeof hex - strlen(hex), "%02X ", game::at<uint8_t>(o, off + k));
+                logf("bridge: chptr %s %d [+%X]+%X: %s", p < 0 ? "arisen" : "pawn", p, po, off, hex);
+            }
+        _snprintf(g_current, sizeof g_current, "chptr %X %X", po, off);
     } else if (strncmp(line, "chbytes ", 8) == 0) { // chbytes <off hex> <count>: bytes of the Arisen and the pawns
         unsigned off = 0, count = 0;
         if (sscanf(line + 8, "%x %u", &off, &count) == 2 && count > 0 && count <= 64)
@@ -458,19 +516,36 @@ void run_line(const char *line)
                 logf("bridge: chbytes %s %d +%X: %s", p < 0 ? "arisen" : "pawn", p, off, hex);
             }
         _snprintf(g_current, sizeof g_current, "chbytes %X", off);
+    } else if (strncmp(line, "gsbytes ", 8) == 0 || strncmp(line, "gsset ", 6) == 0) {
+        // gsbytes <off hex> <count>: bytes of the game's global (sGameSys at [0x018FA4BC]); gsset <off hex>
+        // <byte>: write one (tests: mLanternOff[4] at +0xBD4CC, the Arisen then the three pawns)
+        uintptr_t gm = game::at<uintptr_t>(game::kGameMain, 0);
+        unsigned off = 0, v = 0;
+        if (gm && line[2] == 'b' && sscanf(line + 8, "%x %u", &off, &v) == 2 && v > 0 && v <= 32) {
+            char hex[120] = "";
+            for (unsigned k = 0; k < v; ++k)
+                _snprintf(hex + strlen(hex), sizeof hex - strlen(hex), "%02X ", game::at<uint8_t>(gm, off + k));
+            logf("bridge: gsbytes +%X: %s", off, hex);
+        } else if (gm && line[2] == 's' && sscanf(line + 6, "%x %u", &off, &v) == 2) {
+            game::at<uint8_t>(gm, off) = uint8_t(v);
+            logf("bridge: gsset +%X = %u", off, v);
+        }
+        strcpy(g_current, line);
     } else if (strcmp(line, "chsnap") == 0 || strcmp(line, "chdiff") == 0) {
-        // chsnap: keep the Arisen's first 0x4000 bytes; chdiff: log the 4-byte words that changed since (tests:
+        // chsnap: keep the Arisen's first 0x8000 bytes; chdiff: log the 4-byte words that changed since (tests:
         // which field a game action sets, e.g. the lantern lit)
-        static uint8_t snap[0x4000];
+        static uint8_t snap[0x8000];
         static bool have = false;
         uintptr_t a = possess_arisen();
+        if (a && !mem_readable(reinterpret_cast<void *>(a), sizeof snap))
+            a = 0; // the object ends before 0x8000 bytes with nothing mapped after it: nothing read
         if (a && line[2] == 's') {
             memcpy(snap, reinterpret_cast<void *>(a), sizeof snap);
             have = true;
             logf("bridge: chsnap of the Arisen %08X", unsigned(a));
         } else if (a && have) {
             int n = 0;
-            for (unsigned off = 0; off < sizeof snap && n < 60; off += 4) {
+            for (unsigned off = 0; off < sizeof snap && n < 400; off += 4) {
                 uint32_t was, now;
                 memcpy(&was, snap + off, 4);
                 memcpy(&now, reinterpret_cast<void *>(a + off), 4);
@@ -479,7 +554,7 @@ void run_line(const char *line)
                     ++n;
                 }
             }
-            logf("bridge: chdiff: %d words changed (60 shown at most)", n);
+            logf("bridge: chdiff: %d words changed (400 shown at most)", n);
         }
         strcpy(g_current, line);
     } else if (strncmp(line, "actname", 7) == 0) { // the current action of the Arisen and the pawns

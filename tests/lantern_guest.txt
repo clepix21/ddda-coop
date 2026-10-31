@@ -1,11 +1,29 @@
-# Lantern test, guest: the same bytes of its pawns (one shows the host) while the host lights and puts away
-# its lantern.
+# Lantern test, guest: the pawn showing the host should light up when the host lights its lantern from the
+# items menu (net: shared: party N: lantern lit), and go dark when it is put away. Then the guest lights its
+# own lantern the same way (the host's log says it for the pawn showing the guest) and puts it away.
+# Back 0020, down 0002 (to the "Outils" tab, first time only), A 1000.
 wait 20000
-chbytes 350 16
-wait 5000
-chbytes 350 16
-wait 16000
-chbytes 350 16
-wait 16000
-chbytes 350 16
-wait 20000
+chbytes 3D6C 8
+wait 30000
+chbytes 3D6C 8
+chptr 3D6C 29B0 40
+chptr 3D6C 28 4
+wait 35000
+pad 0 0020 0 0 0 0 0 0 150
+wait 3000
+pad 0 0002 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 15000
+pad 0 0020 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 15000

@@ -1,0 +1,24 @@
+# Equipment exploration, host (cutscene.sav): the equipment slots of the party (bridge "equip"), then the
+# pause menu (Start 0010) and its screens (shots every 2 s), to find where gear is changed.
+# D-pad up 0001, down 0002, left 0004, right 0008, A 1000, B 2000.
+wait 20000
+equip 0
+equip 1
+pad 0 0010 0 0 0 0 0 0 150
+wait 3500
+pad 0 0002 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 3500
+pad 0 1000 0 0 0 0 0 0 150
+wait 3500
+pad 0 0002 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 3000
+equip 0
+wait 10000

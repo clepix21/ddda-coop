@@ -1,19 +1,34 @@
-# Lantern test, host (saves/cutscene.sav: Cassardis at night): the game's own lantern actions, with the
-# Arisen's words that change (chsnap/chdiff) to find where "lit" is kept; the guest's pawn of the host must
-# play the same actions.
+# Lantern test, host (saves/cutscene.sav: Cassardis at night): lights the lantern the way the owner does,
+# from the items menu (Back, down to the "Outils" tab, A on its first item, the lantern, A, A "Utiliser"; the
+# menu closes by itself), then the Arisen's words that changed (chsnap/chdiff, menu closed). Then it is put
+# out the same way (the menu reopens on the tab used last: no down press). Back 0020, down 0002, A 1000.
 wait 20000
+gsbytes BD4CC 4
 chsnap
-actc 0 cPlActUseLantern
-wait 4000
+pad 0 0020 0 0 0 0 0 0 150
+wait 3000
+pad 0 0002 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 6000
+gsbytes BD4CC 4
+chptr 3D6C 29B0 40
+chptr 3D6C 28 4
 chdiff
 chsnap
 wait 10000
-actc 0 cPlActPutAwayLantern
-wait 4000
+pad 0 0020 0 0 0 0 0 0 150
+wait 3000
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 6000
+gsbytes BD4CC 4
 chdiff
-chsnap
-wait 10000
-actc 0 cPlActUseLantern
-wait 4000
-chdiff
-wait 20000
+wait 15000
