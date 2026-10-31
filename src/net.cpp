@@ -108,6 +108,7 @@ struct CharState {
     int8_t hold_kind;               // ch+0x3938 (lift kind)
     float hold_off[3];              // holding an enemy: where it is from the holder (forward, up, right)
     uint8_t lantern;                // shared world: its lantern is lit (lantern_on)
+    int32_t look[16];               // shared world: its model numbers, [ch+0x3DEC] +0x10..+0x50 (look_of)
 };
 struct StageState {
     int32_t stage, point;           // current stage and entry point ([0x018FA4BC]+0x34 / +0x44)
@@ -809,6 +810,47 @@ void shared_lantern_look(uintptr_t ch, int i, const CharState &s)
     logf("net: shared: party %d: lantern put away, as its player's", i);
 }
 
+// The gear (owner, 2026-10-30: a player's new gear was not seen by the others). A character's parameter
+// copy [ch+0x3DEC] holds one model number per worn piece at +0x14..+0x4C (24-bit number, kind in the
+// high byte, -1 = none; the menu's equip changes them); FUN_00B5CE10 (__thiscall(ch), a character
+// virtual) remakes the weapons and the armour from them (equip27, 2026-10-31: armour off and on again live).
+// A model this game has not loaded freezes it inside the rebuild (look1, 2026-10-31 07:33: the host put on a
+// mask the guest's world had never shown, the guest's game stopped at 0 fps), so it is off unless
+// look_sync=1 (tests) until the models are loaded first.
+bool look_of(uintptr_t ch, int32_t *out)
+{
+    uintptr_t prm = game::at<uintptr_t>(ch, 0x3DEC);
+    if (!prm || !mem_readable(reinterpret_cast<void *>(prm + 0x10), 0x40))
+        return false;
+    memcpy(out, reinterpret_cast<void *>(prm + 0x10), 0x40);
+    return true;
+}
+
+// Rebuilt at the end of the frame (net_gear_frame, the Present hook), outside every character's update, when
+// that is the game thread: a rebuild inside the update froze on a model to load (look1).
+volatile uintptr_t g_gear_rebuild[kParty] = {};
+volatile DWORD g_game_tid = 0;
+
+void shared_gear_look(uintptr_t ch, int i, const CharState &s)
+{
+    g_game_tid = GetCurrentThreadId();
+    static const bool on = early_flag("look_sync");
+    static DWORD next[kParty] = {};
+    if (!on || !s.look[1])
+        return; // nothing sent (a state from before the look)
+    int32_t mine[16];
+    if (!look_of(ch, mine) || !memcmp(mine, s.look, sizeof mine))
+        return;
+    DWORD t = GetTickCount();
+    if (next[i] && int(t - next[i]) < 0)
+        return;
+    next[i] = (t + 1000) | 1;
+    uintptr_t prm = game::at<uintptr_t>(ch, 0x3DEC);
+    memcpy(reinterpret_cast<void *>(prm + 0x10), s.look, sizeof mine);
+    logf("net: shared: party %d: gear changed, as its player's: its look rebuilt at the end of the frame", i);
+    g_gear_rebuild[i] = ch;
+}
+
 void shared_grab_look(uintptr_t ch, int i, const CharState &s)
 {
     static int applied[kParty] = {-1, -1, -1, -1}; // held here: 0..3 a player, 0x100 + id an enemy
@@ -1047,6 +1089,7 @@ void shared_apply_transform(uintptr_t ch, int i)
         shared_grab_look(ch, i, s);
         shared_skill_look(ch, i, s);
         shared_lantern_look(ch, i, s);
+        shared_gear_look(ch, i, s);
     }
     EnterCriticalSection(&g_cap_lock);
     float vel[3];
@@ -2637,6 +2680,7 @@ void net_capture(uintptr_t ch, int i)
         s.action = game::at<int32_t>(ch, 0x2DD4);
         s.hold_kind = int8_t(game::at<int32_t>(ch, 0x3938));
         s.lantern = lantern_on(ch);
+        look_of(ch, s.look);
         uintptr_t held = hold_action(s.action) ? game::at<uintptr_t>(ch, 0x38F0) : 0;
         for (int p = 0; held && p < kPawns; ++p)
             if (possess_pawn_ptr(p) == held)
@@ -3649,3 +3693,25 @@ void net_quest_publish(const std::vector<uint8_t> &blob, uint32_t crc)
 
 // overlay.cpp, launcher status: a player with an older mod tried to talk to this one.
 bool net_old_peer() { return g_old_peer != 0; }
+
+// Present hook (overlay.cpp), each frame: the look rebuilds asked by shared_gear_look, on the game thread only.
+void net_gear_frame()
+{
+    static bool told = false;
+    for (int i = 0; i < kParty; ++i) {
+        uintptr_t ch = g_gear_rebuild[i];
+        if (!ch)
+            continue;
+        if (GetCurrentThreadId() != g_game_tid) {
+            if (!told)
+                logf("net: shared: Present is not on the game thread (%lu, game %lu): no look rebuild", GetCurrentThreadId(), g_game_tid);
+            told = true;
+            g_gear_rebuild[i] = 0;
+            continue;
+        }
+        g_gear_rebuild[i] = 0;
+        using Rebuild_t = void(__fastcall *)(uintptr_t);
+        reinterpret_cast<Rebuild_t>(0x00B5CE10)(ch);
+        logf("net: shared: party %d: look rebuilt", i);
+    }
+}

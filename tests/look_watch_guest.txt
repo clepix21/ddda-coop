@@ -1,0 +1,5 @@
+# Gear test, guest (ranger.sav, the Rift stone room: no B or A here): steps aside (warp 120 -120: the pawn
+# showing the host is then in view) and watches while the host equips a piece from the menu.
+wait 20000
+warp 120 -120 0
+wait 70000
