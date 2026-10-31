@@ -1,0 +1,9 @@
+# Lantern test, guest (bot_load_game_late_p2.txt: it loads the game 70 s after the host): the host lit its
+# lantern before this world had its pawn, so that pawn must get a lantern although no lantern action came
+# (net: shared: party N: no lantern in hand: lantern action played). Shots every 3 s.
+wait 30000
+chbytes 3D6C 8
+chbytes 3D70 4
+wait 30000
+chbytes 3D6C 8
+wait 10000

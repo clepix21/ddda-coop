@@ -1,0 +1,33 @@
+# Gear test, host (cutscene.sav, a test copy: a Paladin; 469 in the bag, not worn, maybe a weapon). Pause
+# menu (Start 0010, opens on "Carte"), right to "Équipement", A; the 1st category ("Armes"), A; right to
+# the 2nd item, A, then A, A on "Équiper"; B 4 times. The slots logged (bridge "equip"); shots every 2 s.
+# D-pad up 0001, down 0002, left 0004, right 0008, A 1000, B 2000.
+wait 20000
+equip 0
+pad 0 0010 0 0 0 0 0 0 150
+wait 3500
+pad 0 0008 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 3500
+pad 0 1000 0 0 0 0 0 0 150
+wait 3500
+pad 0 0008 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 4500
+pad 0 1000 0 0 0 0 0 0 300
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 5000
+equip 0
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 4000
+equip 0
+wait 15000

@@ -1,0 +1,13 @@
+# Lantern test, host (cutscene.sav: Cassardis at night): lights the lantern from the items menu (Back 0020,
+# down 0002 to the "Outils" tab, A on the lantern, A, A "Utiliser") and keeps it lit.
+wait 20000
+pad 0 0020 0 0 0 0 0 0 150
+wait 3000
+pad 0 0002 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 90000

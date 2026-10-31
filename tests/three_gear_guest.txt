@@ -1,0 +1,7 @@
+# Three players test, guests (ranger.sav): step aside (warp) and watch while the host puts the mask on and
+# lights its lantern (three_gear_host.txt); then the pawns' lantern objects (chbytes 3D6C).
+wait 20000
+warp 120 -120 0
+wait 75000
+chbytes 3D6C 8
+wait 10000

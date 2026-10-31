@@ -1,0 +1,48 @@
+# Gear test, host (ranger.sav, a test copy: armour in the bag, none worn). From the pause menu (Start 0010,
+# it opens on "Carte"): right to "Équipement", A; down to the 2nd category (head), A; right to its second
+# item (the stealth mask, 724: a Ranger can wear it, not the Salade d'acier before it), A, then A, A on
+# "Équiper" (the popup takes two, like the lantern's "Utiliser"); B 4 times to shut the menu.
+# Then the lantern from the items menu (Back 0020, down 0002 to "Outils", A, A, A "Utiliser"), kept lit.
+# Three players test (three_gear): both guests must see the mask and the lantern on their pawn of the host.
+# D-pad up 0001, down 0002, left 0004, right 0008, A 1000, B 2000. The slots logged (bridge "equip").
+wait 20000
+equip 0
+pad 0 0010 0 0 0 0 0 0 150
+wait 3500
+pad 0 0008 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 3500
+pad 0 0002 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 3500
+pad 0 0008 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 4500
+pad 0 1000 0 0 0 0 0 0 300
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 5000
+equip 0
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 4000
+equip 0
+wait 15000
+pad 0 0020 0 0 0 0 0 0 150
+wait 3000
+pad 0 0002 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 2500
+pad 0 1000 0 0 0 0 0 0 150
+wait 30000

@@ -1,0 +1,9 @@
+# Gear test, host (cutscene.sav: no spare weapon in the bag): the Arisen takes the main pawn's (Jeanne's)
+# weapon model numbers ([ch+0x3DEC] +0x10..+0x20) and the game's look refresh (bridge lookfrom); the guest's
+# pawn of the host should then hold Jeanne's weapons too. Shots every 2 s.
+wait 26000
+chptr 3DEC 10 16
+lookfrom 0 10 10
+wait 6000
+chptr 3DEC 10 16
+wait 15000

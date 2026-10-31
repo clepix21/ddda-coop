@@ -789,7 +789,7 @@ void shared_lantern_look(uintptr_t ch, int i, const CharState &s)
         }
         int32_t act = game::at<int32_t>(ch, 0x2DD4);
         DWORD t = GetTickCount();
-        if (!game::at<uintptr_t>(ch, 0x3D6C) && act != 0x99 && act != 0x9A && int(t - again[i]) >= 0 && tries[i] < 3) {
+        if (!game::at<uintptr_t>(ch, 0x3D6C) && act != 0x99 && act != 0x9A && (!again[i] || int(t - again[i]) >= 0) && tries[i] < 3) {
             again[i] = (t + 3000) | 1;
             ++tries[i];
             action_set(ch, 0x99);
@@ -829,13 +829,26 @@ bool look_of(uintptr_t ch, int32_t *out)
 void shared_gear_look(uintptr_t ch, int i, const CharState &s)
 {
     static const bool on = !early_flag("no_look_sync");
-    static DWORD next[kParty] = {};
+    static DWORD next[kParty] = {}, same_since[kParty] = {};
     if (!on || !s.look[1])
         return; // nothing sent (a state from before the look)
     int32_t mine[16];
-    if (!look_of(ch, mine) || !memcmp(mine, s.look, sizeof mine))
+    if (!look_of(ch, mine))
         return;
+    // +0x10 is the vocation (2 Strider, 4 Mystic Knight, 1 Fighter in the test saves). A pawn with another one
+    // is not that player's character yet: a guest joining late still shows a hired pawn there until its
+    // world reloads, and that pawn remade with the host's gear asked for a mage's sound bank it did not have
+    // ("Fatal error. Failed open file ...\mgc_pl_fireball.srq", lantern_late, 2026-10-31). Only the gear
+    // (+0x14..+0x4C) is copied, and only 10 s after the pawn shows that player's vocation.
     DWORD t = GetTickCount();
+    if (mine[0] != s.look[0]) {
+        same_since[i] = 0;
+        return;
+    }
+    if (!same_since[i])
+        same_since[i] = t | 1;
+    if (int(t - same_since[i]) < 10000 || !memcmp(mine + 1, s.look + 1, sizeof mine - 4))
+        return;
     if (next[i] && int(t - next[i]) < 0)
         return;
     next[i] = (t + 1000) | 1;
@@ -849,8 +862,8 @@ void shared_gear_look(uintptr_t ch, int i, const CharState &s)
     // goes this way (arc3, 2026-10-31: m_a_helm1208.arc opened, then the look remade)
     uintptr_t prm = game::at<uintptr_t>(ch, 0x3DEC);
     uintptr_t mprm = m == 0 ? gs + 0xA76D0 : gs + 0xA6860 + uintptr_t(m) * 0x1660; // the member's own parameter
-    memcpy(reinterpret_cast<void *>(prm + 0x10), s.look, sizeof mine);
-    memcpy(reinterpret_cast<void *>(mprm + 0x10), s.look, sizeof mine);
+    memcpy(reinterpret_cast<void *>(prm + 0x14), s.look + 1, sizeof mine - 4);
+    memcpy(reinterpret_cast<void *>(mprm + 0x14), s.look + 1, sizeof mine - 4);
     int32_t &state = game::at<int32_t>(gs, 0xAC3C0 + 4 * m);
     logf("net: shared: party %d (member %d): gear changed, as its player's: look refresh asked (state was %d)", i, m, state);
     if (state == 0)

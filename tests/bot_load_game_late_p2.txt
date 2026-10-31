@@ -1,0 +1,10 @@
+# Boot -> title -> "Menu principal" -> "Charger" (last manual save), 70 s later than bot_load_game_p2.txt:
+# the other copy is already in game (late join tests). Pad 1. A=1000
+0 0 0
+120000 0 1000
+120300 0 0
+142000 0 1000
+142300 0 0
+152000 0 1000
+152300 0 0
+0 1 0                  # pad 2 plugged in from the start (the game only registers pads it saw connected)

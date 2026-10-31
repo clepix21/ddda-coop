@@ -462,6 +462,23 @@ void run_line(const char *line)
             }
         }
         strcpy(g_current, line);
+    } else if (strncmp(line, "lookfrom ", 9) == 0) { // lookfrom <pawn> <off hex> <len hex>: the Arisen takes that pawn's model
+        // numbers (its [ch+0x3DEC] and member 0's parameter, sGameSys +0xA76D0), then the game's look refresh
+        // (sGameSys +0xAC3C0 = 1): a gear change with no spare piece in the save (tests: weapons)
+        int from = -1;
+        unsigned off = 0, len = 0;
+        uintptr_t gs = game::at<uintptr_t>(game::kGameMain, 0);
+        if (gs && sscanf(line + 9, "%d %x %x", &from, &off, &len) == 3 && from >= 0 && from < kPawns && off + len <= 0x50) {
+            uintptr_t a = possess_arisen(), b = possess_pawn_ptr(from);
+            uintptr_t pa = a ? game::at<uintptr_t>(a, 0x3DEC) : 0, pb = b ? game::at<uintptr_t>(b, 0x3DEC) : 0;
+            if (pa && pb) {
+                memcpy(reinterpret_cast<void *>(pa + off), reinterpret_cast<void *>(pb + off), len);
+                memcpy(reinterpret_cast<void *>(gs + 0xA76D0 + off), reinterpret_cast<void *>(pb + off), len);
+                game::at<int32_t>(gs, 0xAC3C0) = 1;
+                logf("bridge: lookfrom pawn %d +%X %X bytes, refresh asked", from, off, len);
+            }
+        }
+        strcpy(g_current, line);
     } else if (strncmp(line, "rebuild ", 8) == 0) { // rebuild <who>: FUN_00B5CE10 (the look from [ch+0x3DEC]) on the game thread
         g_rebuild_who = atoi(line + 8);
         strcpy(g_current, line);
