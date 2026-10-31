@@ -1,0 +1,10 @@
+# Equipment experiment, guest (ranger.sav): parameter fields of the Arisen and the pawns ([ch+0x3DEC]),
+# to find the armour's model numbers: +0x700..+0x7F0 (FUN_0077FE30 copies three 14-word tables at +0x730,
+# +0x768, +0x7A0) and +0x10..+0x50.
+wait 20000
+chptr 3DEC 700 64
+chptr 3DEC 740 64
+chptr 3DEC 780 64
+chptr 3DEC 7C0 48
+chptr 3DEC 10 64
+wait 3000

@@ -219,6 +219,7 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
         exp_sync_apply(); // shared world: the exp other players earned
         loot_apply_queued(); // and copies of their pickups
         quest_live_tick();
+        bridge_game_tick();
         action_tick(ch);
         revive_game_tick(ch); // getting up, coming back next to a player
     } else if (pawn >= 0) {

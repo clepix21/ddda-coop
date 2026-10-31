@@ -169,6 +169,7 @@ void pads_override(unsigned slot, XINPUT_GAMEPAD g, DWORD until);
 
 // bridge.cpp: drive a running game from bridge_in.txt (tests only).
 void bridge_start();
+void bridge_game_tick(); // game thread (tests: rebuild)
 
 // possess.cpp: player 2 drives the main pawn; also reads coop.ini.
 void possess_load_config();

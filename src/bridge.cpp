@@ -22,6 +22,7 @@
 #include "mod.h"
 
 namespace {
+volatile LONG g_rebuild_who = -2;   // rebuild (tests): the character to rebuild on the game thread, -2 = none
 std::vector<uint32_t> g_snaps[3];  // snapg / diffg (tests)
 std::vector<uint32_t> g_snap_objs; // the globals whose objects the snapshots hold
 
@@ -445,6 +446,37 @@ void run_line(const char *line)
                  game::at<uint32_t>(ch, 0x2740), game::at<uint8_t>(ch, 0x31EA), action_name(ch), game::at<float>(ch, 0x40),
                  game::at<float>(ch, 0x48));
         _snprintf(g_current, sizeof g_current, "flags273c %u", slot);
+    } else if (strncmp(line, "pcopy ", 6) == 0) { // pcopy <to pawn> <from pawn> <off hex> <len hex>: [ch+0x3DEC] parameter bytes
+        int to = -2, from = -2;
+        unsigned off = 0, len = 0;
+        if (sscanf(line + 6, "%d %d %x %x", &to, &from, &off, &len) == 4 && to >= -1 && to < kPawns && from >= -1 &&
+            from < kPawns && off + len <= 0x800) {
+            uintptr_t a = to < 0 ? possess_arisen() : possess_pawn_ptr(to), b = from < 0 ? possess_arisen() : possess_pawn_ptr(from);
+            uintptr_t pa = a ? game::at<uintptr_t>(a, 0x3DEC) : 0, pb = b ? game::at<uintptr_t>(b, 0x3DEC) : 0;
+            if (pa && pb && mem_readable(reinterpret_cast<void *>(pa + off), len) && mem_readable(reinterpret_cast<void *>(pb + off), len)) {
+                memcpy(reinterpret_cast<void *>(pa + off), reinterpret_cast<void *>(pb + off), len);
+                logf("bridge: pcopy %d <- %d +%X %X bytes", to, from, off, len);
+            }
+        }
+        strcpy(g_current, line);
+    } else if (strncmp(line, "rebuild ", 8) == 0) { // rebuild <who>: FUN_00B5CE10 (the look from [ch+0x3DEC]) on the game thread
+        g_rebuild_who = atoi(line + 8);
+        strcpy(g_current, line);
+    } else if (strncmp(line, "chptrw ", 7) == 0) { // chptrw <who: -1 Arisen, 0-2 pawn> <ptr off hex> <off hex> <int16>...: write 16-bit words at [ch+ptr off]+off
+        int who = -2, n = 0;
+        unsigned po = 0, off = 0;
+        if (sscanf(line + 7, "%d %x %x%n", &who, &po, &off, &n) == 3 && who >= -1 && who < kPawns && po < 0x8000) {
+            uintptr_t ch = who < 0 ? possess_arisen() : possess_pawn_ptr(who);
+            uintptr_t o = ch ? game::at<uintptr_t>(ch, po) : 0;
+            const char *p = line + 7 + n;
+            int v = 0, used = 0, k = 0;
+            while (o && k < 32 && sscanf(p, "%d%n", &v, &used) == 1 && mem_readable(reinterpret_cast<void *>(o + off + 2 * k), 2)) {
+                game::at<int16_t>(o, off + 2 * k++) = int16_t(v);
+                p += used;
+            }
+            logf("bridge: chptrw %d [+%X]+%X: %d words", who, po, off, k);
+        }
+        strcpy(g_current, line);
     } else if (strncmp(line, "items ", 6) == 0) { // items <member 0-3>: [0x018FA4D4]+0x178+m*0x11E8, number:flags
         int m = atoi(line + 6);
         uintptr_t mgr = game::at<uintptr_t>(0x018FA4D4, 0);
@@ -548,6 +580,9 @@ void run_line(const char *line)
         static uint8_t snap[0x8000];
         static bool have = false;
         uintptr_t a = possess_arisen();
+        if (!a) // in a menu: the party table itself ([0x018FA4EC] + 0x99C, the Arisen)
+            if (uintptr_t party = game::at<uintptr_t>(0x018FA4EC, 0))
+                a = game::at<uintptr_t>(party, 0x99C);
         if (a && !mem_readable(reinterpret_cast<void *>(a), sizeof snap))
             a = 0; // the object ends before 0x8000 bytes with nothing mapped after it: nothing read
         if (a && line[2] == 's') {
@@ -1274,6 +1309,22 @@ DWORD WINAPI bridge_thread(LPVOID)
 }
 
 } // namespace
+
+// Game thread (the Arisen's update): a rebuild asked by the bridge. FUN_00B5CE10 (__thiscall(ch), plain
+// ret, a virtual of the character) remakes the weapons from [ch+0x3DEC] +0x14/+0x18/+0x1C, then calls the
+// character's vtable +0x308 and FUN_00B7E940 (+0x3580, the parts); found 2026-10-31.
+void bridge_game_tick()
+{
+    LONG who = InterlockedExchange(&g_rebuild_who, -2);
+    if (who < -1 || who >= kPawns)
+        return;
+    uintptr_t ch = who < 0 ? possess_arisen() : possess_pawn_ptr(who);
+    if (!ch || !game::at<uintptr_t>(ch, 0x3DEC))
+        return;
+    using Rebuild_t = void(__fastcall *)(uintptr_t);
+    reinterpret_cast<Rebuild_t>(0x00B5CE10)(ch);
+    logf("bridge: rebuild %d (%p) done", int(who), (void *)ch);
+}
 
 void bridge_start()
 {

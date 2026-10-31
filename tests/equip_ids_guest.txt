@@ -1,0 +1,13 @@
+# Equipment experiment, guest (ranger.sav): the parameter copy [ch+0x3DEC] holds one model number per worn
+# piece at +0x14..+0x4C (24-bit number, kind in the high byte, -1 = none). The pawn showing the host (pawn
+# 1) gets the main pawn's (Jeanne's) block +0x10..+0x50, then FUN_00B5CE10 (rebuild). Shots every 2 s. The
+# guest first steps aside (warp): both players start on the same spot, the pawn hid inside the guest's Arisen.
+wait 20000
+warp 120 -120 0
+chptr 3DEC 10 64
+wait 6000
+pcopy 1 0 10 40
+rebuild 1
+wait 10000
+chptr 3DEC 10 64
+wait 6000

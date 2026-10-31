@@ -1,0 +1,8 @@
+# Equipment dump, host: the Arisen's worn pieces and its item list (number:flags), to find a spare piece
+# its vocation can wear.
+wait 20000
+equip 0
+items 0
+equip 1
+items 1
+wait 5000
