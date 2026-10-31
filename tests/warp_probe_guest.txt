@@ -1,0 +1,16 @@
+# Guest (cutscene.sav): steps 200 u in each of four directions (warp <dx> <dz> <dy>), 4 s each with shots, to
+# find where the pawn showing the host is in view (it starts inside the guest's Arisen).
+wait 20000
+warp 200 0 0
+wait 4000
+warp -200 0 0
+warp -200 0 0
+wait 4000
+warp 200 0 0
+warp 0 200 0
+wait 4000
+warp 0 -200 0
+warp 0 -200 0
+wait 4000
+warp 0 200 0
+wait 3000

@@ -1,0 +1,17 @@
+# Equipment experiment, guest (cutscene.sav: both Arisen wear armour): is the freeze of the armour rebuild a
+# model load? The pawn showing the host (pawn 1) loses its armour numbers ([ch+0x3DEC] +0x28..+0x4C set to
+# -1, nothing to load), rebuild; then gets the guest's own Arisen's block back (models already loaded by
+# that Arisen), rebuild. Shots every 2 s; the guest steps 200 u to -x
+# first (warp; warp_probe_guest.txt: the pawn is then in view on the right).
+wait 20000
+warp -200 0 0
+chptr 3DEC 10 64
+wait 6000
+chptrw 1 3DEC 28 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+rebuild 1
+wait 8000
+pcopy 1 -1 10 40
+rebuild 1
+wait 8000
+chptr 3DEC 10 64
+wait 5000

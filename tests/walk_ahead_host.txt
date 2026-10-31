@@ -1,0 +1,5 @@
+# Host: walks straight ahead for 1.5 s (left stick up), so that the pawn showing it in the guest's world
+# stands in front of the guest's camera (equipment rebuild tests).
+wait 18000
+pad 0 0000 0 32767 0 0 0 0 1500
+wait 60000
