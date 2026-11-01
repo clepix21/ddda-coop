@@ -82,7 +82,7 @@ monde doit avoir **la même version du mod** : la fenêtre te prévient sinon.
 Plusieurs amis hébergent en même temps ? L'hôte ouvre **Salon** › **Copier le code**, et l'invité colle
 ce code dans son propre **Salon** avant de lancer.
 
-Les touches et tous les détails sont dans `LISEZMOI.txt`, à l'intérieur du zip.
+Les touches et les détails sont dans `README.txt` (en anglais), à l'intérieur du zip ; `HOW-TO-TEST.txt` est une courte liste pour une première partie entre amis.
 
 ## Bon à savoir
 

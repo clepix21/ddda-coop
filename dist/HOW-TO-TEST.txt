@@ -1,0 +1,38 @@
+﻿How to test DDDA Coop 0.9.3 with friends
+========================================
+
+Before
+------
+- Everyone: the game up to date on Steam, and Steam friends with the host.
+- Everyone: unzip, open DDDA-Coop.exe. It must say "Game version supported".
+  Windows may warn that the program is not signed: "More info", then "Run anyway".
+- Keep "Detailed log" on ("Settings").
+
+Start, in this order
+--------------------
+1. Host: "Host", "Launch the game", load their game.
+2. Each friend: "Guest", "Launch the game", and STAY on the title screen until "Connected!".
+3. Only then: Start, load a game. The friend arrives with their own character; the host's game
+   saves and reloads for a few seconds.
+One friend at a time is easier to follow if something goes wrong.
+
+Try
+---
+- Walk and fight together; go through a door or a gate.
+- Host talks to an NPC, sleeps at the inn.
+- A friend quits and comes back.
+- A friend explores alone (LB + RB + Y for 1.5 s, or F7) and comes back the same way.
+- Light the lantern; change a piece of gear in the menu.
+- Avoid the Rift and the game's online features.
+
+If something goes wrong
+-----------------------
+- No Steam friend found in the game: be Steam friends, and in Dragon's Dogma.
+- "Host not found" after a minute: restart the friend's game.
+- A crash or anything odd: note the time and what you were doing.
+
+After
+-----
+- Everyone: "Log" > "Export the log" BEFORE restarting the game (it clears the log), and send
+  the file from Documents\DDDA Coop\Journaux, saying who you are.
+- Friends, back to your own game: "Solo" (your co-op gains are added) or "Remove the mod".

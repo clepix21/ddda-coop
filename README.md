@@ -82,7 +82,7 @@ then presses Start and loads a game: the host's world is what comes in.
 Several friends hosting at the same time? The host opens **Lobby** › **Copy the code**, and the guest
 pastes that code in their own **Lobby** before launching.
 
-The controls and every detail are in `LISEZMOI.txt` (French), inside the zip.
+The controls and the details are in `README.txt` inside the zip; `HOW-TO-TEST.txt` is a short checklist for a first game with friends.
 
 ## Good to know
 

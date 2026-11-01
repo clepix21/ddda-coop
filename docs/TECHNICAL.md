@@ -22,7 +22,7 @@ Only this build is supported; the mod disables itself on any other `DDDA.exe`:
 
 ## Install with the launcher (easiest)
 
-`build\DDDA-Coop.zip` holds `DDDA-Coop.exe`, `dinput8.dll`, `coop.ini` and `LISEZMOI.txt` (French
+`build\DDDA-Coop.zip` holds `DDDA-Coop.exe`, `dinput8.dll`, `coop.ini` and `README.txt` (English
 how-to). Unzip it anywhere and open `DDDA-Coop.exe`, a small window that:
 
 - finds the game through Steam's library folders (or "Changer…") and checks the `DDDA.exe` build;
