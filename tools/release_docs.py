@@ -18,6 +18,10 @@ NEWS = {
     '0.9.3': ['A player\'s lit lantern is seen by the others.',
               'Gear changes are seen by the others; the game loads the piece first.',
               'Fixed: a lantern already lit when a friend joins is now shown.'],
+    '0.9.4': ['Automatic updates: at startup the launcher downloads a newer release, checks it (SHA-256),\n'
+              '  installs it and restarts. Your coop.ini is kept. Not while the game runs.',
+              'Setting: Settings > "Update automatically at startup".',
+              'Release files in English: README.txt and HOW-TO-TEST.txt.'],
 }
 
 EN = {'play': '"Play"', 'lobby': '"Lobby"', 'settings': '"Settings"', 'log': '"Log"', 'host': '"Host"', 'guest': '"Guest"',

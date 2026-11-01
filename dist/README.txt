@@ -1,8 +1,8 @@
-﻿DDDA Coop 0.9.3 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam, 2 to 4 players)
+﻿DDDA Coop 0.9.4 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam, 2 to 4 players)
 ==============================================================================================
 
 Each player needs the game on Steam (current version), on their own PC, and this same mod version
-(0.9.3). Guests must be Steam friends with the host. No IP address or port to set.
+(0.9.4). Guests must be Steam friends with the host. No IP address or port to set.
 
 Files: DDDA-Coop.exe (the launcher), dinput8.dll (the mod), coop.ini (settings). Keep them together,
 anywhere. The launcher is in English, French, Italian, German and Spanish (globe button, bottom left).
@@ -39,11 +39,12 @@ Good to know
 - Alpha: keep copies of your saves.
 - If the game folder already has another dinput8.dll (another mod), it is not replaced: remove it first.
 
-What's new in 0.9.3
+What's new in 0.9.4
 -------------------
-- A player's lit lantern is seen by the others.
-- Gear changes are seen by the others; the game loads the piece first.
-- Fixed: a lantern already lit when a friend joins is now shown.
+- Automatic updates: at startup the launcher downloads a newer release, checks it (SHA-256),
+  installs it and restarts. Your coop.ini is kept. Not while the game runs.
+- Setting: Settings > "Update automatically at startup".
+- Release files in English: README.txt and HOW-TO-TEST.txt.
 
 Licence: MIT for the mod's own code; MinHook and Roboto: see LICENCES.txt.
 Unofficial mod, not affiliated with Capcom. Dragon's Dogma: Dark Arisen (c) Capcom.
