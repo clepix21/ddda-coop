@@ -324,6 +324,9 @@ void save_settings()
 const wchar_t *const kRepoUrl = L"https://github.com/clepix21/ddda-coop";
 const UINT WM_UPDATE_FOUND = WM_APP + 7; // the check found a newer version: g_update_tag
 std::wstring g_update_tag;               // "v0.9.2", set once by the check's thread before it posts
+std::wstring g_update_url;               // its zip on GitHub, and the zip's SHA-256 (hex), when the release has them
+std::string g_update_sha;
+void add_event(const std::wstring &text);
 
 // "v0.9.2" or "0.9.2" -> {0, 9, 2}; false when it is not that shape
 bool parse_version(const std::string &t, int out[3])
@@ -383,10 +386,188 @@ DWORD WINAPI check_updates(void *)
     if (!parse_version(DDDA_COOP_VERSION, have) || !parse_version(tag, got))
         return 0;
     if (std::lexicographical_compare(have, have + 3, got, got + 3)) {
+        // the release's zip and its SHA-256 (GitHub's "digest" of the asset), for the automatic update
+        size_t n = body.find("\"name\"", q2);
+        while (n != std::string::npos && body.compare(body.find('"', body.find(':', n) + 1) + 1, 10, "DDDA-Coop-") != 0)
+            n = body.find("\"name\"", n + 6);
+        auto value = [&](const char *field) -> std::string {
+            size_t f = n == std::string::npos ? n : body.find(field, n);
+            size_t a = f == std::string::npos ? f : body.find('"', body.find(':', f) + 1);
+            size_t b = a == std::string::npos ? a : body.find('"', a + 1);
+            return b == std::string::npos || b - a > 512 ? std::string() : body.substr(a + 1, b - a - 1);
+        };
+        std::string url = value("\"browser_download_url\""), digest = value("\"digest\"");
+        if (url.rfind("https://github.com/clepix21/ddda-coop/releases/download/", 0) == 0 && digest.rfind("sha256:", 0) == 0) {
+            g_update_url = widen(url);
+            g_update_sha = digest.substr(7);
+        }
         g_update_tag = widen(tag);
         PostMessageW(g_wnd, WM_UPDATE_FOUND, 0, 0);
     }
     return 0;
+}
+
+// ---- the automatic update: the newer release's zip, checked, put in place of this folder's files ----
+// Steps (a thread; WM_UPDATE_DONE with 1 = done, then the launcher starts again): download the zip to
+// %TEMP%\DDDA-Coop-update, check its SHA-256 against GitHub's digest (nothing changes on a mismatch),
+// unpack it with Windows' tar.exe, copy every file next to DDDA-Coop.exe except coop.ini (the player's
+// own settings stay), DDDA-Coop.exe last: the running one is renamed DDDA-Coop.exe.old first (a running
+// program can be renamed, not overwritten; the next start deletes it). The game's dinput8.dll is replaced
+// at the next "Lancer le jeu" (install_dll copies it at each launch).
+
+const UINT WM_UPDATE_DONE = WM_APP + 8; // wParam 1: installed, 0: failed (g_update_error says why)
+std::wstring g_update_error;
+bool g_updating = false;
+std::wstring g_test_update_zip; // --test-update-zip <path> <sha256>: tests, a local zip instead of the download
+std::string g_test_update_sha;
+
+bool download(const std::wstring &url, const std::wstring &to)
+{
+    URL_COMPONENTS u = {};
+    u.dwStructSize = sizeof u;
+    wchar_t host[256] = {}, path[2048] = {};
+    u.lpszHostName = host;
+    u.dwHostNameLength = 256;
+    u.lpszUrlPath = path;
+    u.dwUrlPathLength = 2048;
+    if (!WinHttpCrackUrl(url.c_str(), 0, 0, &u) || u.nScheme != INTERNET_SCHEME_HTTPS)
+        return false;
+    HINTERNET s = WinHttpOpen((L"DDDA-Coop/" + widen(DDDA_COOP_VERSION)).c_str(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                              WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    HINTERNET c = s ? WinHttpConnect(s, host, u.nPort, 0) : nullptr;
+    HINTERNET r = c ? WinHttpOpenRequest(c, L"GET", path, nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                         WINHTTP_FLAG_SECURE)
+                    : nullptr;
+    bool ok = false;
+    DWORD status = 0, size = sizeof status;
+    if (r) {
+        WinHttpSetTimeouts(r, 10000, 10000, 30000, 30000); // GitHub sends the file from another host: redirects are followed
+        if (WinHttpSendRequest(r, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+            WinHttpReceiveResponse(r, nullptr) &&
+            WinHttpQueryHeaders(r, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status,
+                                &size, WINHTTP_NO_HEADER_INDEX) &&
+            status == 200) {
+            HANDLE f = CreateFileW(to.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (f != INVALID_HANDLE_VALUE) {
+                char buf[64 * 1024];
+                DWORD got = 0, wrote = 0;
+                long long total = 0;
+                ok = true;
+                while (ok && WinHttpReadData(r, buf, sizeof buf, &got) && got) {
+                    total += got;
+                    ok = total < 64LL * 1024 * 1024 && WriteFile(f, buf, got, &wrote, nullptr) && wrote == got;
+                }
+                CloseHandle(f);
+            }
+        }
+    }
+    for (HINTERNET x : {r, c, s})
+        if (x)
+            WinHttpCloseHandle(x);
+    return ok;
+}
+
+bool run_wait(std::wstring cmd)
+{
+    STARTUPINFOW si = {};
+    si.cb = sizeof si;
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+        return false;
+    CloseHandle(pi.hThread);
+    DWORD code = 1;
+    if (WaitForSingleObject(pi.hProcess, 60000) == WAIT_OBJECT_0)
+        GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    return code == 0;
+}
+
+DWORD WINAPI install_update(void *)
+{
+    auto fail = [](const wchar_t *why) {
+        g_update_error = why;
+        PostMessageW(g_wnd, WM_UPDATE_DONE, 0, 0);
+        return DWORD(0);
+    };
+    wchar_t tmp[MAX_PATH] = {};
+    GetTempPathW(MAX_PATH, tmp);
+    std::wstring dir = std::wstring(tmp) + L"DDDA-Coop-update", zip = dir + L"\\update.zip", files = dir + L"\\files";
+    run_wait(L"cmd.exe /c rd /s /q \"" + dir + L"\"");
+    CreateDirectoryW(dir.c_str(), nullptr);
+    CreateDirectoryW(files.c_str(), nullptr);
+    std::string want = g_test_update_zip.empty() ? g_update_sha : g_test_update_sha;
+    if (g_test_update_zip.empty() ? !download(g_update_url, zip) : !CopyFileW(g_test_update_zip.c_str(), zip.c_str(), FALSE))
+        return fail(tr(L"téléchargement impossible"));
+    std::string sha = sha256_file(zip);
+    if (sha.empty() || _stricmp(sha.c_str(), want.c_str()) != 0)
+        return fail(tr(L"le fichier téléchargé n'est pas celui publié (SHA-256 différent)"));
+    wchar_t sys[MAX_PATH] = {};
+    GetSystemDirectoryW(sys, MAX_PATH);
+    if (!run_wait(L"\"" + std::wstring(sys) + L"\\tar.exe\" -xf \"" + zip + L"\" -C \"" + files + L"\"") ||
+        !exists(files + L"\\DDDA-Coop.exe") || !exists(files + L"\\dinput8.dll"))
+        return fail(tr(L"le zip ne contient pas DDDA-Coop.exe et dinput8.dll"));
+    WIN32_FIND_DATAW fd;
+    HANDLE fh = FindFirstFileW((files + L"\\*").c_str(), &fd);
+    bool ok = fh != INVALID_HANDLE_VALUE;
+    for (bool more = ok; more; more = FindNextFileW(fh, &fd)) {
+        std::wstring n = fd.cFileName;
+        if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || _wcsicmp(n.c_str(), L"DDDA-Coop.exe") == 0)
+            continue;
+        if (_wcsicmp(n.c_str(), L"coop.ini") == 0 && exists(g_exe_dir + L"\\coop.ini"))
+            continue; // the player's own settings
+        ok = CopyFileW((files + L"\\" + n).c_str(), (g_exe_dir + L"\\" + n).c_str(), FALSE) && ok;
+    }
+    if (fh != INVALID_HANDLE_VALUE)
+        FindClose(fh);
+    std::wstring self = g_exe_dir + L"\\DDDA-Coop.exe", old = self + L".old";
+    if (ok) {
+        DeleteFileW(old.c_str());
+        ok = MoveFileExW(self.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
+        if (ok && !CopyFileW((files + L"\\DDDA-Coop.exe").c_str(), self.c_str(), FALSE)) {
+            MoveFileExW(old.c_str(), self.c_str(), MOVEFILE_REPLACE_EXISTING); // put the running one back
+            ok = false;
+        }
+    }
+    if (!ok)
+        return fail(tr(L"impossible de remplacer les fichiers du dossier de DDDA-Coop.exe"));
+    PostMessageW(g_wnd, WM_UPDATE_DONE, 1, 0);
+    return 0;
+}
+
+void start_update()
+{
+    if (g_updating || (g_update_url.empty() && g_test_update_zip.empty()))
+        return;
+    g_updating = true;
+    EnableWindow(g_update, FALSE);
+    SetWindowTextW(g_update, (tr(L"Mise à jour ") + g_update_tag + tr(L" : installation…")).c_str());
+    add_event(tr(L"Mise à jour vers ") + g_update_tag + tr(L" : téléchargement et vérification…"));
+    if (HANDLE t = CreateThread(nullptr, 0, install_update, nullptr, 0, nullptr))
+        CloseHandle(t);
+}
+
+// The launcher starts again (after a language change, or an update: then the new DDDA-Coop.exe), on the
+// same screen: the same command line without an earlier " --page N" (one more was added at each change)
+// and without the update test options.
+void restart_launcher(HWND h)
+{
+    std::wstring cmd = GetCommandLineW();
+    for (const wchar_t *opt : {L" --page ", L" --test-update ", L" --test-update-zip "})
+        for (size_t at; (at = cmd.find(opt)) != std::wstring::npos;) {
+            size_t end = cmd.find(L' ', at + wcslen(opt));
+            if (wcscmp(opt, L" --test-update-zip ") == 0 && end != std::wstring::npos)
+                end = cmd.find(L' ', end + 1); // its two values
+            cmd.erase(at, end == std::wstring::npos ? std::wstring::npos : end - at);
+        }
+    cmd += L" --page " + std::to_wstring(g_page);
+    STARTUPINFOW si = {};
+    si.cb = sizeof si;
+    PROCESS_INFORMATION pi = {};
+    if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        DestroyWindow(h);
+    }
 }
 
 // ---- state shown in the window ----
@@ -1738,7 +1919,7 @@ void build_window()
     g_debug = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 176, W, 32, ID_DEBUG));
     g_switches.push_back({g_debug, true, tr(L"&Journal détaillé (utile pour signaler un problème)")});
     g_check_updates = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 212, W, 32, ID_CHECK_UPDATES));
-    g_switches.push_back({g_check_updates, true, tr(L"&Vérifier les mises à jour au démarrage (GitHub)")});
+    g_switches.push_back({g_check_updates, true, tr(L"&Mettre à jour automatiquement au démarrage (GitHub)")});
     // the sensitive part in a card of its own (painted), red-tinted
     add(make(L"STATIC", tr(L"Zone sensible"), 0, L + 18, kDangerY + 14, W - 36, 22, 0, g_bold));
     add(make(L"STATIC",
@@ -1917,21 +2098,7 @@ void pick_language(HWND h)
     if (pick < 1 || pick - 1 == g_lang)
         return;
     WritePrivateProfileStringW(L"launcher", L"lang", kLangCodes[pick - 1], settings_path().c_str());
-    // the same command line without an earlier " --page N" (one more was added at each change)
-    std::wstring cmd = GetCommandLineW();
-    for (size_t at; (at = cmd.find(L" --page ")) != std::wstring::npos;) {
-        size_t end = cmd.find(L' ', at + 8);
-        cmd.erase(at, end == std::wstring::npos ? std::wstring::npos : end - at);
-    }
-    cmd += L" --page " + std::to_wstring(g_page);
-    STARTUPINFOW si = {};
-    si.cb = sizeof si;
-    PROCESS_INFORMATION pi = {};
-    if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-        DestroyWindow(h);
-    }
+    restart_launcher(h);
 }
 
 LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
@@ -1953,10 +2120,25 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
             show_page(g_start_page);
         return 0;
     case WM_UPDATE_FOUND:
-        SetWindowTextW(g_update, (tr(L"Mise à jour ") + g_update_tag + tr(L" disponible  ›")).c_str());
+        SetWindowTextW(g_update, (tr(L"Installer la mise à jour ") + g_update_tag + L"  ›").c_str());
         if (g_page == PAGE_PLAY)
             ShowWindow(g_update, SW_SHOW);
         add_event(tr(L"Une nouvelle version du mod est disponible : ") + g_update_tag + tr(L" (bouton en haut de « Jouer »)."));
+        if (!game_running()) // at the start: installed at once, the launcher starts again (not while the game runs)
+            start_update();
+        return 0;
+    case WM_UPDATE_DONE:
+        g_updating = false;
+        if (w) {
+            add_event(tr(L"Mise à jour installée : DDDA Coop redémarre."));
+            restart_launcher(h);
+            return 0;
+        }
+        add_event(tr(L"Échec de la mise à jour (") + g_update_error + tr(L") : le bouton ouvre la page de la version sur GitHub."));
+        g_update_url.clear(); // the button opens the release's page from now on
+        g_test_update_zip.clear();
+        EnableWindow(g_update, TRUE);
+        SetWindowTextW(g_update, (tr(L"Mise à jour ") + g_update_tag + tr(L" disponible  ›")).c_str());
         return 0;
     case WM_MEASUREITEM:
         if (w == ID_BACKUP_LIST) {
@@ -2021,9 +2203,15 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_BACKUP: on_backup(); break;
         case ID_HELP: show_help(); break;
         case ID_LANG: pick_language(h); break;
-        case ID_UPDATE: // the release's page, to download it
-            ShellExecuteW(h, L"open", (std::wstring(kRepoUrl) + L"/releases/tag/" + g_update_tag).c_str(), nullptr, nullptr,
-                          SW_SHOWNORMAL);
+        case ID_UPDATE: // installed here when the release has a checked zip, else its page, to download it
+            if (!g_update_url.empty() || !g_test_update_zip.empty()) {
+                if (game_running())
+                    ask(tr(L"Ferme le jeu avant d'installer la mise à jour."), MB_ICONINFORMATION);
+                else
+                    start_update();
+            } else
+                ShellExecuteW(h, L"open", (std::wstring(kRepoUrl) + L"/releases/tag/" + g_update_tag).c_str(), nullptr, nullptr,
+                              SW_SHOWNORMAL);
             break;
         case ID_PROJECT: ShellExecuteW(h, L"open", kRepoUrl, nullptr, nullptr, SW_SHOWNORMAL); break;
         case ID_COPY_CODE:
@@ -2158,6 +2346,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     g_exe_dir = exe;
     g_exe_dir.resize(g_exe_dir.rfind(L'\\'));
+    // left by an update (the old launcher, renamed while it ran): gone once that one has closed
+    for (int k = 0; k < 30 && exists(g_exe_dir + L"\\DDDA-Coop.exe.old") && !DeleteFileW((g_exe_dir + L"\\DDDA-Coop.exe.old").c_str()); ++k)
+        Sleep(100);
 
     int argc = 0;
     wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
@@ -2174,6 +2365,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
             g_no_launch = true;
         else if (a == L"--test-update" && i + 1 < argc) // tests: as if GitHub had this release, no network
             g_test_update = argv[++i];
+        else if (a == L"--test-update-zip" && i + 2 < argc) { // tests: that zip (and its SHA-256) as the update
+            g_test_update_zip = argv[++i];
+            std::wstring sha = argv[++i];
+            g_test_update_sha.assign(sha.begin(), sha.end());
+        }
         else if (a == L"--page" && i + 1 < argc)
             g_start_page = _wtoi(argv[++i]);
     }
