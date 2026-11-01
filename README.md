@@ -33,6 +33,11 @@
 </p>
 
 <p align="center">
+  <img src="assets/readme/shots/real-lobby.png" width="70%" alt="The lobby during a real game: the host and a friend, their characters and levels, the same area, a 16 ms ping (French interface, join code blurred)">
+  <br><sub>The lobby during a real game (French interface).</sub>
+</p>
+
+<p align="center">
   <img src="assets/readme/shots/fighting-together.jpg" width="32%" alt="Two players fighting side by side in Bitterblack Isle, each with their own character">
   <img src="assets/readme/shots/helping-up.jpg" width="32%" alt="A friend runs to a player who is down at 1 HP during a boss fight">
   <img src="assets/readme/shots/own-characters.jpg" width="32%" alt="Two players standing together, each in their own gear, lanterns lit">

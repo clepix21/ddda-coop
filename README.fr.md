@@ -33,6 +33,11 @@
 </p>
 
 <p align="center">
+  <img src="assets/readme/shots/real-lobby.png" width="70%" alt="Le salon pendant une vraie partie : l'hôte et un ami, leurs persos et leurs niveaux, la même zone, 16 ms de ping (code de connexion flouté)">
+  <br><sub>Le salon pendant une vraie partie.</sub>
+</p>
+
+<p align="center">
   <img src="assets/readme/shots/fighting-together.jpg" width="32%" alt="Deux joueurs qui combattent côte à côte à Bitterblack Isle, chacun avec son perso">
   <img src="assets/readme/shots/helping-up.jpg" width="32%" alt="Un ami court vers un joueur à terre, à 1 PV, pendant un combat de boss">
   <img src="assets/readme/shots/own-characters.jpg" width="32%" alt="Deux joueurs côte à côte, chacun avec son équipement, lanternes allumées">
