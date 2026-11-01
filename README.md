@@ -29,10 +29,6 @@
 <!-- /badges -->
 
 <p align="center">
-  <img src="assets/readme/en/launcher.png" width="100%" alt="The DDDA Coop window: the Play screen with the Host, Guest and Solo roles, and the lobby with the connected friends, their level and their ping">
-</p>
-
-<p align="center">
   <img src="assets/readme/shots/real-lobby.png" width="70%" alt="The lobby during a real game: the host and a friend, their characters and levels, the same area, a 16 ms ping (French interface, join code blurred)">
   <br><sub>The lobby during a real game (French interface).</sub>
 </p>

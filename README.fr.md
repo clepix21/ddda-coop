@@ -29,10 +29,6 @@
 <!-- /badges -->
 
 <p align="center">
-  <img src="assets/readme/fr/launcher.png" width="100%" alt="La fenêtre DDDA Coop : l'écran Jouer avec les rôles Hôte, Invité et Seul, et le salon avec les amis connectés, leur niveau et leur ping">
-</p>
-
-<p align="center">
   <img src="assets/readme/shots/real-lobby.png" width="70%" alt="Le salon pendant une vraie partie : l'hôte et un ami, leurs persos et leurs niveaux, la même zone, 16 ms de ping (code de connexion flouté)">
   <br><sub>Le salon pendant une vraie partie.</sub>
 </p>
