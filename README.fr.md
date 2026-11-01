@@ -32,13 +32,17 @@
   <img src="assets/readme/fr/launcher.png" width="100%" alt="La fenêtre DDDA Coop : l'écran Jouer avec les rôles Hôte, Invité et Seul, et le salon avec les amis connectés, leur niveau et leur ping">
 </p>
 
-<!-- Captures en jeu : remplace assets/readme/fr/ingame-1.svg (et en/ pour la version anglaise), -2 et -3 par tes captures (garde le même nom
-     en .png ou .jpg, et change l'extension ci-dessous). Format conseillé : 16:9, 1280 px de large. -->
 <p align="center">
-  <img src="assets/readme/fr/ingame-1.svg" width="32%" alt="Capture en jeu à venir : combattre ensemble">
-  <img src="assets/readme/fr/ingame-2.svg" width="32%" alt="Capture en jeu à venir : relever un ami">
-  <img src="assets/readme/fr/ingame-3.svg" width="32%" alt="Capture en jeu à venir : chacun son perso">
+  <img src="assets/readme/shots/fighting-together.jpg" width="32%" alt="Deux joueurs qui combattent côte à côte à Bitterblack Isle, chacun avec son perso">
+  <img src="assets/readme/shots/helping-up.jpg" width="32%" alt="Un ami court vers un joueur à terre, à 1 PV, pendant un combat de boss">
+  <img src="assets/readme/shots/own-characters.jpg" width="32%" alt="Deux joueurs côte à côte, chacun avec son équipement, lanternes allumées">
 </p>
+<p align="center">
+  <img src="assets/readme/shots/together.gif" width="32%" alt="Deux joueurs qui avancent ensemble dans Bitterblack Isle">
+  <img src="assets/readme/shots/boss.gif" width="32%" alt="Deux joueurs contre un géant, l'un accroché à sa jambe">
+  <img src="assets/readme/shots/revive.gif" width="32%" alt="Un ami relève un joueur à terre en plein combat de boss">
+</p>
+<p align="center"><sub>Enregistré pendant une vraie partie à deux (Bitterblack Isle).</sub></p>
 
 ## En bref
 

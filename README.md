@@ -32,13 +32,17 @@
   <img src="assets/readme/en/launcher.png" width="100%" alt="The DDDA Coop window: the Play screen with the Host, Guest and Solo roles, and the lobby with the connected friends, their level and their ping">
 </p>
 
-<!-- In-game screenshots: replace assets/readme/en/ingame-1.svg, -2 and -3 (and fr/ for the French page)
-     with your screenshots (same name as .png or .jpg, and change the extension below). 16:9, 1280 px wide. -->
 <p align="center">
-  <img src="assets/readme/en/ingame-1.svg" width="32%" alt="In-game screenshot to come: fighting together">
-  <img src="assets/readme/en/ingame-2.svg" width="32%" alt="In-game screenshot to come: helping a friend up">
-  <img src="assets/readme/en/ingame-3.svg" width="32%" alt="In-game screenshot to come: everyone's own character">
+  <img src="assets/readme/shots/fighting-together.jpg" width="32%" alt="Two players fighting side by side in Bitterblack Isle, each with their own character">
+  <img src="assets/readme/shots/helping-up.jpg" width="32%" alt="A friend runs to a player who is down at 1 HP during a boss fight">
+  <img src="assets/readme/shots/own-characters.jpg" width="32%" alt="Two players standing together, each in their own gear, lanterns lit">
 </p>
+<p align="center">
+  <img src="assets/readme/shots/together.gif" width="32%" alt="Two players walking together through Bitterblack Isle">
+  <img src="assets/readme/shots/boss.gif" width="32%" alt="Two players fighting a giant together, one holding on to its leg">
+  <img src="assets/readme/shots/revive.gif" width="32%" alt="A friend helps a downed player back up in the middle of a boss fight">
+</p>
+<p align="center"><sub>Recorded in a real two-player game (Bitterblack Isle).</sub></p>
 
 ## In short
 
