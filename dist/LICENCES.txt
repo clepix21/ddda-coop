@@ -1,6 +1,10 @@
-DDDA Coop - licences des parties d'autres auteurs
+DDDA Coop - licences
 
-DDDA Coop contient MinHook (dans dinput8.dll) et la police Roboto (dans DDDA-Coop.exe).
+DDDA Coop est sous licence MIT (le fichier LICENSE du dépôt), copyright (c) 2026 clepix21.
+L'icône du lanceur reprend un visuel de Dragon's Dogma © Capcom et n'est pas couverte par cette licence.
+
+DDDA Coop contient aussi MinHook (dans dinput8.dll) et la police Roboto (dans DDDA-Coop.exe), sous
+leurs propres licences :
 
 ==== MinHook ====
 

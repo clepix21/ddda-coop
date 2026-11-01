@@ -25,6 +25,7 @@
 <br>
   <img src="https://img.shields.io/badge/C%2B%2B-00599C?logo=cplusplus&logoColor=white" alt="C++">
   <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-2b3137" alt="licence : MIT"></a>
 </p>
 <!-- /badges -->
 
@@ -137,6 +138,11 @@ La compilation donne `build\dinput8.dll` (le mod), `build\DDDA-Coop.exe` (la fen
 - [MinHook](https://github.com/TsudaKageyu/minhook) (licence BSD 2-Clause) et la police
   [Roboto](https://github.com/googlefonts/roboto-3-classic) (SIL Open Font License 1.1) : leurs licences sont dans
   [dist/LICENCES.txt](dist/LICENCES.txt).
+
+## Licence
+
+[MIT](LICENSE) pour le code du mod. L'icône du launcher reprend un visuel de Dragon's Dogma © Capcom et n'est
+pas couverte par cette licence.
 
 <sub>Mod non officiel, sans lien avec Capcom. Dragon's Dogma: Dark Arisen © Capcom. Il te faut ta propre
 copie du jeu : ce dépôt ne contient aucun fichier du jeu.</sub>
