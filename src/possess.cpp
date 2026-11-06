@@ -219,6 +219,7 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
         exp_sync_apply(); // shared world: the exp other players earned
         loot_apply_queued(); // and copies of their pickups
         quest_live_tick();
+        progress_guest_gold_tick();
         bridge_game_tick();
         hang_note_update_thread();
         action_tick(ch);

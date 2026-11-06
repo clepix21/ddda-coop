@@ -29,6 +29,10 @@ NEWS = {
               '  fell through the floor, and the next grab missed (issue #1). Grabs work both ways.',
               'Checked: gear bought from a merchant and worn is seen by the others.',
               'The mod writes its version at the top of its log.'],
+    '0.9.6': ['Players can give each other items (give an item to the pawn showing a friend: it goes to that\n'
+              '  friend\'s own bag).',
+              'Fixed: a friend\'s purchases and gold were lost when they left; they are now kept and added to\n'
+              '  their own save in Solo, like experience and discipline.'],
 }
 
 EN = {'play': '"Play"', 'lobby': '"Lobby"', 'settings': '"Settings"', 'log': '"Log"', 'host': '"Host"', 'guest': '"Guest"',

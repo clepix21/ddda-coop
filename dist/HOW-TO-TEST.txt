@@ -1,4 +1,4 @@
-﻿How to test DDDA Coop 0.9.5 with friends
+﻿How to test DDDA Coop 0.9.6 with friends
 ========================================
 
 Before

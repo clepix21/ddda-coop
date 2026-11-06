@@ -1,8 +1,8 @@
-﻿DDDA Coop 0.9.5 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam, 2 to 4 players)
+﻿DDDA Coop 0.9.6 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam, 2 to 4 players)
 ==============================================================================================
 
 Each player needs the game on Steam (current version), on their own PC, and this same mod version
-(0.9.5). Guests must be Steam friends with the host. No IP address or port to set.
+(0.9.6). Guests must be Steam friends with the host. No IP address or port to set.
 
 Files: DDDA-Coop.exe (the launcher), dinput8.dll (the mod), coop.ini (settings). Keep them together,
 anywhere. The launcher is in English, French, Italian, German and Spanish (globe button, bottom left).
@@ -39,15 +39,12 @@ Good to know
 - Alpha: keep copies of your saves.
 - If the game folder already has another dinput8.dll (another mod), it is not replaced: remove it first.
 
-What's new in 0.9.5
+What's new in 0.9.6
 -------------------
-- Fixed: new players got the old classic mode (a guest driving one of the host's pawns) instead of
-  the shared world: no quest or gear sync, menus driven by the guest's pad (issue #1). The shared
-  world is now the default; shared_world=0 in coop.ini gives the classic mode.
-- Fixed: a grabbed player (RT from behind) was thrown to the far edge of the map when let go, or
-  fell through the floor, and the next grab missed (issue #1). Grabs work both ways.
-- Checked: gear bought from a merchant and worn is seen by the others.
-- The mod writes its version at the top of its log.
+- Players can give each other items (give an item to the pawn showing a friend: it goes to that
+  friend's own bag).
+- Fixed: a friend's purchases and gold were lost when they left; they are now kept and added to
+  their own save in Solo, like experience and discipline.
 
 Licence: MIT for the mod's own code; MinHook and Roboto: see LICENCES.txt.
 Unofficial mod, not affiliated with Capcom. Dragon's Dogma: Dark Arisen (c) Capcom.

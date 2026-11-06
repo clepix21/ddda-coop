@@ -1753,7 +1753,7 @@ void receive_all()
                 for (int e = 0; e < m->n; ++e)
                     if (m->first + e == g_loot_log[s].size() + 1) {
                         g_loot_log[s].push_back(m->ev[e]);
-                        loot_net_apply(m->ev[e]);
+                        loot_net_apply(m->ev[e], s);
                     }
             } else { // another player's pickups, through the host
                 int s = m->slot;
@@ -1763,7 +1763,7 @@ void receive_all()
                 }
                 for (int e = 0; e < m->n; ++e)
                     if (m->first + e == g_loot_applied[s] + 1) {
-                        loot_net_apply(m->ev[e]);
+                        loot_net_apply(m->ev[e], s);
                         ++g_loot_applied[s];
                     }
             }
@@ -3667,6 +3667,9 @@ bool net_puppet(int i)
 }
 
 // ---- shared world: players by place, for revive.cpp ----
+
+// The player a party pawn shows (1..3 = 1 + mCmcId), or -1 (loot.cpp: gifts to another player).
+int net_party_slot(int i) { return g_shared ? party_to_slot(i) : -1; }
 
 int net_my_slot()
 {

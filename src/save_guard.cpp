@@ -44,6 +44,7 @@ uint32_t g_merged_crc[kPawns] = {}, g_loaded_crc[kPawns] = {}; // the same, per 
 std::vector<uint8_t> g_guest_own;  // guest: its own DDDA.sav (its character), read once
 std::vector<uint8_t> g_roam_save;  // guest exploring on its own (roam.cpp): served instead of the host's
 std::vector<uint8_t> g_shared_save; // shared world: the host's save as this guest's own world
+volatile LONG g_guest_world_loads = 0; // guest: loads of the host's world (or the free roam save) so far
 std::vector<uint8_t> g_override_save; // shared world, quest_sync.cpp: served to the next load, any role
 uint32_t g_shared_from = 0;         // 1 + the host save version it was made from (0 = none)
 
@@ -348,6 +349,8 @@ int32_t __attribute__((thiscall)) hk_file_read(void *self, const char *name, voi
     if (is_save(name) && peer_save(host, version)) {
         int32_t n = int32_t(host.size()) < cap ? int32_t(host.size()) : cap;
         memcpy(data, host.data(), size_t(n));
+        if (loading())
+            InterlockedIncrement(&g_guest_world_loads); // progress.cpp: the guest's gold is put back after a load
         if (version == kRoamVersion) {
             logf("storage: FileRead(\"%s\", cap %d) = %d: the free roam save", name, cap, n);
             return n;
@@ -645,6 +648,7 @@ long save_guard_blocked() { return g_blocked; }
 // merged with a guest's character and sent: the guest's game then started a new game too (test with
 // test_no_save=1, 2026-10-30 16:14). Guests are let in only once it is ready.
 bool storage_guest_refused() { return g_guest_refused != 0; }
+long storage_guest_world_loads() { return g_guest_world_loads; }
 
 bool storage_host_ready()
 {

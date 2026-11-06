@@ -36,6 +36,7 @@ bool save_deflate(const std::string &in, std::vector<uint8_t> &out);    // the g
 bool save_inflate(const std::vector<uint8_t> &in, std::string &out);
 bool storage_host_ready(); // host: its game is past the tutorial (save_guard.cpp)
 bool storage_guest_refused(); // guest: no character of its own past the tutorial: it does not join
+long storage_guest_world_loads(); // guest: loads of the host's world so far
 std::string save_character_name(const std::string &character); // guest: accept a save owned by another Steam account (the host's)
 bool storage_own_save(std::vector<uint8_t> &out, uint32_t &version, uint32_t *sig = nullptr);
 void storage_set_peer_save(const uint8_t *data, size_t size, uint32_t version, uint32_t sig);
@@ -88,11 +89,12 @@ long long exp_sync_total();                 // exp this world gave its Arisen
 void exp_sync_seen(int slot, long long total); // another player's total (net thread)
 void exp_sync_apply();                      // game thread: give what the others earned
 bool loot_install();                        // loot.cpp: shared world loot
-void progress_shared_gain(long long exp, long long jp, int item, int count, unsigned flags); // guest: keep for its own save
+void progress_shared_gain(long long exp, long long jp, int item, int count, unsigned flags, long long gold = 0); // guest: keep for its own save
+void progress_guest_gold_tick();      // game thread, shared world guest: its gold changes kept, put back after a load
 struct LootEv { uint16_t item, count; uint32_t flags; };
 void loot_net_mine(std::vector<LootEv> &out, uint32_t from_seq, int max); // this player's pickups from seq
 uint32_t loot_mine_count();
-void loot_net_apply(const LootEv &e);       // net thread: another player's pickup, applied on the game thread
+void loot_net_apply(const LootEv &e, int from_slot); // net thread: another player's pickup or gift, applied on the game thread
 const char *action_name(uintptr_t ch);       // actions.cpp: the class of a character's current action
 const char *action_class(int n);             // actions.cpp: the class of action number n ("" if none)
 void action_set(uintptr_t ch, int number);
@@ -127,6 +129,7 @@ struct PlayerInfo {
 };
 bool net_player_info(int slot, PlayerInfo &out); // net.cpp: player by place (0 = host, 1 + guest)
 int net_my_slot();
+int net_party_slot(int i); // shared world: the player party pawn i shows, or -1
 int32_t net_my_stage();
 void net_send_revive(int slot);
 bool net_stage_jump(int32_t to, int32_t point);  // game thread

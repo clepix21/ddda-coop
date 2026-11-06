@@ -1,0 +1,8 @@
+# Gold test, guest 1: its gold changes (a write of the low word, like a purchase would), then it waits
+# while a second guest joins (its world reloads: its gold must be put back with this session's change).
+wait 20000
+chptrw -1 3DEC 348 1000
+wait 3000
+chptr 3DEC 348 4
+wait 150000
+chptr 3DEC 348 4

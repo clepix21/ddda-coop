@@ -28,11 +28,19 @@ namespace {
 using AddItem_t = int(__attribute__((thiscall)) *)(void *mgr, unsigned item, unsigned count, int who, int a5,
                                                     unsigned flags, unsigned a7);
 constexpr uintptr_t kAddItem = 0x0045E680, kItemManager = 0x018FA4D4, kPickupCall = 0x00C29471;
+// Moving an item between bags and the storage ("Retirer" to oneself or to a pawn, giving to a pawn) adds it
+// through 0x0045FB56; a shop purchase through 0x006E676E (shop test 2026-11-06 23:09-23:11: item 727 bought,
+// to 0; item 22 withdrawn, to 0; item 50 given to the pawn showing the host, to 2).
+constexpr uintptr_t kMoveCall = 0x0045FB56, kShopCall = 0x006E676E;
+// A gift rides the pickup stream: flags bit 31 set, bits 24-25 = the player it is for (item flags use the
+// low bits: quality in the low 4).
+constexpr unsigned kGift = 0x80000000u, kItemFlags = 0x00FFFFFFu;
+struct Queued { LootEv e; int from; };
 AddItem_t g_orig = nullptr;
 thread_local bool g_applying = false;
 CRITICAL_SECTION g_lock;
 std::vector<LootEv> g_mine;
-std::deque<LootEv> g_queue;
+std::deque<Queued> g_queue;
 
 int __attribute__((thiscall)) hk_add_item(void *mgr, unsigned item, unsigned count, int who, int a5, unsigned flags, unsigned a7)
 {
@@ -45,6 +53,29 @@ int __attribute__((thiscall)) hk_add_item(void *mgr, unsigned item, unsigned cou
              unsigned(from), r);
     // this world's party: its Arisen (this player) or its own AI pawns; not a pawn showing another
     // player (that player's own world counts its pickups)
+    // a gift: an item given to a pawn that shows another player (shared world, issue on Nexus 2026-11-06:
+    // "we are not able to give each other items") goes to that player's own Arisen
+    if (net_shared() && from == kMoveCall && r && who >= 1 && who <= 3 && net_puppet(who) && item <= 0xFFFF && count) {
+        int to = net_party_slot(who);
+        if (to >= 0 && to <= 3 && to != net_my_slot()) {
+            LootEv g = {uint16_t(item), uint16_t(count > 999 ? 999 : count), (flags & kItemFlags) | kGift | (unsigned(to) << 24)};
+            EnterCriticalSection(&g_lock);
+            g_mine.push_back(g);
+            LeaveCriticalSection(&g_lock);
+            logf("loot: item %u x%u given to the pawn showing player %d: sent to that player", item, count, to);
+            // a guest that gives away something it gained this session (bought, picked up) does not keep it
+            // for its own save too
+            if (net_role() == NET_GUEST)
+                progress_shared_gain(0, 0, int(item), -int(g.count), flags & kItemFlags);
+        }
+        return r;
+    }
+    // a shop purchase on a guest: its own world is never saved, so the item is kept for its own save
+    if (net_shared() && from == kShopCall && r && who == 0 && net_role() == NET_GUEST && item <= 0xFFFF && count) {
+        logf("loot: bought item %u x%u: kept for this player's own save", item, count);
+        progress_shared_gain(0, 0, int(item), int(count > 999 ? 999 : count), flags);
+        return r;
+    }
     bool ours = who == 0 || (who >= 1 && who <= 3 && !net_puppet(who));
     if (!net_shared() || !ours || from != kPickupCall || !r || item > 0xFFFF || !count)
         return r;
@@ -90,10 +121,10 @@ void loot_net_mine(std::vector<LootEv> &out, uint32_t from_seq, int max)
     LeaveCriticalSection(&g_lock);
 }
 
-void loot_net_apply(const LootEv &e)
+void loot_net_apply(const LootEv &e, int from_slot)
 {
     EnterCriticalSection(&g_lock);
-    g_queue.push_back(e);
+    g_queue.push_back(Queued{e, from_slot});
     LeaveCriticalSection(&g_lock);
 }
 
@@ -108,11 +139,28 @@ void loot_apply_queued()
             LeaveCriticalSection(&g_lock);
             return;
         }
-        LootEv e = g_queue.front();
+        Queued q = g_queue.front();
         g_queue.pop_front();
         LeaveCriticalSection(&g_lock);
+        LootEv e = q.e;
         void *mgr = game::at<void *>(kItemManager, 0);
         int r = 0;
+        if (e.flags & kGift) {
+            int to = int((e.flags >> 24) & 3);
+            if (to != net_my_slot())
+                continue; // for another player
+            if (mgr) {
+                g_applying = true;
+                r = g_orig(mgr, e.item, e.count, 0, 0, e.flags & kItemFlags, 1);
+                g_applying = false;
+            }
+            logf("loot: player %d gave this player item %u x%u: put in its bag -> %d", q.from, e.item, e.count, r);
+            // a guest keeps it for its own save, unless the host gave it: the host's world has it in the bag
+            // of the pawn showing this guest, which the host's progress records already count
+            if (net_role() == NET_GUEST && q.from != 0 && r)
+                progress_shared_gain(0, 0, e.item, e.count, e.flags & kItemFlags);
+            continue;
+        }
         if (mgr) {
             g_applying = true;
             r = g_orig(mgr, e.item, e.count, 4, 0, e.flags, 1);

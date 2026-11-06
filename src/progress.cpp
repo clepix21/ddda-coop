@@ -1,4 +1,4 @@
-﻿// Guest progress (2 to 4 players). Hired pawns earn no experience in Dragon's Dogma (a fight on
+// Guest progress (2 to 4 players). Hired pawns earn no experience in Dragon's Dogma (a fight on
 // 2026-10-27 11:59: the Arisen and the main pawn +96 exp and +36 discipline, the hired pawns 0), so
 // a guest's character, played as a hired pawn, gets the party's gains instead:
 //  - host: at each load of a save holding guests' characters, the Arisen's level/exp/discipline and
@@ -104,7 +104,7 @@ std::vector<std::pair<size_t, size_t>> player_copies(const std::string &x)
 
 // Lines of the Arisen's progress fields in one copy.
 struct ParamLines {
-    size_t level = std::string::npos, job, exp, next, job_exp, job_point;
+    size_t level = std::string::npos, job, exp, next, job_exp, job_point, gold = std::string::npos;
 };
 
 bool arisen_lines(const std::string &x, size_t b, size_t e, ParamLines &l)
@@ -119,6 +119,7 @@ bool arisen_lines(const std::string &x, size_t b, size_t e, ParamLines &l)
     l.next = find_in(x, "<u32 name=\"mNextExp\"", prm, prm_end);
     l.job_exp = find_in(x, "<array name=\"mJobExp\"", prm, prm_end);
     l.job_point = find_in(x, "<array name=\"mJobPoint\"", prm, prm_end);
+    l.gold = find_in(x, "<s32 name=\"mGold\"", prm, prm_end);
     return l.level != std::string::npos && l.job != std::string::npos && l.exp != std::string::npos &&
            l.next != std::string::npos && l.job_exp != std::string::npos && l.job_point != std::string::npos;
 }
@@ -229,7 +230,7 @@ bool bag_of(const std::string &x, int who, Bag &bag)
 }
 
 // Adds exp, discipline and items to the Arisen of every player data copy.
-bool add_progress(std::string &x, long long exp, long long jp, const Bag &items, int *placed)
+bool add_progress(std::string &x, long long exp, long long jp, const Bag &items, int *placed, long long gold = 0)
 {
     std::vector<Edit> edits;
     *placed = 0;
@@ -239,6 +240,8 @@ bool add_progress(std::string &x, long long exp, long long jp, const Bag &items,
         if (!arisen_lines(x, b, e, l) || !value_at(x, l.exp, v) || !value_at(x, l.job, job))
             return false;
         edits.push_back({l.exp, std::min<long long>(v + exp, 0xFFFFFFFFll)});
+        if (gold && l.gold != std::string::npos && value_at(x, l.gold, v)) // never below 0
+            edits.push_back({l.gold, std::max<long long>(0, std::min<long long>(v + gold, 0x7FFFFFFFll))});
         if (jp > 0) {
             if (job >= 0 && job < array_count(x, l.job_exp)) {
                 size_t line = array_item(x, l.job_exp, int(job));
@@ -263,6 +266,8 @@ bool add_progress(std::string &x, long long exp, long long jp, const Bag &items,
         int capacity = array_count(x, arr), used = int(count);
         int put = 0;
         for (auto &[it, n] : items) {
+            if (n <= 0)
+                continue; // given away as much as it gained (a gift to another player)
             Entry *same = nullptr;
             for (int i = 0; i < used && i < int(list.size()) && !same; ++i)
                 if (!(item_of(list[i]) < it) && !(it < item_of(list[i])))
@@ -339,6 +344,7 @@ struct Pending {
     std::string name;
     struct Seg {
         long long exp = 0, jp = 0;
+        long long gold = 0; // shared world, guest: its gold's change (purchases, sales, gold found)
         Bag items;
     };
     std::map<std::string, Seg> segs;
@@ -365,6 +371,8 @@ bool read_pending(Pending &p)
             p.name = line + 5;
         else if (sscanf(line, "segment %63s %lld %lld", id, &a, &b) == 3)
             cur = &p.segs[id], cur->exp = a, cur->jp = b;
+        else if (cur && sscanf(line, "gold %lld", &a) == 1)
+            cur->gold = a;
         else if (cur && parse_item(line, it, a))
             cur->items[it] += a;
     }
@@ -378,7 +386,8 @@ bool write_pending(const Pending &p)
     std::string s = "ddda-coop pending progress (DDDA-Coop): added to this PC's save at its next load with keep_progress=1\n";
     s += "name " + p.name + "\n";
     for (auto &[id, seg] : p.segs)
-        s += "segment " + id + " " + std::to_string(seg.exp) + " " + std::to_string(seg.jp) + "\n" + bag_text(seg.items);
+        s += "segment " + id + " " + std::to_string(seg.exp) + " " + std::to_string(seg.jp) + "\n" +
+             (seg.gold ? "gold " + std::to_string(seg.gold) + "\n" : std::string()) + bag_text(seg.items);
     std::string tmp = std::string(kPending) + ".tmp";
     FILE *f = fopen(tmp.c_str(), "wb");
     if (!f)
@@ -388,13 +397,17 @@ bool write_pending(const Pending &p)
     return ok && MoveFileExA(tmp.c_str(), kPending, MOVEFILE_REPLACE_EXISTING);
 }
 
-void totals(const Pending &p, long long &exp, long long &jp, Bag &items)
+void totals(const Pending &p, long long &exp, long long &jp, Bag &items, long long *gold = nullptr)
 {
     exp = jp = 0;
+    if (gold)
+        *gold = 0;
     items.clear();
     for (auto &[id, seg] : p.segs) {
         exp += seg.exp;
         jp += seg.jp;
+        if (gold)
+            *gold += seg.gold;
         for (auto &[it, n] : seg.items)
             items[it] += n;
     }
@@ -557,9 +570,9 @@ bool progress_patch(std::vector<uint8_t> &bytes, bool load)
     Pending p;
     if (!read_pending(p) || p.segs.empty())
         return false;
-    long long exp, jp;
+    long long exp, jp, gold;
     Bag items;
-    totals(p, exp, jp, items);
+    totals(p, exp, jp, items, &gold);
     std::string xml, ch;
     uint32_t head[8];
     std::vector<uint8_t> out;
@@ -573,7 +586,7 @@ bool progress_patch(std::vector<uint8_t> &bytes, bool load)
         return false;
     }
     int placed = 0;
-    if (!add_progress(xml, exp, jp, items, &placed) || !save_pack(xml, head, out)) {
+    if (!add_progress(xml, exp, jp, items, &placed, gold) || !save_pack(xml, head, out)) {
         logf("progress: the gains could not be added, nothing changed");
         return false;
     }
@@ -588,9 +601,9 @@ bool progress_patch(std::vector<uint8_t> &bytes, bool load)
         logf("progress: the backup %s could not be written: nothing added", backup.c_str());
         return false;
     }
-    logf("progress: added to %s's save: +%lld exp, +%lld discipline, %d of %d item kind(s) put in storage "
+    logf("progress: added to %s's save: +%lld exp, +%lld discipline, %+lld gold, %d of %d item kind(s) put in storage "
          "(the save before: %s)",
-         p.name.c_str(), exp, jp, placed, int(items.size()), backup.c_str());
+         p.name.c_str(), exp, jp, gold, placed, int(items.size()), backup.c_str());
     lock();
     g_orig_crc = crc;
     g_patched = out;
@@ -673,7 +686,7 @@ void progress_roam_end(const std::string &xml)
 // Shared world, guest: gains of its own character in its copy of the host's world (never saved
 // there) kept for its own save: exp and discipline, and items (picked up or copies of the other
 // players' pickups). One "shared-<session>" segment per game session, added to on each call.
-void progress_shared_gain(long long exp, long long jp, int item, int count, unsigned flags)
+static const std::string &shared_seg_id()
 {
     static std::string seg_id;
     if (seg_id.empty()) {
@@ -681,6 +694,12 @@ void progress_shared_gain(long long exp, long long jp, int item, int count, unsi
         _snprintf(s, sizeof s, "shared-%s-%lu", stamp().c_str(), GetCurrentProcessId());
         seg_id = s;
     }
+    return seg_id;
+}
+
+void progress_shared_gain(long long exp, long long jp, int item, int count, unsigned flags, long long gold)
+{
+    const std::string &seg_id = shared_seg_id();
     lock();
     Pending p;
     read_pending(p);
@@ -690,10 +709,73 @@ void progress_shared_gain(long long exp, long long jp, int item, int count, unsi
     Pending::Seg &seg = p.segs[seg_id];
     seg.exp += exp > 0 ? exp : 0;
     seg.jp += jp > 0 ? jp : 0;
-    if (item >= 0 && count > 0)
-        seg.items[Item{item, flags, 0, 0, 0, 0, 0}] += count;
+    if (item >= 0 && count != 0) { // < 0: given to another player
+        long long &n = seg.items[Item{item, flags, 0, 0, 0, 0, 0}];
+        n += count;
+        if (n <= 0) // not kept below 0 here: the item may have come from the host's bag, not from a gain
+            seg.items.erase(Item{item, flags, 0, 0, 0, 0, 0});
+    }
+    seg.gold += gold;
     bool ok = write_pending(p);
     unlock();
     if (!ok)
         logf("progress: shared world gains NOT written to pending.txt");
+}
+
+// Shared world, guest, game thread: its Arisen's gold (character parameter [ch+0x3DEC]+0x348, the save's
+// mParam mGold; found with uscan, shop test 2026-11-06 23:09: 1747991 -> 1740381 for a 7610 hat). Its
+// world is the host's save with its own character in, as it was when it joined, so its purchases and
+// sales were lost when it left (Nexus report, 2026-11-06) and its gold went back after each load. Each
+// change is kept for its own save (pending.txt "gold"), and after a load of its world its gold is put
+// back to what it had (the save's value + the changes of this session).
+void progress_guest_gold_tick()
+{
+    static long seen_load = -1;
+    static DWORD load_at = 0;
+    static long long last = -1, session = 0, boot = -1;
+    if (cfg_role() != NET_GUEST || !net_shared())
+        return;
+    uintptr_t a = possess_arisen();
+    uintptr_t prm = a ? *reinterpret_cast<uintptr_t *>(a + 0x3DEC) : 0;
+    if (!prm || !mem_readable(reinterpret_cast<void *>(prm + 0x348), 4))
+        return;
+    int32_t &g = *reinterpret_cast<int32_t *>(prm + 0x348);
+    long loads = storage_guest_world_loads();
+    if (loads == 0)
+        return; // not in the host's world yet
+    DWORD t = GetTickCount();
+    if (loads != seen_load) { // a load of its world: wait for the character to settle, then put the gold back
+        if (!load_at) {
+            load_at = t | 1;
+            return;
+        }
+        if (int(t - load_at) < 3000)
+            return;
+        load_at = 0;
+        seen_load = loads;
+        if (boot < 0)
+            boot = g; // the first load: its own save's gold
+        // only when the load brought back the gold it joined with: a reload in place from its own snapshot
+        // (rejoin.cpp, a second guest joining, 2026-11-06 23:31) keeps the gold it had, changes included
+        if (!session || g != boot) {
+            last = g;
+            return;
+        }
+        long long want = std::max<long long>(0, std::min<long long>(g + session, 0x7FFFFFFFll));
+        logf("progress: gold after a load: back to %d, this session's changes %+lld: set to %lld", g, session, want);
+        g = int32_t(want);
+        // and the Arisen's own member parameter in sGameSys (+0xA76D0, as the gear sync writes it)
+        uintptr_t gs = *reinterpret_cast<uintptr_t *>(0x018FA4BC);
+        if (gs && gs + 0xA76D0 != prm && mem_readable(reinterpret_cast<void *>(gs + 0xA76D0 + 0x348), 4))
+            *reinterpret_cast<int32_t *>(gs + 0xA76D0 + 0x348) = int32_t(want);
+        last = want;
+        return;
+    }
+    if (last < 0 || g == last)
+        return;
+    long long d = g - last;
+    last = g;
+    session += d;
+    logf("progress: gold %+lld (now %d, this session %+lld): kept for this player's own save", d, g, session);
+    progress_shared_gain(0, 0, -1, 0, 0, d);
 }
