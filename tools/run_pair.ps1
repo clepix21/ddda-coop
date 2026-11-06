@@ -65,6 +65,8 @@ foreach ($s in $sides) {
         throw "$($s.Name): transport=steam without steam_mock=1 would use the owner's real Steam account; pass -AllowRealSteam"
     }
     if ($ini -notmatch "(?m)^transport=") { $s.Ini = @("transport=udp") + $s.Ini }
+    # the shared world is the mod's default since 2026-11-06: a test written for the classic mode (no line) keeps it
+    if ($ini -notmatch "(?m)^#?shared_world") { $s.Ini = @("shared_world=0") + $s.Ini } # "#shared_world" in a test: no line at all, the default
 }
 function Start-Side($s, $el) {
     $d = $s.Dir

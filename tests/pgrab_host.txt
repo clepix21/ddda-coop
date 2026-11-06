@@ -1,0 +1,15 @@
+# Player grab test, host (Pawn Guild, shared world): after the guest has joined, to the pawn showing the
+# guest (pawn 1) and RT held 4 s (the grab from behind), twice; then stays while the guest grabs it.
+wait 30000
+pawngoto 1 50 10000
+wait 300
+pad 0 0 0 0 0 0 0 255 4000
+wait 800
+actname
+wait 6000
+pawngoto 1 50 10000
+wait 300
+pad 0 0 0 0 0 0 0 255 4000
+wait 800
+actname
+wait 60000

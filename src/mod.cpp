@@ -8,6 +8,7 @@
 
 #include "MinHook.h"
 #include "mod.h"
+#include "version.h"
 
 static FILE *g_log = nullptr;
 static CRITICAL_SECTION g_log_lock;
@@ -119,7 +120,7 @@ void mod_start(HINSTANCE)
 {
     InitializeCriticalSection(&g_log_lock);
     g_log = fopen("coop.log", "w"); // cwd is the game folder
-    logf("ddda-pawn-coop loaded");
+    logf("ddda-pawn-coop loaded, version " DDDA_COOP_VERSION);
     if (!exe_is_supported()) {
         logf("unsupported DDDA.exe, mod disabled");
         return;

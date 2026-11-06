@@ -512,6 +512,32 @@ bool net_shared_in_host_area()
     LeaveCriticalSection(&g_snap_lock);
     return hs >= 0 && hs == my_stage();
 }
+// A character's place in the world. While held (RT from behind, 0xAA DmgHagaijime) +0x30 points at the
+// holder and +0x40 is relative to it, about (0, 0, 0): player grab test 2026-11-06 21:35, the held
+// Arisen at (0, 0, 0) for 4 s in both worlds. Sending that as a place, and keeping it as one when the mod
+// let go of a hold it had rebuilt, put the held player next to the map's origin: it fell there and its
+// pawn on the other side ran off to it (issue #1: "when I capture a friend, his screen teleports").
+uintptr_t holder_of(uintptr_t ch)
+{
+    uintptr_t p = game::at<uintptr_t>(ch, 0x30);
+    if (!p || p == ch)
+        return 0;
+    if (p == possess_arisen())
+        return p;
+    for (int k = 0; k < kPawns; ++k)
+        if (p == possess_pawn_ptr(k))
+            return p;
+    return 0; // anything else (a monster's hold, a lift...): +0x40 left as it is
+}
+void world_pos(uintptr_t ch, float out[3])
+{
+    memcpy(out, reinterpret_cast<void *>(ch + 0x40), 12);
+    if (uintptr_t h = holder_of(ch))
+        if (std::fabs(out[0]) + std::fabs(out[1]) + std::fabs(out[2]) < 600.f && !holder_of(h))
+            for (int k = 0; k < 3; ++k)
+                out[k] += game::at<float>(h, 0x40 + 4 * k);
+}
+
 namespace {
 
 // Game thread, after UpdateCommands of a pawn showing another player: that player's commands.
@@ -880,6 +906,8 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     static constexpr uintptr_t kEmLinks[3] = {0x2B98, 0x5CA4, 0x60E4};
     static uintptr_t old_em[kParty][3] = {};
     static bool held_player[kParty] = {};
+    static float rel_y[kParty] = {}; // a player let go here: the height it was let go at
+    static int applied_was[kParty] = {};
     DWORD t = GetTickCount();
     int want = !hold_action(s.action) ? -1 : s.hold_slot >= 0 ? s.hold_slot : s.hold_enemy >= 0 ? 0x100 + s.hold_enemy : -1;
     if (want < 0) {
@@ -893,6 +921,20 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
         }
         if (applied[i] >= 0 && held_by[i]) {
             uintptr_t h = held_by[i];
+            if (held_player[i] && game::at<uintptr_t>(h, 0x30) == ch) {
+                // let go where the pawn holds it: its +0x40 is still relative to the pawn (see world_pos)
+                float w[3];
+                world_pos(h, w);
+                memcpy(reinterpret_cast<void *>(h + 0x40), w, 12);
+                for (uintptr_t off : kPosCopies)
+                    memcpy(reinterpret_cast<void *>(h + off), w, 12);
+                logf("net: shared: party %d let go of player %d here: put at (%.0f, %.0f, %.0f)", i, applied[i], w[0], w[1], w[2]);
+                rel_y[i] = w[1];
+                applied_was[i] = applied[i];
+            } else if (held_player[i]) {
+                rel_y[i] = game::at<float>(h, 0x44);
+                applied_was[i] = applied[i];
+            }
             if (game::at<uintptr_t>(h, 0x2104) == ch)
                 game::at<uintptr_t>(h, 0x2104) = old_2104[i];
             if (game::at<uintptr_t>(h, 0x30) == ch)
@@ -906,13 +948,30 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
             logf("net: shared: party %d let go of the monster it carried here", i);
             g_carried[i] = 0;
         }
-        if (released[i] && int(t - released[i]) > 1200) {
+        // the game's release (0xAB DmgHagaijimeEnd) then took the let-go Arisen 145 u down, under the floor,
+        // and it fell for ever (player grab test 2026-11-06 21:44:56, y -75 -> -220 -> -17847): for 2.5 s it
+        // is not let lower than where it was let go, and it stands up if it went lower
+        if (released[i] && held_player[i] && held_by[i] && int(t - released[i]) < 2500) {
+            uintptr_t h = held_by[i];
+            float *p = reinterpret_cast<float *>(h + 0x40);
+            if (!holder_of(h) && p[1] < rel_y[i] - 40.f) {
+                float to[3] = {p[0], rel_y[i], p[2]};
+                memcpy(p, to, 12);
+                for (uintptr_t off : kPosCopies)
+                    memcpy(reinterpret_cast<void *>(h + off), to, 12);
+                const char *was = action_name(h);
+                action_set(h, 0);
+                logf("net: shared: player %d let go here sank under where it was let go (%s): put back at y %.0f", applied_was[i], was, rel_y[i]);
+            }
+        }
+        if (released[i] && int(t - released[i]) > 2500) {
+            released[i] = 0;
+            held_by[i] = 0;
+        } else if (released[i] && int(t - released[i]) > 1200) {
             uintptr_t h = held_by[i];
             int32_t a = h && held_player[i] ? game::at<int32_t>(h, 0x2DD4) : 0;
             if (h && (a == 0xAA || a == 0xAB))
                 action_set(h, 0);
-            released[i] = 0;
-            held_by[i] = 0;
         }
         return;
     }
@@ -921,12 +980,10 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     float reach = -1.f; // how far the held one is from the pawn here (for the log), -1 = not found
     float far_at[3] = {}; // where it was, for the log (`held` is cleared when it is too far)
     if (held && held != ch) { // only within reach: never tie a character to a pawn somewhere else
-        float rx = game::at<float>(held, 0x40) - game::at<float>(ch, 0x40), ry = game::at<float>(held, 0x44) - game::at<float>(ch, 0x44),
-              rz = game::at<float>(held, 0x48) - game::at<float>(ch, 0x48);
+        world_pos(held, far_at); // once held here its +0x40 is relative to the pawn ("too far" right after the rebuild)
+        float rx = far_at[0] - game::at<float>(ch, 0x40), ry = far_at[1] - game::at<float>(ch, 0x44),
+              rz = far_at[2] - game::at<float>(ch, 0x48);
         reach = std::sqrt(rx * rx + ry * ry + rz * rz);
-        far_at[0] = game::at<float>(held, 0x40);
-        far_at[1] = game::at<float>(held, 0x44);
-        far_at[2] = game::at<float>(held, 0x48);
         // a monster is carried to the pawn wherever it is: the holder's world sends a lifted monster's
         // place as it stands there, ~6000 u off (the line before a guest's crash, lift suite 2026-10-29)
         if (!(reach < 300.f) && player)
@@ -1175,6 +1232,16 @@ void shared_apply_transform(uintptr_t ch, int i)
         logf("net: shared: party %d back in this area (was %s): its fall cancelled", i, action_name(ch));
         action_set(ch, 0);
     }
+    if (holder_of(ch)) {
+        // held here (a player grabbed it in this world): the game keeps it in the holder's arms, its
+        // +0x40 relative to the holder; the world place received would throw it that far off the holder
+        static DWORD next_held_log[kParty] = {};
+        if (!next_held_log[i] || int(GetTickCount() - next_held_log[i]) >= 0) {
+            next_held_log[i] = (GetTickCount() + 1000) | 1;
+            logf("net: shared: party %d is held here (%s): its place left to the hold", i, action_name(ch));
+        }
+        return;
+    }
     // where that player is now: its last place, moved on at its speed for the age of that state plus
     // the time it took to come (about 60 ms), at most 0.3 s ahead; ground height as received
     float ahead = age + 0.06f > 0.3f ? 0.3f : age + 0.06f;
@@ -1280,7 +1347,7 @@ void capture_state(uintptr_t ch, CharState &s)
     s.valid = ch != 0;
     if (!ch)
         return;
-    memcpy(s.pos, reinterpret_cast<void *>(ch + 0x40), sizeof s.pos);
+    world_pos(ch, s.pos); // a held Arisen's +0x40 is near its holder's origin, not a world place
     memcpy(s.rot, reinterpret_cast<void *>(ch + 0x50), sizeof s.rot);
     s.yaw = game::at<float>(ch, kYawA);
     memcpy(s.cmd, reinterpret_cast<void *>(ch + game::kCmd + kCmdCopyFrom), kCmdCopyLen);
@@ -2753,7 +2820,11 @@ uintptr_t current_stage_area()
 void net_start(NetRole role, const char *peer, int port)
 {
     InitializeCriticalSectionAndSpinCount(&g_cap_lock, 20000); // before g_role: net_capture runs once the role is set; spins (enemies_install)
-    g_shared = early_flag("shared_world");
+    // on unless coop.ini says shared_world=0 (the classic mode: a guest drives one of the host's pawns). Until
+    // 2026-11-06 it was off unless shared_world=1, a line neither the release's coop.ini nor the launcher wrote:
+    // new players got the classic mode, its menus driven by the guest's pad and no quest or gear sync (issue #1)
+    char sw[8] = "";
+    g_shared = !cfg_str("shared_world", sw, sizeof sw) || atoi(sw) != 0;
     InitializeCriticalSection(&g_qb_lock);
     g_loot_my_session = (GetTickCount() ^ (GetCurrentProcessId() << 16)) | 1;
     if (g_shared)

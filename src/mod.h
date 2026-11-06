@@ -70,6 +70,8 @@ void roam_tick();          // guest, net thread
 bool roam_busy();          // leaving or coming back
 bool net_guest_roaming();  // the guest plays its own Arisen, no host sync
 bool net_shared();         // net.cpp: shared_world=1, every player its own character in its own world copy
+void world_pos(uintptr_t ch, float out[3]); // net.cpp: a character's world place (a held one's +0x40 is relative to its holder)
+uintptr_t holder_of(uintptr_t ch);          // net.cpp: the party character holding it (+0x30), or 0
 bool net_puppet(int i);    // shared world: local party index i shows another player in this area
 bool roam_world_from_host(const std::vector<uint8_t> &host, std::vector<uint8_t> &out); // roam.cpp
 bool roam_refresh_party(const std::vector<uint8_t> &own, const std::vector<uint8_t> &host, std::vector<uint8_t> &out);

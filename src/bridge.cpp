@@ -1333,8 +1333,38 @@ DWORD WINAPI bridge_thread(LPVOID)
 // Game thread (the Arisen's update): a rebuild asked by the bridge. FUN_00B5CE10 (__thiscall(ch), plain
 // ret, a virtual of the character) remakes the weapons from [ch+0x3DEC] +0x14/+0x18/+0x1C, then calls the
 // character's vtable +0x308 and FUN_00B7E940 (+0x3580, the parts); found 2026-10-31.
+// Tests (test_log_heights=1): every 100 ms the place and action of the Arisen and the three pawns ("*":
+// it shows another player), to catch a character falling through the ground or flying off (issue #1:
+// "when leaving the camp, the pawn falls through the ground and flies into the sky").
+static void log_heights()
+{
+    static int on = -1;
+    if (on < 0)
+        on = early_flag("test_log_heights") ? 1 : 0;
+    static DWORD next = 0;
+    DWORD t = GetTickCount();
+    if (!on || (next && int(t - next) < 0))
+        return;
+    next = (t + 100) | 1;
+    char buf[768];
+    int n = _snprintf(buf, sizeof buf, "heights: stage %d", int(net_my_stage()));
+    for (int k = -1; k < kPawns && n > 0 && n < int(sizeof buf) - 160; ++k) {
+        uintptr_t ch = k < 0 ? possess_arisen() : possess_pawn_ptr(k);
+        if (!ch) {
+            n += _snprintf(buf + n, sizeof buf - n, " | %s -", k < 0 ? "A" : "p");
+            continue;
+        }
+        float w[3];
+        world_pos(ch, w); // "^": held, the place from its holder's
+        n += _snprintf(buf + n, sizeof buf - n, " | %s%d%s%s (%.0f, %.0f, %.0f) %s", k < 0 ? "A" : "p", k < 0 ? 0 : k,
+                       k >= 0 && net_puppet(1 + k) ? "*" : "", holder_of(ch) ? "^" : "", w[0], w[1], w[2], action_name(ch));
+    }
+    logf("%s", buf);
+}
+
 void bridge_game_tick()
 {
+    log_heights();
     LONG who = InterlockedExchange(&g_rebuild_who, -2);
     if (who < -1 || who >= kPawns)
         return;

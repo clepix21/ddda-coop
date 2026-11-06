@@ -22,6 +22,12 @@ NEWS = {
               '  installs it and restarts. Your coop.ini is kept. Not while the game runs.',
               'Setting: Settings > "Update automatically at startup".',
               'Release files in English: README.txt and HOW-TO-TEST.txt.'],
+    '0.9.5': ['Fixed: new players got the old classic mode (a guest driving one of the host\'s pawns) instead of\n'
+              '  the shared world: no quest or gear sync, menus driven by the guest\'s pad (issue #1). The shared\n'
+              '  world is now the default; shared_world=0 in coop.ini gives the classic mode.',
+              'Fixed: a grabbed player (RT from behind) was thrown to the far edge of the map when let go, or\n'
+              '  fell through the floor, and the next grab missed (issue #1). Grabs work both ways.',
+              'The mod writes its version at the top of its log.'],
 }
 
 EN = {'play': '"Play"', 'lobby': '"Lobby"', 'settings': '"Settings"', 'log': '"Log"', 'host': '"Host"', 'guest': '"Guest"',
