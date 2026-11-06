@@ -1,4 +1,4 @@
-﻿"""Writes the English docs of a release zip: README.txt and HOW-TO-TEST.txt.
+"""Writes the English docs of a release zip: README.txt and HOW-TO-TEST.txt.
 Usage: python -I tools/release_docs.py <version> <out dir>
 Versions before 0.9.2 have a French-only launcher: their labels are given in French with the English meaning."""
 import os
@@ -27,6 +27,7 @@ NEWS = {
               '  world is now the default; shared_world=0 in coop.ini gives the classic mode.',
               'Fixed: a grabbed player (RT from behind) was thrown to the far edge of the map when let go, or\n'
               '  fell through the floor, and the next grab missed (issue #1). Grabs work both ways.',
+              'Checked: gear bought from a merchant and worn is seen by the others.',
               'The mod writes its version at the top of its log.'],
 }
 
