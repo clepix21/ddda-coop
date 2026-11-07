@@ -89,6 +89,9 @@ long long exp_sync_total();                 // exp this world gave its Arisen
 void exp_sync_seen(int slot, long long total); // another player's total (net thread)
 void exp_sync_apply();                      // game thread: give what the others earned
 bool loot_install();                        // loot.cpp: shared world loot
+bool cutscene_install();                    // cutscene.cpp: events (cutscenes) for the other players
+void cutscene_play(int no);                 // cutscene.cpp: start event no here (tests, then the other players' events)
+void cutscene_remote(int no, int stage, int from); // cutscene.cpp, net thread: another player's game started an event
 void progress_shared_gain(long long exp, long long jp, int item, int count, unsigned flags, long long gold = 0); // guest: keep for its own save
 void progress_guest_gold_tick();      // game thread, shared world guest: its gold changes kept, put back after a load
 struct LootEv { uint16_t item, count; uint32_t flags; };

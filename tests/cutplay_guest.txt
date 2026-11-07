@@ -1,0 +1,5 @@
+# Cutscene replay test, guest (cutscene.sav world, Cassardis at night): after the join, start event 33
+# (Olra's cutscene, as the host's start logged it) on this copy, with no trigger walked onto.
+wait 25000
+cutplay 33
+wait 60000

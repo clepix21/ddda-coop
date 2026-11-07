@@ -1042,6 +1042,9 @@ void run_line(const char *line)
                 fclose(f);
             }
         strcpy(g_current, "codectest");
+    } else if (sscanf(line, "cutplay %u", &slot) == 1) { // cutplay <event>: start that event (cutscene) here
+        cutscene_play(int(slot));
+        _snprintf(g_current, sizeof g_current, "cutplay %u", slot);
     } else if (strncmp(line, "where", 5) == 0) { // where: the Arisen's position
         if (uintptr_t a = possess_arisen())
             logf("bridge: where %.0f %.0f %.0f", game::at<float>(a, 0x40), game::at<float>(a, 0x44), game::at<float>(a, 0x48));

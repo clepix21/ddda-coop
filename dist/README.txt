@@ -46,6 +46,8 @@ What's new in 0.9.6
 - Fixed: a friend's purchases and gold were lost when they left; they are now kept and added to
   their own save in Solo, like experience and discipline. Gold from selling (the friend sells from the
   host's bag) is not kept.
+- Cutscenes: when a player triggers a cutscene, the others in the same area see it at the same
+  time. Scenes that also change the game (rest at an inn, items given...) stay with that player.
 
 Licence: MIT for the mod's own code; MinHook and Roboto: see LICENCES.txt.
 Unofficial mod, not affiliated with Capcom. Dragon's Dogma: Dark Arisen (c) Capcom.

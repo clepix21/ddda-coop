@@ -33,7 +33,9 @@ NEWS = {
               '  friend\'s own bag).',
               'Fixed: a friend\'s purchases and gold were lost when they left; they are now kept and added to\n'
               '  their own save in Solo, like experience and discipline. Gold from selling (the friend sells from the\n'
-              '  host\'s bag) is not kept.'],
+              '  host\'s bag) is not kept.',
+              'Cutscenes: when a player triggers a cutscene, the others in the same area see it at the same\n'
+              '  time. Scenes that also change the game (rest at an inn, items given...) stay with that player.'],
 }
 
 EN = {'play': '"Play"', 'lobby': '"Lobby"', 'settings': '"Settings"', 'log': '"Log"', 'host': '"Host"', 'guest': '"Guest"',

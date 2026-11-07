@@ -1,0 +1,6 @@
+# Host on the owner's cutscene save, shared world: walks onto the pier with a write watch on sGameSys +0xB883C
+# armed just before (bit 31 = a cutscene), many hits.
+wait 20000
+watchg 18FA4BC B883C 30
+pad 0 0 0 32000 0 0 0 0 8000
+wait 40000

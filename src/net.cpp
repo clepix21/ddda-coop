@@ -61,7 +61,7 @@ namespace {
 
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
                        MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11, MSG_REVIVE = 12, MSG_QUEST = 13,
-                       MSG_AREA_ENEMIES = 14, MSG_PING = 15, MSG_PONG = 16 };
+                       MSG_AREA_ENEMIES = 14, MSG_PING = 15, MSG_PONG = 16, MSG_EVENT = 17 };
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 // A big correction must move every copy the movement code keeps, or the next collision pass pulls
@@ -149,6 +149,14 @@ struct QuestChunkMsg { // shared world: the quest state of the player at `origin
     uint32_t crc, total; // crc of the inflated state (quest_sync.cpp), deflated size
     uint16_t index, len;
     uint8_t data[1024];
+};
+struct EventMsg { // shared world: a player's game started an event (a cutscene), cutscene.cpp
+    Header h;
+    uint8_t from;   // the player whose game started it
+    uint8_t pad;
+    uint16_t id;    // per player, the same in the repeats
+    int32_t event;  // the scene controller's +0x8C
+    int32_t stage;  // where
 };
 struct ReviveMsg { // shared world: the player at `target` was helped up
     Header h;
@@ -1707,6 +1715,27 @@ void receive_all()
                 peer.rtt = uint16_t(rtt > 9999 ? 9999 : rtt < 1 ? 1 : rtt);
                 peer.rtt_at = GetTickCount() | 1;
             }
+        } else if (g_shared && h->type == MSG_EVENT && n == int(sizeof(EventMsg))) {
+            auto m = reinterpret_cast<const EventMsg *>(buf);
+            int from = g_role == NET_HOST ? 1 + k : m->from; // a guest's own start: its slot as the host knows it
+            static uint32_t seen[16] = {};
+            static int seen_at = 0;
+            uint32_t key = (uint32_t(from) << 16) | m->id;
+            bool dup = false;
+            for (uint32_t s : seen)
+                dup |= s == key;
+            if (dup)
+                continue; // a repeat
+            seen[seen_at++ & 15] = key;
+            if (g_role == NET_HOST) { // passed on to the other guests
+                EventMsg f = *m;
+                f.from = uint8_t(from);
+                for (int q = 0; q < kMaxPeers; ++q)
+                    if (q != k && g_peers[q].used)
+                        for (int r = 0; r < 3; ++r)
+                            send_to(g_peers[q], &f, sizeof f);
+            }
+            cutscene_remote(m->event, m->stage, from);
         } else if (h->type == MSG_REVIVE && n == int(sizeof(ReviveMsg))) {
             int t = reinterpret_cast<const ReviveMsg *>(buf)->target;
             if (g_role == NET_GUEST || t == 0)
@@ -3744,6 +3773,25 @@ bool net_player_info(int slot, PlayerInfo &out)
     }
     LeaveCriticalSection(&g_snap_lock);
     return ok;
+}
+
+// Game thread (cutscene.cpp): this player's game started event `event` here: told to the others (three
+// copies, the same id: a lost packet would leave a friend without the cutscene).
+void net_send_event(int32_t event)
+{
+    if (!g_shared || g_role == NET_OFF)
+        return;
+    static uint16_t next_id = uint16_t(GetTickCount());
+    EventMsg m = {{kMagic, MSG_EVENT, 0}, uint8_t(net_my_slot() < 0 ? 0 : net_my_slot()), 0, ++next_id, event, my_stage()};
+    for (int r = 0; r < 3; ++r) {
+        m.h.seq = ++g_seq;
+        if (g_role == NET_GUEST)
+            send_raw(&m, sizeof m);
+        else
+            for (int q = 0; q < kMaxPeers; ++q)
+                if (g_peers[q].used)
+                    send_to(g_peers[q], &m, sizeof m);
+    }
 }
 
 void net_send_revive(int slot)
