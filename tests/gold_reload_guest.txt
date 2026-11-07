@@ -1,0 +1,11 @@
+# Gold test, guest: its gold changes (a write of the low word, as a purchase would change it), then a full
+# load of its world ("Charger": the host's save with its character as it joined). Its gold must come back
+# with this session's change.
+wait 20000
+chptrw -1 3DEC 348 1000
+wait 3000
+chptr 3DEC 348 4
+savereq b 0
+wait 30000
+chptr 3DEC 348 4
+wait 60000

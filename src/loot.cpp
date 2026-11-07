@@ -90,11 +90,44 @@ int __attribute__((thiscall)) hk_add_item(void *mgr, unsigned item, unsigned cou
     return r;
 }
 
+// The Arisen's gold: 0x006E08D0 adds (capped at 99,999,999), 0x006E0950 takes (not below 0), at sGameSys +
+// 0xA76D0 + 0x348; both virtual (vtables at 0x0158651C/20...), __thiscall, one stack argument, `ret 4`.
+// The shop's deal (code around 0x006E3340) calls the add for a sale and the take for a purchase: write
+// watch on the gold, 2026-11-07 00:51 (sale written before 0x006E0914, return 0x006E3369 on the stack;
+// purchase before 0x006E098B, 0x006E3356). A guest's bag in its world is the host's (the save's item lists
+// are not its character's), so a sale there turned the host's items into the guest's gold: the gold of a
+// sale is not kept for its own save (progress_guest_gold_tick takes it off).
+using AddGold_t = void(__attribute__((thiscall)) *)(void *self, int amount);
+constexpr uintptr_t kAddGold = 0x006E08D0;
+AddGold_t g_orig_gold = nullptr;
+volatile LONG g_sale_gold = 0;
+
+void __attribute__((thiscall)) hk_add_gold(void *self, int amount)
+{
+    uintptr_t from = uintptr_t(__builtin_return_address(0));
+    g_orig_gold(self, amount);
+    bool sale = from >= 0x006E3300 && from < 0x006E3400;
+    if (cfg_debug_log())
+        logf("loot: gold +%d from %08X%s", amount, unsigned(from), sale ? " (a sale)" : "");
+    if (sale && amount > 0 && net_role() == NET_GUEST)
+        InterlockedExchangeAdd(&g_sale_gold, amount);
+}
+
 } // namespace
+
+// Gold from the guest's sales since the last call (taken off its kept gold changes).
+long loot_take_sale_gold() { return InterlockedExchange(&g_sale_gold, 0); }
 
 bool loot_install()
 {
     InitializeCriticalSection(&g_lock);
+    {
+        MH_STATUS gs = MH_CreateHook(reinterpret_cast<void *>(kAddGold), reinterpret_cast<void *>(&hk_add_gold),
+                                     reinterpret_cast<void **>(&g_orig_gold));
+        if (gs == MH_OK)
+            gs = MH_EnableHook(reinterpret_cast<void *>(kAddGold));
+        logf("loot: hook AddGold %08X: %s", unsigned(kAddGold), MH_StatusToString(gs));
+    }
     MH_STATUS st = MH_CreateHook(reinterpret_cast<void *>(kAddItem), reinterpret_cast<void *>(&hk_add_item),
                                  reinterpret_cast<void **>(&g_orig));
     if (st == MH_OK)

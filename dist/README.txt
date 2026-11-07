@@ -44,7 +44,8 @@ What's new in 0.9.6
 - Players can give each other items (give an item to the pawn showing a friend: it goes to that
   friend's own bag).
 - Fixed: a friend's purchases and gold were lost when they left; they are now kept and added to
-  their own save in Solo, like experience and discipline.
+  their own save in Solo, like experience and discipline. Gold from selling (the friend sells from the
+  host's bag) is not kept.
 
 Licence: MIT for the mod's own code; MinHook and Roboto: see LICENCES.txt.
 Unofficial mod, not affiliated with Capcom. Dragon's Dogma: Dark Arisen (c) Capcom.

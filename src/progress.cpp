@@ -775,7 +775,14 @@ void progress_guest_gold_tick()
         return;
     long long d = g - last;
     last = g;
-    session += d;
-    logf("progress: gold %+lld (now %d, this session %+lld): kept for this player's own save", d, g, session);
-    progress_shared_gain(0, 0, -1, 0, 0, d);
+    long sale = loot_take_sale_gold(); // a sale's gold: the items sold were the host's (loot.cpp)
+    long long kept = d - (sale > 0 && d > 0 ? std::min<long long>(d, sale) : 0);
+    session += d; // its world's gold, for the put-back after a load
+    if (kept != d)
+        logf("progress: gold %+lld (now %d), of which %ld from a sale: %+lld kept for this player's own save", d, g,
+             sale, kept);
+    else
+        logf("progress: gold %+lld (now %d, this session %+lld): kept for this player's own save", d, g, session);
+    if (kept)
+        progress_shared_gain(0, 0, -1, 0, 0, kept);
 }

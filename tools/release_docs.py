@@ -32,7 +32,8 @@ NEWS = {
     '0.9.6': ['Players can give each other items (give an item to the pawn showing a friend: it goes to that\n'
               '  friend\'s own bag).',
               'Fixed: a friend\'s purchases and gold were lost when they left; they are now kept and added to\n'
-              '  their own save in Solo, like experience and discipline.'],
+              '  their own save in Solo, like experience and discipline. Gold from selling (the friend sells from the\n'
+              '  host\'s bag) is not kept.'],
 }
 
 EN = {'play': '"Play"', 'lobby': '"Lobby"', 'settings': '"Settings"', 'log': '"Log"', 'host': '"Host"', 'guest': '"Guest"',

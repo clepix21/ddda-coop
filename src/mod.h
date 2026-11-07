@@ -94,6 +94,7 @@ void progress_guest_gold_tick();      // game thread, shared world guest: its go
 struct LootEv { uint16_t item, count; uint32_t flags; };
 void loot_net_mine(std::vector<LootEv> &out, uint32_t from_seq, int max); // this player's pickups from seq
 uint32_t loot_mine_count();
+long loot_take_sale_gold();                // guest: gold from shop sales since the last call
 void loot_net_apply(const LootEv &e, int from_slot); // net thread: another player's pickup or gift, applied on the game thread
 const char *action_name(uintptr_t ch);       // actions.cpp: the class of a character's current action
 const char *action_class(int n);             // actions.cpp: the class of action number n ("" if none)
