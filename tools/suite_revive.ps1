@@ -1,10 +1,13 @@
-﻿# Revive (shared world): two copies walk away from the Rift stone; the guest takes a lethal blow (the
+# Revive (shared world): two copies walk away from the Rift stone; the guest takes a lethal blow (the
 # bridge's pdmg, through the game's damage function) and the host holds B next to it; then a second
 # lethal blow and nobody helps for 60 s. Prints PASS/FAIL lines and a summary.
-param([ValidateSet("udp", "mock")][string]$Transport = "udp")
+param([ValidateSet("udp", "mock")][string]$Transport = "udp",
+      # -Tap: the host taps B instead of holding it (Nexus 2026-11-08: a revive in the Hydra fight did not work)
+      [switch]$Tap)
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
-$out = "J:\coop-test\re\runs\revive_$Transport"
+$out = if ($Tap) { "J:\coop-test\re\runs\revive_tap_$Transport" } else { "J:\coop-test\re\runs\revive_$Transport" }
+$hb = if ($Tap) { "revive_tap_host.txt" } else { "revive_host.txt" }
 if ($Transport -eq "udp") {
     $hostNet = @("transport=udp"); $guestNet = @("transport=udp", "peer=127.0.0.1")
 } else {
@@ -14,7 +17,7 @@ if ($Transport -eq "udp") {
 }
 $run = & (Join-Path $tools "run_pair.ps1") -Seconds 300 -OutDir $out -Shots 121, 125, 160, 190 -GuestSavesFromRole `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "bot_load_game_p2.txt") `
-    -HostBridge @((Join-Path $tests "revive_host.txt")) -GuestBridge @((Join-Path $tests "revive_guest.txt")) `
+    -HostBridge @((Join-Path $tests $hb)) -GuestBridge @((Join-Path $tests "revive_guest.txt")) `
     -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "shared_world=1") + $hostNet) `
     -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "shared_world=1", "test_save=J:\coop-test\saves\guest_arisen.sav") + $guestNet) 2>$null
 $run | ForEach-Object { "   $_" }

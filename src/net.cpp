@@ -904,6 +904,13 @@ void shared_gear_look(uintptr_t ch, int i, const CharState &s)
         state = 1;
 }
 
+// This player's Arisen in another player's hold (Nexus 2026-11-08: "the guest turns into a frog on a journey
+// of endless jumps"; rough grab run 2026-11-08 03:19: the held guest's own hold ended for a moment in its
+// world while the host still held it, and its A presses, struggling, made it jump: JumpBegin at 03:19:36.7
+// inside the host's 34.0-39.7 hold). And a fall that began in such a hold or at its end: the game took the
+// guest let go in mid-jump (y 255 over ground at 181) down for "a fall" (03:20:08, "revive: down (a fall)").
+DWORD g_me_held_at = 0, g_hold_fall = 0;
+
 void shared_grab_look(uintptr_t ch, int i, const CharState &s)
 {
     static int applied[kParty] = {-1, -1, -1, -1}; // held here: 0..3 a player, 0x100 + id an enemy
@@ -916,8 +923,17 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     static bool held_player[kParty] = {};
     static float rel_y[kParty] = {}; // a player let go here: the height it was let go at
     static int applied_was[kParty] = {};
+    static int applied_act[kParty] = {}; // the holder's action when the hold was last rebuilt
     DWORD t = GetTickCount();
     int want = !hold_action(s.action) ? -1 : s.hold_slot >= 0 ? s.hold_slot : s.hold_enemy >= 0 ? 0x100 + s.hold_enemy : -1;
+    if (want >= 0 && want == net_my_slot())
+        g_me_held_at = t | 1; // another player holds this one (actions.cpp: no jumps meanwhile)
+    if (g_hold_fall) { // a fall that began in a player's hold ends when this Arisen stands again
+        uintptr_t a = possess_arisen();
+        int act = a ? game::at<int32_t>(a, 0x2DD4) : -1;
+        if (a && (act == 0 || act == 1 || act == 2) && !holder_of(a) && int(t - g_hold_fall) > 1500)
+            g_hold_fall = 0;
+    }
     if (want < 0) {
         // let go in the holder's world: the links set here go, and a held player stands up if its
         // release action is still running 1.2 s later (it stayed in DmgHagaijimeEnd for 10 s)
@@ -943,6 +959,8 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
                 rel_y[i] = game::at<float>(h, 0x44);
                 applied_was[i] = applied[i];
             }
+            if (held_player[i] && h == possess_arisen())
+                g_hold_fall = t | 1;
             if (game::at<uintptr_t>(h, 0x2104) == ch)
                 game::at<uintptr_t>(h, 0x2104) = old_2104[i];
             if (game::at<uintptr_t>(h, 0x30) == ch)
@@ -1041,7 +1059,10 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
             carry_pose(ch, held, s);
             return;
         }
-        if (holding || int(t - again[i]) < 1000)
+        // the holder's grab start (0x39) became the hold (0xA9): at once, not a second later. The held one
+        // stayed in its walk, tied to the pawn, for that second, and its own state undid the hold in the
+        // holder's world (rough grab run 2026-11-08 03:39:52-53: "lost", DmgHagaijimeEnd, let go)
+        if (holding || (int(t - again[i]) < 1000 && applied_act[i] == s.action))
             return;
     }
     again[i] = t | 1;
@@ -1053,6 +1074,7 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
                 old_em[i][k] = game::at<uintptr_t>(held, kEmLinks[k]) == ch ? 0 : game::at<uintptr_t>(held, kEmLinks[k]);
     }
     applied[i] = want;
+    applied_act[i] = s.action;
     held_by[i] = held;
     held_player[i] = player;
     released[i] = 0;
@@ -3699,6 +3721,12 @@ bool net_puppet(int i)
 
 // The player a party pawn shows (1..3 = 1 + mCmcId), or -1 (loot.cpp: gifts to another player).
 int net_party_slot(int i) { return g_shared ? party_to_slot(i) : -1; }
+// The character showing player `slot` here (revive.cpp: the downed player where the helper sees it), or 0.
+uintptr_t net_slot_character(int slot) { return g_shared ? slot_character(slot) : 0; }
+// Another player holds this one now (actions.cpp: its jumps refused).
+bool net_me_held_by_player() { return g_shared && g_me_held_at && int(GetTickCount() - g_me_held_at) < 400; }
+// This Arisen fell from a player's hold and has not stood since (actions.cpp: that fall takes no HP).
+bool net_fall_from_hold() { return g_shared && g_hold_fall != 0; }
 
 int net_my_slot()
 {

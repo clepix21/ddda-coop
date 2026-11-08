@@ -210,6 +210,13 @@ bool refuse(uintptr_t ch, int n)
              unsigned(n));
     if (ch == possess_arisen() && deadly(n)) // shared world: down instead while another player is up
         return revive_on_fatal(ch, action_class(n), true);
+    // held by another player (in its world): no jumps here while struggling (net.cpp, "a frog on endless jumps")
+    if (ch == possess_arisen() && net_me_held_by_player() && strstr(action_class(n), "Jump")) {
+        static LONG k = 0;
+        if (++k <= 10 || k % 100 == 0)
+            logf("actions: the Arisen is held by another player: %s refused (%ld so far)", action_class(n), k);
+        return true;
+    }
     if (net_puppet_ptr(ch) && deadly(n)) { // a pawn showing a player dies with that player only
         static LONG k = 0;
         if (++k <= 20 || k % 100 == 0)
@@ -307,6 +314,10 @@ extern "C" bool __cdecl actions_hp_filter(uintptr_t ch, float *change)
         return false;
     if (revive_down())
         return true; // down: no more HP lost
+    if (g_in_fall && net_fall_from_hold()) { // let go by another player in mid-air: no fall damage (net.cpp)
+        logf("actions: a fall from another player's hold: its HP change %.0f dropped", *change);
+        return true;
+    }
     const float *hp = enemies_hp(ch);
     if (!hp || hp[0] + *change > 0.f)
         return false;

@@ -154,8 +154,15 @@ void revive_tick()
         return;
     }
     // up: help a downed player in this area by holding B next to it
+    // B counts as held through short gaps (Nexus 2026-11-08, a guest in the Hydra fight: "I tried to revive my
+    // friend but it didn't work"; a rough grab run, 2026-11-08 03:20: B tapped 150 ms on / 150 ms off next to
+    // the downed guest for 40 s never helped it up: each gap started the 3 s again). A hit or a stagger in a
+    // fight lets go of B for a moment too.
     XINPUT_STATE s = {};
-    bool b = pads_read_raw(0, &s) == ERROR_SUCCESS && (s.Gamepad.wButtons & XINPUT_GAMEPAD_B);
+    static DWORD b_at = 0;
+    if (pads_read_raw(0, &s) == ERROR_SUCCESS && (s.Gamepad.wButtons & XINPUT_GAMEPAD_B))
+        b_at = now | 1;
+    bool b = b_at && int(now - b_at) < 400;
     uintptr_t me = possess_arisen();
     int target = -1;
     for (int t = 0; t < 4 && b && me && target < 0; ++t) {
@@ -163,7 +170,16 @@ void revive_tick()
         if (t == net_my_slot() || !net_player_info(t, p) || !p.present || !p.downed || p.stage != net_my_stage())
             continue;
         float dx = p.pos[0] - game::at<float>(me, 0x40), dz = p.pos[2] - game::at<float>(me, 0x48);
-        if (std::sqrt(dx * dx + dz * dz) < kHelpReach)
+        float d = p.pos[0] == 0.f && p.pos[2] == 0.f ? 1e9f : std::sqrt(dx * dx + dz * dz);
+        // or where this player sees it: the pawn showing it (a monster may have carried it, its own world
+        // may have put it back where it last stood)
+        if (uintptr_t c = net_slot_character(t)) {
+            float cx = game::at<float>(c, 0x40) - game::at<float>(me, 0x40), cz = game::at<float>(c, 0x48) - game::at<float>(me, 0x48);
+            float dc = std::sqrt(cx * cx + cz * cz);
+            if (dc < d)
+                d = dc;
+        }
+        if (d < kHelpReach)
             target = t;
     }
     static DWORD next_dbg = 0;

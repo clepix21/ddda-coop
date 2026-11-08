@@ -1,4 +1,4 @@
-r"""Checks a player grab run (suite_player_grab.ps1): each player's grab caught the other in its own world,
+﻿r"""Checks a player grab run (suite_player_grab.ps1): each player's grab caught the other in its own world,
 the hold was rebuilt in the other world, and no Arisen jumped (a "teleport", issue #1) while held.
 Reads the "heights:" lines (test_log_heights=1, every 100 ms) and the hold lines. Prints PASS/FAIL lines.
 Usage: check_player_grab.py <dir>"""
@@ -62,8 +62,10 @@ host, guest = lines("host.log"), lines("guest.log")
 for who, mine, other in (("host", host, guest), ("guest", guest, host)):
     acts = [m[1] for ln in mine for m in [re.search(r"bridge: actname (arisen .*)", ln)] if m]
     caught = [a for a in acts if re.search(r"arisen -1 cPlAct(Hagaijime|Grab|Lift)", a)]
-    check(bool(caught), f"{who}'s grab caught the other player in its own world ({len(caught)} of {len(acts)} samples: "
-                        f"{[a.split()[2] for a in acts]})")
+    # or its own Arisen holding in the places log (the rough run samples the action after the hold)
+    held_rows = sum(1 for ln in mine if re.search(r" heights: .*\| A0\^? \([^)]*\) cPlActHagaijime", ln))
+    check(bool(caught) or held_rows > 5, f"{who}'s grab caught the other player in its own world ({len(caught)} of {len(acts)} samples: "
+                        f"{[a.split()[2] for a in acts]}; {held_rows} places logged holding)")
     rebuilt = [ln for ln in other if "holds player" in ln and "hold rebuilt here" in ln]
     check(bool(rebuilt), f"{who}'s hold rebuilt in the other world ({len(rebuilt)} times)")
 for who, mine in (("host", host), ("guest", guest)):
@@ -81,3 +83,22 @@ for who, mine in (("host", host), ("guest", guest)):
         if before and after and min(after) < before[-1] - 300:
             sank.append((round(before[-1]), round(min(after))))
     check(spans and not sank, f"{who}: back on its feet after each hold, not under the floor ({len(spans)} holds; sank: {sank})")
+
+# the held player jumped in its own world while the other still held it (Nexus 2026-11-08: "the guest turns
+# into a frog on a journey of endless jumps"), and no fall from a hold put it down (03:20 rough run)
+for who, mine, other in (("host", host, guest), ("guest", guest, host)):
+    holding = []
+    start = None
+    for t, x, y, z, act in arisen_track(mine):
+        if act.startswith("cPlActHagaijime") and start is None:
+            start = t
+        elif not act.startswith("cPlActHagaijime") and start is not None:
+            holding.append((start, t))
+            start = None
+    # not after the hold ended in the jumper's own world (it struggled free: the game's own escape)
+    freed = [secs(ln[:12]) for ln in other if re.search(r"let go of player \d here", ln)]
+    hops = [(round(t, 1), a) for t, x, y, z, a in arisen_track(other) if "Jump" in a and any(s <= t <= e for s, e in holding)
+            and not any(0 <= t - f <= 3.0 for f in freed)]
+    check(not hops, f"{who} holding: the other player did not jump meanwhile ({len(holding)} holds; jumps: {hops[:4]})")
+falls = [ln for ln in host + guest if "revive: down (a fall)" in ln]
+check(not falls, f"no player went down from a fall after a hold ({len(falls)})")

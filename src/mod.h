@@ -134,6 +134,9 @@ struct PlayerInfo {
 bool net_player_info(int slot, PlayerInfo &out); // net.cpp: player by place (0 = host, 1 + guest)
 int net_my_slot();
 int net_party_slot(int i); // shared world: the player party pawn i shows, or -1
+uintptr_t net_slot_character(int slot); // shared world: the character showing player `slot` here, or 0
+bool net_me_held_by_player();          // shared world: another player holds this one now
+bool net_fall_from_hold();             // shared world: this Arisen fell from a player's hold, not stood since
 int32_t net_my_stage();
 void net_send_revive(int slot);
 bool net_stage_jump(int32_t to, int32_t point);  // game thread
