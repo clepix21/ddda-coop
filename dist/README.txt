@@ -1,8 +1,8 @@
-﻿DDDA Coop 0.9.6 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam, 2 to 4 players)
+﻿DDDA Coop 0.9.7 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam, 2 to 4 players)
 ==============================================================================================
 
 Each player needs the game on Steam (current version), on their own PC, and this same mod version
-(0.9.6). Guests must be Steam friends with the host. No IP address or port to set.
+(0.9.7). Guests must be Steam friends with the host. No IP address or port to set.
 
 Files: DDDA-Coop.exe (the launcher), dinput8.dll (the mod), coop.ini (settings). Keep them together,
 anywhere. The launcher is in English, French, Italian, German and Spanish (globe button, bottom left).
@@ -39,15 +39,21 @@ Good to know
 - Alpha: keep copies of your saves.
 - If the game folder already has another dinput8.dll (another mod), it is not replaced: remove it first.
 
-What's new in 0.9.6
+What's new in 0.9.7
 -------------------
-- Players can give each other items (give an item to the pawn showing a friend: it goes to that
-  friend's own bag).
-- Fixed: a friend's purchases and gold were lost when they left; they are now kept and added to
-  their own save in Solo, like experience and discipline. Gold from selling (the friend sells from the
-  host's bag) is not kept.
-- Cutscenes: when a player triggers a cutscene, the others in the same area see it at the same
-  time. Scenes that also change the game (rest at an inn, items given...) stay with that player.
+- Human foes (bandits, thieves, cultists) are now shared like monsters: the host's game runs them,
+  the others see the same ones in the same places, with the same HP and deaths. Before, each
+  player fought their own.
+- NPCs (townsfolk, merchants...) stand and walk in the same places for every player. During a
+  talk, a shop or a cutscene they are left to that player's game. no_npc_sync=1 in coop.ini turns
+  both off.
+- Packs of small monsters (wolves, goblins, harpies) that appear in other places in each world are
+  matched from further away (1500 u instead of 800).
+- The pause menu no longer stops the world in co-op: the others keep seeing you, your character
+  stands still. menu_runs_world=0 in coop.ini gives the old pause.
+- Reviving a friend works with B tapped, or when a hit breaks the hold.
+- Grabs between players: the hold starts at once (even in mid-air), the held player can no longer
+  jump out in a loop, and no fall damage when let go in the air.
 
 Licence: MIT for the mod's own code; MinHook and Roboto: see LICENCES.txt.
 Unofficial mod, not affiliated with Capcom. Dragon's Dogma: Dark Arisen (c) Capcom.

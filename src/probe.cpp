@@ -40,9 +40,18 @@ void __fastcall hk_finalize(uintptr_t ch)
         perf_add(PERF_ENEMY, te);
         return;
     }
-    if (net_role() != NET_GUEST && !net_shared())
+    if (net_role() == NET_OFF)
         return;
     int idx = party_index(ch);
+    // human foes and NPCs (uNpc and its children): the enemy table, as uEnemy's (2026-11-08)
+    if (idx < 0 && enemies_npc_kind(ch)) {
+        int64_t te = perf_now();
+        enemies_on_finalize(ch);
+        perf_add(PERF_ENEMY, te);
+        return;
+    }
+    if (net_role() != NET_GUEST && !net_shared())
+        return;
     if (idx >= 0) {
         int64_t tp = perf_now();
         net_apply_transform(ch, idx);

@@ -3,7 +3,7 @@
 # jump in time to 6:00 in the same stage; the online pawn update fails behind the firewall).
 # The host waits 40 s first, so the guest is in game: its game goes through the same talk (the
 # host's B on its Arisen puppet, the host's pad mirrored). The guest's clock, Arisen position and HP must follow. Prints PASS/FAIL lines and a summary.
-param([ValidateSet("udp", "mock")][string]$Transport = "udp")
+param([ValidateSet("udp", "mock")][string]$Transport = "udp", [string[]]$ExtraIni = @())
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
 $out = "J:\coop-test\re\runs\pair_inn_$Transport"
@@ -18,8 +18,8 @@ if ($Transport -eq "udp") {
 $run = & (Join-Path $tools "run_pair.ps1") -Seconds 210 -OutDir $out -Shots 140, 150, 200 -GuestSavesFromRole `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "bot_load_game_p2.txt") `
     -HostBridge @((Join-Path $tests "talk_wait.txt"), (Join-Path $tests "inn_talk_full.txt")) `
-    -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", $save) + $hostNet) `
-    -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "guest_cam_pawn=1", $save) + $guestNet) 2>$null
+    -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", $save) + $hostNet + $ExtraIni) `
+    -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "guest_cam_pawn=1", $save) + $guestNet + $ExtraIni) 2>$null
 $run | ForEach-Object { "   $_" }
 $checks = @(python -I (Join-Path $tools "check_inn.py") $out)
 if ($run -match "saves and owner config unchanged: True") { $checks += "PASS  owner's saves and config unchanged" } else { $checks += "FAIL  owner's saves and config unchanged" }

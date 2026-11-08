@@ -36,6 +36,19 @@ NEWS = {
               '  host\'s bag) is not kept.',
               'Cutscenes: when a player triggers a cutscene, the others in the same area see it at the same\n'
               '  time. Scenes that also change the game (rest at an inn, items given...) stay with that player.'],
+    '0.9.7': ['Human foes (bandits, thieves, cultists) are now shared like monsters: the host\'s game runs them,\n'
+              '  the others see the same ones in the same places, with the same HP and deaths. Before, each\n'
+              '  player fought their own.',
+              'NPCs (townsfolk, merchants...) stand and walk in the same places for every player. During a\n'
+              '  talk, a shop or a cutscene they are left to that player\'s game. no_npc_sync=1 in coop.ini turns\n'
+              '  both off.',
+              'Packs of small monsters (wolves, goblins, harpies) that appear in other places in each world are\n'
+              '  matched from further away (1500 u instead of 800).',
+              'The pause menu no longer stops the world in co-op: the others keep seeing you, your character\n'
+              '  stands still. menu_runs_world=0 in coop.ini gives the old pause.',
+              'Reviving a friend works with B tapped, or when a hit breaks the hold.',
+              'Grabs between players: the hold starts at once (even in mid-air), the held player can no longer\n'
+              '  jump out in a loop, and no fall damage when let go in the air.'],
 }
 
 EN = {'play': '"Play"', 'lobby': '"Lobby"', 'settings': '"Settings"', 'log': '"Log"', 'host': '"Host"', 'guest': '"Guest"',

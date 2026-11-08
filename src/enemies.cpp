@@ -102,12 +102,23 @@ void enemies_run_queued(uintptr_t arisen)
     LONG bits = InterlockedExchange(&g_queued_damage, 0);
     if (!bits || !arisen || !enemies_hp(arisen))
         return;
-    uintptr_t entry = game::at<uintptr_t>(game::at<uintptr_t>(arisen, 0x1D18), 0);
-    uintptr_t fn = game::kApplyDamage;
     uint32_t b = uint32_t(bits);
     float dmg;
     memcpy(&dmg, &b, 4);
-    logf("enemies: test damage %.1f to the Arisen (HP entry %08X)", dmg, unsigned(entry));
+    logf("enemies: test damage %.1f to the Arisen", dmg);
+    enemies_apply_damage(arisen, dmg);
+}
+
+// The game's own damage function on a character's HP entry (game thread): its death comes with it when
+// the HP reaches 0 (HP 0 written directly does not kill). Goes through the damage hook above.
+void enemies_apply_damage(uintptr_t ch, float dmg)
+{
+    if (!ch || !enemies_hp(ch))
+        return;
+    uintptr_t entry = game::at<uintptr_t>(game::at<uintptr_t>(ch, 0x1D18), 0);
+    uintptr_t fn = game::kApplyDamage;
+    uint32_t b;
+    memcpy(&b, &dmg, 4);
     // EAX = HP entry, push flag then damage; the callee pops both
     asm volatile("pushl $0\n\t"
                  "pushl %%edx\n\t"
@@ -178,7 +189,49 @@ const char *class_of(uintptr_t obj)
     return readable(name, 16) ? name : "?";
 }
 
+// Characters of uNpc and its children (uHumanEnemy, uMultiNpc; dti.csv) by vtable, kept once seen. Human
+// foes (bandits, cultists) are uNpc children, not uEnemy: the enemy sync never saw them (2026-11-08).
+struct KindOf {
+    volatile uintptr_t vt;
+    volatile int kind; // ENEMY_*, or -1: not one
+};
+KindOf g_kinds[32] = {};
+
 } // namespace
+
+int enemies_npc_kind(uintptr_t ch)
+{
+    static int off = -1; // coop.ini no_npc_sync=1: monsters only, as before 0.9.7
+    if (off < 0)
+        off = early_flag("no_npc_sync") ? 1 : 0;
+    if (off)
+        return 0;
+    uintptr_t vt = game::at<uintptr_t>(ch, 0);
+    if (vt == game::kVtNpc)
+        return ENEMY_NPC;
+    if (vt == game::kVtPlayer || vt == game::kVtCmc || vt == game::kVtPlayerBase)
+        return 0;
+    for (const KindOf &k : g_kinds) {
+        if (!k.vt)
+            break;
+        if (k.vt == vt)
+            return k.kind > 0 ? k.kind : 0;
+    }
+    const char *name = class_of(ch);
+    int kind = strcmp(name, "uHumanEnemy") == 0 ? ENEMY_HUMAN
+               : strcmp(name, "uMultiNpc") == 0 || strcmp(name, "uNpc") == 0 ? ENEMY_NPC
+                                                                              : -1;
+    // several game threads: a vtable written twice is harmless; the kind is written before the vtable
+    for (KindOf &k : g_kinds)
+        if (!k.vt || k.vt == vt) {
+            k.kind = kind;
+            k.vt = vt;
+            if (kind > 0)
+                logf("enemy: class %s (vtable %08X) synced as %s", name, unsigned(vt), kind == ENEMY_HUMAN ? "a human foe" : "an NPC");
+            break;
+        }
+    return kind > 0 ? kind : 0;
+}
 
 void enemies_on_finalize(uintptr_t em)
 {
@@ -207,6 +260,7 @@ void enemies_on_finalize(uintptr_t em)
         s.ptr = em;
         s.vt = game::at<uintptr_t>(em, 0);
         snprintf(s.name, sizeof s.name, "%s", class_of(em));
+        s.kind = uint8_t(enemies_npc_kind(em));
         memcpy(s.spawn, reinterpret_cast<void *>(em + 0x40), sizeof s.spawn);
         s.first_seen = now;
         logf("enemy: new #%d %s %p at (%.0f, %.0f, %.0f)", i, s.name, (void *)em, s.spawn[0], s.spawn[1], s.spawn[2]);
@@ -224,11 +278,23 @@ void enemies_on_finalize(uintptr_t em)
         // another place and moved there after their first frames, at a different moment on each PC
         if (!s.settled) {
             const float *p = reinterpret_cast<const float *>(em + 0x40);
+            // NPCs: the first place (they walk off at once, each game its own way: an inn walker was 20 u
+            // apart at its first frame and 130 u after 1 s, inn suite 2026-11-08)
             if (now - s.first_seen < 1000) {
-                memcpy(s.spawn, p, sizeof s.spawn);
+                if (s.kind != ENEMY_NPC)
+                    memcpy(s.spawn, p, sizeof s.spawn);
             } else {
                 s.settled = true;
                 logf("enemy: settled #%d %s at (%.0f, %.0f, %.0f)", i, s.name, s.spawn[0], s.spawn[1], s.spawn[2]);
+            }
+        }
+        // uNpc children have another death handler than uEnemy's (hk_death): dead = HP 0
+        if (s.kind && !s.died) {
+            float *hp = enemies_hp(em);
+            if (hp && hp[1] > 0.f && hp[0] <= 0.f) {
+                s.died = now | 1;
+                logf("enemy: died #%d %s at (%.0f, %.0f, %.0f) (HP 0)", i, s.name, game::at<float>(em, 0x40),
+                     game::at<float>(em, 0x44), game::at<float>(em, 0x48));
             }
         }
         int64_t tn = perf_now();

@@ -1343,6 +1343,7 @@ struct Follow {
     DWORD unpaired_since; // no host enemy for it while the host sends enemies (0 = no)
     DWORD last;           // last finalize of the local enemy: a gone enemy's entry stays behind
     int paired_to;        // host_slot of the first update applied (the pairing's own jump is not an error)
+    float host_spawn[3];  // the spawn of the host enemy it pairs with: a new one in that host slot ends the pair
 };
 Follow g_follow[kEnemySlots] = {};
 struct EnemyStats {
@@ -3395,6 +3396,15 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     f.last = now;
     if (f.host_slot >= 0 && (!g_enemy_tick[f.host_slot] || now - g_enemy_tick[f.host_slot] > 3000))
         f.host_slot = -1; // the host's enemy is gone (or the host stopped sending it)
+    // another enemy in that host slot (the slot was reused: a uEm0503 kept following the uEm8100 that took
+    // its host slot, 5538 u off, enemy suite 2026-11-08 13:13)
+    if (f.host_slot >= 0) {
+        const float *hs = g_enemy_state[f.host_slot].spawn;
+        if (std::fabs(hs[0] - f.host_spawn[0]) > 1.f || std::fabs(hs[2] - f.host_spawn[2]) > 1.f) {
+            logf("net: enemy #%d %s: host #%d is another enemy now, pairing again", i, slot.name, f.host_slot);
+            f.host_slot = -1;
+        }
+    }
     // never a dead one: a guest-only enemy removed (dead here) was paired 4 s later with a living host
     // enemy, and the two stayed "dead here, alive there" (enemy suite 2026-10-30 06:01, 9/10)
     if (f.host_slot < 0 && !slot.died && int(now - f.next_try) >= 0) {
@@ -3407,7 +3417,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
                 claimed[g_follow[k].host_slot] = true;
         // 1. same class, spawn within 40 u; 2. same class, standing within 40 u now (critters such as
         // uEm8100 move away from their spawn after their first frames, not at the same moment on both PCs);
-        // 3. once it has been here 6 s: same class or a variant, the closest standing within 800 u.
+        // 3. once it has been here 6 s: same class or a variant, the closest standing within 1500 u.
         // Packs (wolves, bats, harpies) spawn 100 to 1500 u apart in the two worlds (friends' logs,
         // 2026-10-28) and stayed apart: one of the same kind is as good as another.
         const float *here = reinterpret_cast<const float *>(em + 0x40);
@@ -3415,9 +3425,11 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         float best = 40.f * 40.f;
         for (int pass = 0; pass < 3 && f.host_slot < 0; ++pass) {
             if (pass == 2) {
+                if (slot.kind == ENEMY_NPC) // townsfolk: one is not as good as another
+                    break;
                 if (now - slot.first_seen < 6000) // passes 1 and 2 first: at 2 s it snapped critters (uEm8100) 784 u
                     break;
-                best = 800.f * 800.f;
+                best = 1500.f * 1500.f; // packs spawned up to 1500 u apart (friends' logs)
                 how = "kind, closest";
             }
             const float *mine = pass == 0 ? slot.spawn : here;
@@ -3437,6 +3449,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
                 how = "positions";
         }
         if (f.host_slot >= 0) {
+            memcpy(f.host_spawn, g_enemy_state[f.host_slot].spawn, sizeof f.host_spawn);
             ++g_enemy_stats.matched_new;
             logf("net: enemy #%d %s paired with host #%d (%s %.1f u apart)", i, slot.name, f.host_slot, how,
                  std::sqrt(best));
@@ -3481,7 +3494,8 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
             host_knows = g_enemy_tick[k] && now - g_enemy_tick[k] < 30000 && fam.has(h.cls) &&
                          dx * dx + dy * dy + dz * dz < 40.f * 40.f;
         }
-        if (!host_sending || host_knows || slot.died || f.forced) {
+        // an NPC is never removed: the host may not see it (static NPCs, another part of a town)
+        if (!host_sending || host_knows || slot.died || f.forced || slot.kind == ENEMY_NPC) {
             f.unpaired_since = 0;
         } else if (!f.unpaired_since) {
             f.unpaired_since = now;
@@ -3499,6 +3513,13 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     if (g_shared && (game::at<uintptr_t>(em, 0x2104) || carried_here(em))) { // held, lifted or carried here: it goes with its hands
         LeaveCriticalSection(&g_enemy_lock);
         return pending_death;
+    }
+    if (slot.kind == ENEMY_NPC) { // a talk, a shop or a scene here: the NPC is this game's meanwhile
+        uintptr_t gm = game::at<uintptr_t>(game::kGameMain, 0);
+        if (!gm || game::at<int32_t>(gm, game::kGsEvent) != 256) {
+            LeaveCriticalSection(&g_enemy_lock);
+            return pending_death;
+        }
     }
     EnemyState s = g_enemy_state[f.host_slot];
     float *pos = reinterpret_cast<float *>(em + 0x40);
@@ -3529,6 +3550,8 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     // (enemy_net_block_damage); once it is dead they go through, so the guest's puppets, which
     // replay the host's attacks, land the killing blow with the game's own death. If none lands
     // within 1.5 s the death is forced (HP 0 and the game's death handler, enemy_net_death).
+    if (slot.kind == ENEMY_NPC) // NPCs: the place only (their deaths are the game's flags, flags.cpp)
+        return pending_death;
     float *hp = s.hp_max > 0.f ? enemies_hp(em) : nullptr;
     if (!hp)
         return pending_death;
@@ -3562,6 +3585,11 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
 // the knock-back and kill credit use it, so it is passed as 0.
 void enemy_net_death(uintptr_t em)
 {
+    if (enemies_npc_kind(em)) { // uNpc children: slot 0x120 is not a death handler there; the game's damage
+        if (float *hp = enemies_hp(em))
+            enemies_apply_damage(em, hp[0] + 1.f);
+        return;
+    }
     using Death_t = void(__thiscall *)(uintptr_t, uint32_t, uint32_t);
     auto death = reinterpret_cast<Death_t>(game::at<uintptr_t>(game::at<uintptr_t>(em, 0), 0x120));
     death(em, 0, 0);

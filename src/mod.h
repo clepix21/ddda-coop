@@ -262,6 +262,7 @@ struct EnemySlot {
     int index;
     DWORD died; // tick of its death (uEnemy death handler FUN_00AAB3B0), 0 = alive
     bool settled;      // spawn final: some classes are placed after their first frames (uEm8100)
+    uint8_t kind;      // ENEMY_*: a monster (uEnemy), a human foe (uHumanEnemy), an NPC (uNpc, uMultiNpc)
 };
 bool mem_readable(const void *p, size_t n); // committed, readable memory
 bool stages_install(); // stages.cpp: log every stage load
@@ -278,6 +279,9 @@ void enemies_run_queued(uintptr_t arisen);
 void enemies_queue_pawn_kill(int pawn);     // tests: a pawn's HP 0 and dead flag, on the game thread
 void enemies_queue_arisen_kill();           // tests: the Arisen's dead flag, on the game thread  // possess_pre (game thread), for the Arisen // [[ch+0x1D18]]+8: {current HP, max HP}, or null
 void enemies_on_finalize(uintptr_t em);
+enum { ENEMY_MONSTER = 0, ENEMY_HUMAN = 1, ENEMY_NPC = 2 };
+int enemies_npc_kind(uintptr_t ch); // ENEMY_HUMAN / ENEMY_NPC for uNpc and its children, else 0
+void enemies_apply_damage(uintptr_t ch, float dmg); // through the game's own damage function (its death too)
 int enemies_snapshot(EnemySlot *out, int cap);
 const char *enemies_class_of(uintptr_t obj);
 // net.cpp: called under the enemy table lock, right after the enemy's own finalize.
