@@ -1,0 +1,14 @@
+# Pause probe 4, host: who writes sUnit +0xD34 and +0x848 when the pause menu opens and shuts.
+wait 25000
+watchg 18d09e0 d34 10
+wait 500
+pad 0 0010 0 0 0 0 0 0 200
+wait 3000
+pad 0 2000 0 0 0 0 0 0 200
+wait 3000
+watchg 18d09e0 848 10
+wait 500
+pad 0 0010 0 0 0 0 0 0 200
+wait 3000
+pad 0 2000 0 0 0 0 0 0 200
+wait 30000

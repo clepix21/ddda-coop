@@ -1,0 +1,14 @@
+# Pause probe 5, host: the world pause calls (scene: lines) for the pause menu and its Equipment page.
+wait 25000
+pad 0 0010 0 0 0 0 0 0 200
+wait 3000
+pad 0 0008 0 0 0 0 0 0 200
+wait 800
+pad 0 1000 0 0 0 0 0 0 200
+wait 3000
+pad 0 2000 0 0 0 0 0 0 200
+wait 1500
+pad 0 2000 0 0 0 0 0 0 200
+wait 3000
+pad 0 2000 0 0 0 0 0 0 200
+wait 30000

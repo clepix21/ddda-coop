@@ -1,0 +1,16 @@
+# Menu runs the world, equipment page, host: pause menu > Equipement > first page > back out; shots inside.
+wait 25000
+pad 0 0010 0 0 0 0 0 0 200
+wait 2500
+pad 0 0008 0 0 0 0 0 0 200
+wait 1500
+pad 0 1000 0 0 0 0 0 0 200
+wait 3500
+pad 0 1000 0 0 0 0 0 0 200
+wait 3500
+pad 0 2000 0 0 0 0 0 0 200
+wait 2000
+pad 0 2000 0 0 0 0 0 0 200
+wait 2000
+pad 0 2000 0 0 0 0 0 0 200
+wait 30000

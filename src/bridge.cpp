@@ -43,6 +43,9 @@ char g_queue[256][128];
 int g_qhead = 0, g_qtail = 0;
 DWORD g_busy_until = 0; // end of the current pad/wait command
 char g_current[128] = "idle";
+uintptr_t g_poke_addr = 0; // gpoke (tests): a word written every frame until g_poke_until
+uint32_t g_poke_val = 0;
+DWORD g_poke_until = 0;
 
 bool camera_forward(float &fx, float &fz)
 {
@@ -664,6 +667,18 @@ void run_line(const char *line)
             ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<void *>(uintptr_t(snap[g_snap_objs[j]])), &snap[n + j * 0x100], 0x400, &got);
         logf("bridge: snapg %u taken (%u objects)", slot, unsigned(g_snap_objs.size()));
         _snprintf(g_current, sizeof g_current, "snapg %u", slot);
+    } else if (strncmp(line, "gpoke ", 6) == 0) {
+        // gpoke <global hex> <offset hex> <value hex> <ms>: writes the word at [global]+offset every frame for ms
+        // (tests: which word stops the world while a menu is open)
+        unsigned g = 0, off = 0, v = 0, dur = 0;
+        if (sscanf(line + 6, "%x %x %x %u", &g, &off, &v, &dur) == 4 && game::at<uintptr_t>(g, 0)) {
+            g_poke_addr = game::at<uintptr_t>(g, 0) + off;
+            g_poke_val = v;
+            g_poke_until = (GetTickCount() + dur) | 1;
+            logf("bridge: gpoke %08X = %08X (was %08X) for %u ms", unsigned(g_poke_addr), v, game::at<uint32_t>(g_poke_addr, 0), dur);
+            game::at<uint32_t>(g_poke_addr, 0) = v;
+        }
+        _snprintf(g_current, sizeof g_current, "gpoke %X", off);
     } else if (strncmp(line, "peek ", 5) == 0) { // peek <hex address>...: the words there (tests)
         char buf[300] = "";
         int len = 0;
@@ -1368,6 +1383,12 @@ static void log_heights()
 void bridge_game_tick()
 {
     log_heights();
+    if (g_poke_until) {
+        if (int(GetTickCount() - g_poke_until) >= 0)
+            g_poke_until = 0;
+        else
+            game::at<uint32_t>(g_poke_addr, 0) = g_poke_val;
+    }
     LONG who = InterlockedExchange(&g_rebuild_who, -2);
     if (who < -1 || who >= kPawns)
         return;

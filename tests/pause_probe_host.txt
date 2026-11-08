@@ -1,0 +1,12 @@
+# Pause probe, host: watch sMain (0x018D0B28) +0x6C (mPause) while the pause menu opens and shuts.
+wait 25000
+watchg 18d0b28 6c 40
+wait 1000
+pad 0 0010 0 0 0 0 0 0 200
+wait 4000
+pad 0 2000 0 0 0 0 0 0 200
+wait 3000
+pad 0 0010 0 0 0 0 0 0 200
+wait 4000
+pad 0 2000 0 0 0 0 0 0 200
+wait 30000

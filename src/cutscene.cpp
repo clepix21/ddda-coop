@@ -22,6 +22,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <tuple>
 
 #include "MinHook.h"
 #include "game.h"
@@ -80,9 +81,15 @@ void __stdcall hk_event_start(uintptr_t ctl)
     g_orig(ctl);
 }
 
+volatile LONG g_menu_world = 0; // the pause menu is open and the world goes on (possess.cpp: no stick for the Arisen)
+
 void __fastcall hk_ctl_update(uintptr_t ctl)
 {
     g_ctl = ctl;
+    if (g_menu_world && game::at<uint8_t>(ctl, 4) != 9) {
+        g_menu_world = 0;
+        logf("scene: pause menu shut (controller state %d)", game::at<uint8_t>(ctl, 4));
+    }
     LONG want = g_want;
     if (want >= 0) {
         uint8_t state = game::at<uint8_t>(ctl, 4);
@@ -104,7 +111,59 @@ void __fastcall hk_ctl_update(uintptr_t ctl)
     g_orig_upd(ctl);
 }
 
+// The world's pause (2026-11-08, pause probe runs): opening the pause menu, the scene controller calls
+// FUN_0043F6C0(1) (__stdcall(char), `ret 4`): sUnit ([0x018D09E0], FUN_00DB5A60) move line 0x39 off (its
+// enable mask at +0xD30/+0xD34: bit 25 of +0xD34 went 0xFFFFFFFF -> 0xFDFFFFFF while the menu was open), and
+// sGameSys +0xB8848 bits 31 and 28 set; FUN_0043F6C0(0) undoes it. FUN_0043F7E0 is the same for line 0x3C
+// (and sGameSys +0xB883C bit 7). Logged here (who calls, the controller's state) to tell the menu's pause
+// from the others (cutscenes, loads).
+using Pause_t = void(__stdcall *)(char on);
+constexpr uintptr_t kPauseA = 0x0043F6C0, kPauseB = 0x0043F7E0;
+Pause_t g_orig_pa = nullptr, g_orig_pb = nullptr;
+
+void __stdcall hk_pause_a(char on)
+{
+    uintptr_t ret = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+    uintptr_t c = g_ctl;
+    int state = c ? game::at<uint8_t>(c, 4) : -1;
+    logf("scene: world pause A (line 0x39) %s from %08X, controller state %d/%d", on ? "on" : "off", unsigned(ret),
+         state, c ? game::at<uint8_t>(c, 5) : -1);
+    g_orig_pa(on);
+    // the pause menu (controller state 9) in co-op: the world goes on (Nexus 2026-11-08: "It would be nice if
+    // the inventory didn't pause the game for whoever opens it"); its other flags are left as the game set them
+    static int keep = -1;
+    if (keep < 0) { // on unless coop.ini says menu_runs_world=0
+        keep = 1;
+        if (FILE *f = fopen("coop.ini", "r")) {
+            char line[128];
+            while (fgets(line, sizeof line, f))
+                if (strncmp(line, "menu_runs_world=", 16) == 0)
+                    keep = atoi(line + 16) != 0;
+            fclose(f);
+        }
+        logf("scene: the pause menu %s the world in co-op (menu_runs_world=%d)", keep ? "does not stop" : "stops", keep);
+    }
+    if (on && state == 9 && keep && net_shared()) {
+        uintptr_t unit = game::at<uintptr_t>(0x018D09E0, 0);
+        if (unit && 0x39 < game::at<uint32_t>(unit, 0xD28)) {
+            game::at<uint32_t>(unit, 0xD30 + (0x39 / 32) * 4) |= 1u << (0x39 % 32);
+            g_menu_world = 1;
+            logf("scene: pause menu in co-op: the world's line 0x39 kept on");
+        }
+    }
+}
+void __stdcall hk_pause_b(char on)
+{
+    uintptr_t ret = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+    uintptr_t c = g_ctl;
+    logf("scene: world pause B (line 0x3C) %s from %08X, controller state %d/%d", on ? "on" : "off", unsigned(ret),
+         c ? game::at<uint8_t>(c, 4) : -1, c ? game::at<uint8_t>(c, 5) : -1);
+    g_orig_pb(on);
+}
+
 } // namespace
+
+bool scene_menu_world() { return g_menu_world != 0; }
 
 // Tests (bridge "cutplay <n>"): start event n here at the next field frame.
 void cutscene_play(int no)
@@ -146,5 +205,12 @@ bool cutscene_install()
         st = MH_EnableHook(reinterpret_cast<void *>(kEventStart));
     logf("cutscene: hooks controller update %08X: %s, event start %08X: %s", unsigned(kCtlUpdate),
          MH_StatusToString(us), unsigned(kEventStart), MH_StatusToString(st));
+    for (auto [at, hk, orig] : {std::tuple{kPauseA, reinterpret_cast<void *>(&hk_pause_a), reinterpret_cast<void **>(&g_orig_pa)},
+                                std::tuple{kPauseB, reinterpret_cast<void *>(&hk_pause_b), reinterpret_cast<void **>(&g_orig_pb)}}) {
+        MH_STATUS ps = MH_CreateHook(reinterpret_cast<void *>(at), hk, orig);
+        if (ps == MH_OK)
+            ps = MH_EnableHook(reinterpret_cast<void *>(at));
+        logf("scene: hook world pause %08X: %s", unsigned(at), MH_StatusToString(ps));
+    }
     return st == MH_OK && us == MH_OK;
 }

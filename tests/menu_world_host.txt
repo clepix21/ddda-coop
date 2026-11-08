@@ -1,0 +1,13 @@
+# Menu runs the world, host: pause menu open 10 s (left stick up 2 s inside it), clock read twice; the guest walks meanwhile.
+wait 25000
+gsbytes B8768 4
+pad 0 0010 0 0 0 0 0 0 200
+wait 2000
+gsbytes B8768 4
+pad 0 0 0 30000 0 0 0 0 2000
+wait 2000
+gsbytes B8768 4
+wait 4000
+gsbytes B8768 4
+pad 0 2000 0 0 0 0 0 0 200
+wait 30000

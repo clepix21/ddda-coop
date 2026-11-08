@@ -1,0 +1,23 @@
+# Menu runs the world, submenus, guest: walks while the host's menu is open, then its own pause menu > Equipement > Statut and back.
+wait 16000
+goto -2330 -4520 60 6000
+goto -2661 -4032 60 6000
+wait 6000
+pad 0 0010 0 0 0 0 0 0 200
+wait 2000
+pad 0 0008 0 0 0 0 0 0 200
+wait 800
+pad 0 1000 0 0 0 0 0 0 200
+wait 3000
+pad 0 2000 0 0 0 0 0 0 200
+wait 1500
+pad 0 0002 0 0 0 0 0 0 200
+wait 800
+pad 0 1000 0 0 0 0 0 0 200
+wait 3000
+pad 0 2000 0 0 0 0 0 0 200
+wait 1500
+pad 0 2000 0 0 0 0 0 0 200
+wait 1500
+pad 0 2000 0 0 0 0 0 0 200
+wait 30000

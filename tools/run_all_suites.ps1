@@ -3,7 +3,7 @@
 $tools = $PSScriptRoot
 $suites = "suite_shared.ps1", "suite_shared.ps1 -Transport mock", "suite_revive.ps1", "suite_revive_special.ps1",
     "suite_skills.ps1", "suite_quest.ps1", "suite_shared_exp.ps1", "suite_area_lead.ps1", "suite_area_lead.ps1 -Look",
-    "suite_reconnect.ps1", "suite_progress.ps1", "suite_roam.ps1", "suite_enemies.ps1", "suite_party.ps1 -Look", "suite_area_exit.ps1", "suite_player_grab.ps1", "suite_cutscene.ps1 -Shared"
+    "suite_reconnect.ps1", "suite_progress.ps1", "suite_roam.ps1", "suite_enemies.ps1", "suite_party.ps1 -Look", "suite_area_exit.ps1", "suite_player_grab.ps1", "suite_player_grab.ps1 -Rough -HostSave J:\coop-test\saves\merchant.sav", "suite_cutscene.ps1 -Shared", "suite_revive.ps1 -Tap", "suite_menu_world.ps1"
 foreach ($s in $suites) {
     if (Get-Process DDDA -ErrorAction SilentlyContinue) { "STOP: DDDA.exe is running before $s"; break }
     $parts = $s -split ' '

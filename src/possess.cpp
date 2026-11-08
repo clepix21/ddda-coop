@@ -262,7 +262,8 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
     memcpy(copy, reinterpret_cast<const void *>(in), kInputSize);
     keep_idle(copy);
     // shared world (revive.cpp): this player is down, or helps one up (its B must not talk)
-    bool down = who == ARISEN && (revive_down() || revive_helping());
+    // or its pause menu is open while the world goes on (cutscene.cpp): the stick is the menu's only
+    bool down = who == ARISEN && (revive_down() || revive_helping() || scene_menu_world());
     if (guest || (puppet && who != ARISEN) || down) { // puppets: no local input at all, no AI
         for (int i = 0; i < 4; ++i)
             if (i != g_idle)

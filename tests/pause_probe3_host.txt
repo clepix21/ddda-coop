@@ -1,0 +1,32 @@
+# Pause probe 3, host: with the pause menu open, which sUnit word lets the game's clock (sGameSys +0xB8768) run.
+wait 25000
+gsbytes B8768 4
+wait 1000
+gsbytes B8768 4
+pad 0 0010 0 0 0 0 0 0 200
+wait 2000
+gsbytes B8768 4
+wait 1000
+gsbytes B8768 4
+gpoke 18d09e0 d34 ffffffff 4000
+wait 1000
+gsbytes B8768 4
+wait 1000
+gsbytes B8768 4
+wait 2500
+gpoke 18d09e0 848 4 4000
+wait 1000
+gsbytes B8768 4
+wait 1000
+gsbytes B8768 4
+wait 2500
+gpoke 18d09e0 b04 0 4000
+wait 1000
+gsbytes B8768 4
+wait 1000
+gsbytes B8768 4
+wait 2500
+pad 0 2000 0 0 0 0 0 0 200
+wait 2000
+gsbytes B8768 4
+wait 30000

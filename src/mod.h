@@ -91,6 +91,7 @@ void exp_sync_apply();                      // game thread: give what the others
 bool loot_install();                        // loot.cpp: shared world loot
 bool cutscene_install();                    // cutscene.cpp: events (cutscenes) for the other players
 void cutscene_play(int no);                 // cutscene.cpp: start event no here (tests, then the other players' events)
+bool scene_menu_world();                      // cutscene.cpp: the pause menu is open and the world goes on (co-op)
 void cutscene_remote(int no, int stage, int from); // cutscene.cpp, net thread: another player's game started an event
 void progress_shared_gain(long long exp, long long jp, int item, int count, unsigned flags, long long gold = 0); // guest: keep for its own save
 void progress_guest_gold_tick();      // game thread, shared world guest: its gold changes kept, put back after a load

@@ -1,0 +1,6 @@
+# Menu runs the world, guest: walks back and forth while the host's pause menu is open.
+wait 16000
+goto -2330 -4520 60 6000
+goto -2661 -4032 60 6000
+goto -2330 -4520 60 6000
+wait 30000

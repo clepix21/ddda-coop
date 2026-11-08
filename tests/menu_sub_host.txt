@@ -1,0 +1,18 @@
+# Menu runs the world, submenus, host: pause menu > Carte (map) > back > Equipement > back > shut; the guest's menu too.
+wait 25000
+pad 0 0010 0 0 0 0 0 0 200
+wait 2000
+pad 0 1000 0 0 0 0 0 0 200
+wait 3000
+pad 0 2000 0 0 0 0 0 0 200
+wait 2000
+pad 0 0008 0 0 0 0 0 0 200
+wait 800
+pad 0 1000 0 0 0 0 0 0 200
+wait 3000
+pad 0 2000 0 0 0 0 0 0 200
+wait 1500
+pad 0 2000 0 0 0 0 0 0 200
+wait 1500
+pad 0 2000 0 0 0 0 0 0 200
+wait 40000

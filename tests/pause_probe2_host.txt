@@ -1,0 +1,12 @@
+# Pause probe 2, host: sUnit (0x018D09E0; move lines at +0x20, their count at +0x620) before, during and after the pause menu.
+wait 25000
+dumpg 18d09e0 1000 unit_a
+wait 500
+pad 0 0010 0 0 0 0 0 0 200
+wait 3000
+dumpg 18d09e0 1000 unit_b
+wait 500
+pad 0 2000 0 0 0 0 0 0 200
+wait 3000
+dumpg 18d09e0 1000 unit_c
+wait 30000
