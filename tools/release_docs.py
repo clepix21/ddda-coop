@@ -49,6 +49,14 @@ NEWS = {
               'Reviving a friend works with B tapped, or when a hit breaks the hold.',
               'Grabs between players: the hold starts at once (even in mid-air), the held player can no longer\n'
               '  jump out in a loop, and no fall damage when let go in the air.'],
+    '0.9.8': ['Fixed: a player\'s game stopped when its window went to the background (alt-tab, a click on\n'
+              '  Discord or another screen): no frame at all, and the others saw that player frozen (issue #3).\n'
+              '  In co-op the game now goes on in the background, its pad and keyboard off.\n'
+              '  pause_in_background=1 in coop.ini gives the old pause.',
+              'Fixed: the pawn showing a friend who is far away was pulled next to you by the game every frame\n'
+              '  (it could end up in the sky or upside down, issue #3); it now stays where your friend is.',
+              'Fixed: the pawn showing a friend no longer replays an attack over and over while it falls or is\n'
+              '  down, and it is put back at its friend\'s place when it gets stuck away from it or falls on its own.'],
 }
 
 EN = {'play': '"Play"', 'lobby': '"Lobby"', 'settings': '"Settings"', 'log': '"Log"', 'host': '"Host"', 'guest': '"Guest"',
