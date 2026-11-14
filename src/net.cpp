@@ -1187,6 +1187,13 @@ void shared_down_look(uintptr_t ch, int i)
     }
 }
 
+uintptr_t g_warp_watch = 0;
+DWORD WINAPI warp_watch_thread(LPVOID)
+{
+    watch_start(g_warp_watch, 16, 0);
+    return 0;
+}
+
 // Game thread, after the transform finalize of such a pawn: that player's place, facing and HP.
 // The guest's own Arisen: the host's time of day (one world clock).
 void shared_apply_transform(uintptr_t ch, int i)
@@ -1315,7 +1322,14 @@ void shared_apply_transform(uintptr_t ch, int i)
         else if (GetTickCount() - off_since[i] > 1500) {
             stuck = true;
             off_since[i] = 0;
-            logf("net: shared: party %d %.0f u off its player's place for 1.5 s (%s): put there", i, err, action_name(ch));
+            logf("net: shared: party %d %.0f u off its player's place for 1.5 s (%s): put there, from (%.0f, %.0f, %.0f) to (%.0f, %.0f, %.0f)",
+                 i, err, action_name(ch), pos[0], pos[1], pos[2], target[0], target[1], target[2]);
+            static bool watched_warp = false; // tests (test_watch_warp=1): what moves it there (armed from another thread)
+            if (!watched_warp && early_flag("test_watch_warp")) {
+                watched_warp = true;
+                g_warp_watch = ch + 0x40;
+                CreateThread(nullptr, 0, warp_watch_thread, nullptr, 0, nullptr);
+            }
         }
     } else {
         off_since[i] = 0;
@@ -2834,6 +2848,8 @@ DWORD WINAPI net_thread(LPVOID)
                 if (p.used && p.last_rx && (!last || int(p.last_rx - last) > 0))
                     last = p.last_rx;
             logf("net: tx %ld rx %ld, last rx %ld ms ago", g_tx, g_rx, last ? long(now - last) : -1L);
+            if (long n = catchup_skipped_take())
+                logf("net: shared: %ld catch-ups of the pawns showing players skipped (the game would put them next to this Arisen)", n);
             if (g_role == NET_HOST) { // how far each pawn is from the Arisen (free roam tests)
                 CharState c[kParty] = {};
                 EnterCriticalSection(&g_cap_lock);

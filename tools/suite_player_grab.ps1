@@ -1,11 +1,11 @@
-# Grabs between players (shared world; issue #1: "When I capture a friend, his screen teleports and after
+﻿# Grabs between players (shared world; issue #1: "When I capture a friend, his screen teleports and after
 # his throw everything returns to normal, he cannot grab me"). Pawn Guild: the host grabs the guest twice
 # (RT on the pawn showing it), then the guest grabs the host twice. Both copies log the Arisen's and the
 # pawns' places every 100 ms (test_log_heights=1); check_player_grab.py reads the holds and the jumps.
 param([ValidateSet("udp", "mock")][string]$Transport = "udp",
       # -Rough: kicks and a walk while holding, the held one struggles (Nexus 2026-11-08: "the camera goes underground",
       # "the guest turns into a frog on a journey of endless jumps"); -HostSave: another place (outdoors)
-      [switch]$Rough, [string]$HostSave = "")
+      [switch]$Rough, [string]$HostSave = "", [string[]]$ExtraIni = @())
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
 $tag = if ($Rough) { "rough_" } else { "" }
@@ -25,8 +25,8 @@ $shots = @(); for ($t = 100.0; $t -le 230; $t += 3) { $shots += $t }
 $run = & (Join-Path $tools "run_pair.ps1") -Seconds 240 -OutDir $out -Shots $shots -GuestSavesFromRole `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "bot_load_game_p2.txt") `
     -HostBridge @((Join-Path $tests $hb)) -GuestBridge @((Join-Path $tests $gb)) `
-    -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "shared_world=1", "test_log_heights=1") + $hs + $hostNet) `
-    -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "shared_world=1", "test_log_heights=1", "test_save=J:\coop-test\saves\guest_arisen.sav") + $guestNet) 2>$null
+    -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "shared_world=1", "test_log_heights=1") + $hs + $hostNet + $ExtraIni) `
+    -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "shared_world=1", "test_log_heights=1", "test_save=J:\coop-test\saves\guest_arisen.sav") + $guestNet + $ExtraIni) 2>$null
 $run | ForEach-Object { "   $_" }
 $checks = @(python -I (Join-Path $tools "check_player_grab.py") $out)
 if ($run -match "saves and owner config unchanged: True") { $checks += "PASS  owner's saves and config unchanged" } else { $checks += "FAIL  owner's saves and config unchanged" }

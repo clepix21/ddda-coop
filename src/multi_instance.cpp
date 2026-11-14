@@ -49,24 +49,99 @@ void multi_instance_install()
     logf("multi-instance: CreateMutexA names made unique per process");
 }
 
-// Tests only (keep_active=1): a copy in the background keeps running and reading its pads.
-// On WM_ACTIVATEAPP(FALSE) the window procedure (0x00DF1550) calls FUN_00DF0ED0(0), which clears
-// the active flag ([[0x018D0F50]+0x2566]) and deactivates pad and keyboard input. We turn every
-// call into FUN_00DF0ED0(1).
+// A game window in the background (alt-tab, a click on another screen, Discord...). On
+// WM_ACTIVATEAPP(FALSE) the window procedure (0x00DF1550) calls FUN_00DF0ED0(0), which clears the
+// active flag ([[0x018D0F50]+0x2566]), turns pad and keyboard input off and lets the screen saver on;
+// the main loop (0x00DF0D61) then only Sleep(1)s: no frame at all until the window is active again.
+// In co-op that stopped this player's whole world while the others went on (issue #3, 2026-11-11: a
+// guest's game "frozen" 15 s, then for good, its main thread in that Sleep at 0x00DF0E02, its net thread
+// alive; a host in the background stops every guest's world).
+// - Co-op (a host or a guest): the game's own deactivation runs (input off), then the active flag is set
+//   again, so frames go on; this game's pads read as idle meanwhile (pads.cpp).
+// - Tests (keep_active=1): every call becomes FUN_00DF0ED0(1): a copy in the background keeps running and
+//   reading its (scripted) pads.
 namespace {
 // __thiscall (ECX = main system object, one byte argument, ret 4): checked at the call site 0x00DF1933.
 using SetActive_t = void(__attribute__((thiscall)) *)(void *, char);
 SetActive_t g_set_active = nullptr;
-void __attribute__((thiscall)) my_set_active(void *self, char) { g_set_active(self, 1); }
+bool g_keep_active = false;
+volatile LONG g_background = 0;
+void __attribute__((thiscall)) my_set_active(void *self, char on)
+{
+    if (g_keep_active) {
+        g_set_active(self, 1);
+        return;
+    }
+    g_set_active(self, on);
+    bool coop = cfg_role() != NET_OFF;
+    if (!on && coop) {
+        if (uintptr_t sys = *reinterpret_cast<uintptr_t *>(0x018D0F50))
+            *reinterpret_cast<uint8_t *>(sys + 0x2566) = 1;
+        InterlockedExchange(&g_background, 1);
+        logf("window: in the background: the game goes on (co-op), its pads and keyboard off meanwhile");
+    } else if (on && InterlockedExchange(&g_background, 0)) {
+        logf("window: active again");
+    }
+}
+// WM_ACTIVATEAPP(TRUE) does not call FUN_00DF0ED0(1): the window procedure sets the flag itself and turns the
+// keyboard on with FUN_00DF3D20(0) (__thiscall, ECX = [0x018D0FAC], ret 4; its 1 turns it off). That call
+// tells this game is in front again, so its pads are read again.
+using KeyboardOff_t = void(__attribute__((thiscall)) *)(void *, int);
+KeyboardOff_t g_keyboard_off = nullptr;
+void __attribute__((thiscall)) my_keyboard_off(void *self, int off)
+{
+    g_keyboard_off(self, off);
+    if (!off && InterlockedExchange(&g_background, 0))
+        logf("window: active again");
+}
 } // namespace
 
-void keep_active_install()
+bool game_in_background() { return g_background != 0; }
+
+DWORD g_bg_at, g_bg_len;
+DWORD WINAPI background_test_thread(LPVOID)
 {
+    Sleep(g_bg_at);
+    uintptr_t sys = *reinterpret_cast<uintptr_t *>(0x018D0F50);
+    HWND hwnd = sys ? *reinterpret_cast<HWND *>(sys + 0x12C) : nullptr;
+    logf("window: tests: WM_ACTIVATEAPP(FALSE) sent to %p", (void *)hwnd);
+    PostMessageW(hwnd, WM_ACTIVATEAPP, FALSE, 0);
+    if (g_bg_len) {
+        Sleep(g_bg_len);
+        logf("window: tests: WM_ACTIVATEAPP(TRUE) sent");
+        PostMessageW(hwnd, WM_ACTIVATEAPP, TRUE, 0);
+    }
+    return 0;
+}
+
+void background_test_install()
+{
+    // tests: test_background_at=<s> sends the game window WM_ACTIVATEAPP(FALSE) that long after start, as
+    // an alt-tab does; test_background_for=<s> sends WM_ACTIVATEAPP(TRUE) that long after
+    char v[32];
+    if (cfg_str("test_background_at", v, sizeof v)) {
+        g_bg_at = DWORD(atoi(v)) * 1000;
+        g_bg_len = cfg_str("test_background_for", v, sizeof v) ? DWORD(atoi(v)) * 1000 : 0;
+        CreateThread(nullptr, 0, background_test_thread, nullptr, 0, nullptr);
+    }
+}
+
+void keep_active_install(bool tests)
+{
+    g_keep_active = tests;
     void *target = reinterpret_cast<void *>(0x00DF0ED0);
     MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void *>(&my_set_active), reinterpret_cast<void **>(&g_set_active));
     if (st == MH_OK)
         st = MH_EnableHook(target);
-    logf("keep-active: hook %p: %s", target, MH_StatusToString(st));
+    if (!tests) {
+        void *kb = reinterpret_cast<void *>(0x00DF3D20);
+        MH_STATUS k = MH_CreateHook(kb, reinterpret_cast<void *>(&my_keyboard_off), reinterpret_cast<void **>(&g_keyboard_off));
+        if (k == MH_OK)
+            k = MH_EnableHook(kb);
+        logf("keep-active: keyboard hook %p: %s", kb, MH_StatusToString(k));
+    }
+    logf("keep-active: hook %p (%s): %s", target, tests ? "tests: always active" : "co-op: frames go on in the background",
+         MH_StatusToString(st));
 }
 
 // Tests only (private_appdata=1): the game keeps its config.ini under

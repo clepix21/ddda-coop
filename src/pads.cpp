@@ -99,6 +99,8 @@ DWORD WINAPI hk_get_state(DWORD idx, XINPUT_STATE *s)
     if (idx < 4)
         InterlockedIncrement(&g_calls[idx]);
     DWORD err = read_raw(idx, s);
+    if (err == ERROR_SUCCESS && game_in_background()) // co-op, window in the background: a pad for something else
+        memset(&s->Gamepad, 0, sizeof s->Gamepad);
     if (err == ERROR_SUCCESS && int(idx) == g_filtered_pad)
         s->Gamepad.wButtons &= WORD(~(XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START));
     return err;

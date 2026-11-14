@@ -97,7 +97,11 @@ for who, mine, other in (("host", host, guest), ("guest", guest, host)):
             start = None
     # not after the hold ended in the jumper's own world (it struggled free: the game's own escape)
     freed = [secs(ln[:12]) for ln in other if re.search(r"let go of player \d here", ln)]
-    hops = [(round(t, 1), a) for t, x, y, z, a in arisen_track(other) if "Jump" in a and any(s <= t <= e for s, e in holding)
+    # a jump that starts in the hold: the tail of one begun before the grab is not (a grab catches a player
+    # in mid-air at once, by design: rough run 2026-11-14 17:43:59, JumpBegin 0.23 s before the GrabStart)
+    track = arisen_track(other)
+    starts = [(t, a) for k, (t, x, y, z, a) in enumerate(track) if "Jump" in a and (k == 0 or "Jump" not in track[k - 1][4])]
+    hops = [(round(t, 1), a) for t, a in starts if any(s <= t <= e for s, e in holding)
             and not any(0 <= t - f <= 3.0 for f in freed)]
     check(not hops, f"{who} holding: the other player did not jump meanwhile ({len(holding)} holds; jumps: {hops[:4]})")
 falls = [ln for ln in host + guest if "revive: down (a fall)" in ln]

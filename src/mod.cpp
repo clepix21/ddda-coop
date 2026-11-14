@@ -48,8 +48,13 @@ static DWORD WINAPI pad_thread(LPVOID)
 {
     possess_load_config();
     if (early_flag("keep_active"))
-        keep_active_install();
+        keep_active_install(true);
+    else if (cfg_role() != NET_OFF && !early_flag("pause_in_background"))
+        keep_active_install(false);
+    background_test_install();
     input_redirect_install();
+    if (cfg_role() != NET_OFF && !early_flag("test_no_catchup_hook"))
+        catchup_install();
     save_guard_install(cfg_block_saves()); // storage hooks always; writes blocked only when asked
     if (cfg_role() == NET_GUEST && !early_flag("test_no_owner_patch")) // tests: show what the patch avoids
         storage_guest_patch();
