@@ -735,6 +735,10 @@ void shared_skill_look(uintptr_t ch, int i, const CharState &s)
         return;
     }
     int32_t mine = game::at<int32_t>(ch, 0x2DD4);
+    static int32_t tried_act[kParty] = {};
+    static int tries[kParty] = {};
+    if (mine == s.action)
+        tries[i] = 0; // it plays it: the next shot of the same number counts from 0 again
     // the same weapon action again (a second shot while aiming): the number does not change, so a pawn
     // that left it while its player stays in it is put back after 400 ms (the 4th shot of the bow test)
     // (weapon actions only: a lantern action stays in a player's state while its menu is open, and was played
@@ -746,7 +750,29 @@ void shared_skill_look(uintptr_t ch, int i, const CharState &s)
     due[i] = 0;
     if (mine == s.action)
         return;
-    logf("net: shared: party %d plays its player's 0x%X (it was in %s 0x%X)", i, unsigned(s.action), action_name(ch),
+    // never over a fall, a knock-down, a lift or a death: issue #3 (2026-11-11), a pawn falling the whole
+    // time (cPlActDmgFallHeight) got its player's 0x2060001 every 0.45 s for 45 s, and the guest's game froze
+    // twice right after (the second time for good). And the same action at most 3 times in a row.
+    const char *was = action_name(ch);
+    if (strncmp(was, "cPlActDmg", 9) == 0 || strstr(was, "Dead") || strstr(was, "Lift")) {
+        static DWORD next_skip_log[kParty] = {};
+        if (!next_skip_log[i] || int(now - next_skip_log[i]) >= 0) {
+            next_skip_log[i] = (now + 5000) | 1;
+            logf("net: shared: party %d: its player's 0x%X not played over %s", i, unsigned(s.action), was);
+        }
+        return;
+    }
+    if (tried_act[i] != s.action) {
+        tried_act[i] = s.action;
+        tries[i] = 0;
+    }
+    if (++tries[i] > 3) {
+        if (tries[i] == 4)
+            logf("net: shared: party %d: its player's 0x%X played 3 times and left again: not played any more", i,
+                 unsigned(s.action));
+        return;
+    }
+    logf("net: shared: party %d plays its player's 0x%X (it was in %s 0x%X)", i, unsigned(s.action), was,
          unsigned(mine));
     action_set(ch, s.action);
 }
@@ -1278,10 +1304,48 @@ void shared_apply_transform(uintptr_t ch, int i)
     float target[3] = {s.pos[0] + vel[0] * ahead, s.pos[1], s.pos[2] + vel[2] * ahead};
     float dx = target[0] - pos[0], dy = target[1] - pos[1], dz = target[2] - pos[2];
     float err = std::sqrt(dx * dx + dy * dy + dz * dz);
-    if (err > 400.f) { // far off (a load, a fall): straight there
+    // stuck off its player's place: the pull moves only +0x40 and the collision pass, from the other copies,
+    // pulls it back: an error of ~150 u held for minutes (evening test 2026-10-30; issue #3 2026-11-11, a pawn
+    // falling 150 u off the whole time). Held over 100 u for 1.5 s: straight there, with every copy.
+    static DWORD off_since[kParty] = {};
+    bool stuck = false;
+    if (err > 100.f) {
+        if (!off_since[i])
+            off_since[i] = GetTickCount() | 1;
+        else if (GetTickCount() - off_since[i] > 1500) {
+            stuck = true;
+            off_since[i] = 0;
+            logf("net: shared: party %d %.0f u off its player's place for 1.5 s (%s): put there", i, err, action_name(ch));
+        }
+    } else {
+        off_since[i] = 0;
+    }
+    // falling here while its player is not (issue #3's shot: a pawn upside down in the sky, in
+    // cPlActDmgFallHeight for minutes, the pull holding it up): after 1 s, its fall is cancelled, as when it
+    // comes back from another area
+    static DWORD fall_since[kParty] = {};
+    bool fall_here = strstr(action_name(ch), "FallHeight") != nullptr && s.action != 0x25;
+    bool cancel_fall = false;
+    if (!fall_here)
+        fall_since[i] = 0;
+    else if (!fall_since[i])
+        fall_since[i] = GetTickCount() | 1;
+    else if (GetTickCount() - fall_since[i] > 1000) {
+        fall_since[i] = 0;
+        cancel_fall = true;
+        logf("net: shared: party %d falls here (%s) and its player does not (0x%X): fall cancelled, put at its place",
+             i, action_name(ch), unsigned(s.action));
+    }
+    if (err > 400.f || stuck || cancel_fall) { // far off (a load, a fall), stuck, or a fall of its own: straight there
         memcpy(pos, target, sizeof target);
         for (uintptr_t off : kPosCopies)
             memcpy(reinterpret_cast<void *>(ch + off), target, 12);
+        if (cancel_fall) {
+            uintptr_t e = game::at<uintptr_t>(ch, 0x1D18) ? game::at<uintptr_t>(game::at<uintptr_t>(ch, 0x1D18), 0) : 0;
+            if (e)
+                game::at<uint32_t>(e, 0x110) &= ~1u;
+            action_set(ch, 0);
+        }
     } else { // its own replayed moves carry it; a gentle pull keeps it on the player's path
         float k = err > 120.f ? 0.3f : 0.12f;
         pos[0] += dx * k;
