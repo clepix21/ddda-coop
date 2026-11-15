@@ -1,6 +1,9 @@
 # Shared world quests (owner's quest.sav, Cassardis, a quest giver in front): run "host", the host
 # talks (B) and accepts with A, the guest's world must get the quest; run "guest", the other way round.
 # Each run ends with a save request on the other side (dumped) to read its quest list.
+# the copies: Steam's DDDA, DDDA2, or GOG's gog1, gog2 (COOP_GOG=1, run_pair.ps1)
+$copy1 = if ($env:COOP_GOG -eq "1") { "J:\coop-test\gog1" } else { "J:\coop-test\DDDA" }
+$copy2 = if ($env:COOP_GOG -eq "1") { "J:\coop-test\gog2" } else { "J:\coop-test\DDDA2" }
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
 $out = "J:\coop-test\re\runs\quest"
@@ -11,9 +14,9 @@ $bot = Join-Path $tests "bot_load_game_p2.txt"
 $hostIni = @("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "transport=udp", "bridge=1", "shared_world=1", "dump_writes=1", $save)
 $guestIni = @("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "transport=udp", "peer=127.0.0.1", "bridge=1", "shared_world=1", "dump_writes=1", "test_save=J:\coop-test\saves\guest_arisen.sav")
 $runs = @()
-foreach ($r in @(@{Name = "host"; HostB = $take; GuestB = $stay; Other = "J:\coop-test\DDDA2"; OtherName = "guest"},
-                 @{Name = "guest"; HostB = $stay; GuestB = $take; Other = "J:\coop-test\DDDA"; OtherName = "host"})) {
-    foreach ($d in "J:\coop-test\DDDA", "J:\coop-test\DDDA2") { Remove-Item (Join-Path $d "write_*.sav") -ErrorAction SilentlyContinue }
+foreach ($r in @(@{Name = "host"; HostB = $take; GuestB = $stay; Other = $copy2; OtherName = "guest"},
+                 @{Name = "guest"; HostB = $stay; GuestB = $take; Other = $copy1; OtherName = "host"})) {
+    foreach ($d in $copy1, $copy2) { Remove-Item (Join-Path $d "write_*.sav") -ErrorAction SilentlyContinue }
     $runs += & (Join-Path $tools "run_pair.ps1") -Seconds 260 -OutDir "$out\$($r.Name)" -Shots 200 -GuestSavesFromRole -HostBot $bot -GuestBot $bot `
         -HostBridge @($r.HostB) -GuestBridge @($r.GuestB) -HostIni $hostIni -GuestIni $guestIni 2>$null
     $last = Get-ChildItem (Join-Path $r.Other "write_*.sav") -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1

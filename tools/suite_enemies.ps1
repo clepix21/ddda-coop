@@ -3,6 +3,9 @@
 # walks up to the small creatures and the party fights. The guest must pair its enemies with the
 # host's, follow their positions and end with the same HP. Prints PASS/FAIL lines and a summary.
 param([ValidateSet("udp", "mock")][string]$Transport = "udp")
+# the copies: Steam's DDDA, DDDA2, or GOG's gog1, gog2 (COOP_GOG=1, run_pair.ps1)
+$copy1 = if ($env:COOP_GOG -eq "1") { "J:\coop-test\gog1" } else { "J:\coop-test\DDDA" }
+$copy2 = if ($env:COOP_GOG -eq "1") { "J:\coop-test\gog2" } else { "J:\coop-test\DDDA2" }
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
 $out = "J:\coop-test\re\runs\pair_enemies_$Transport"
@@ -13,7 +16,7 @@ if ($Transport -eq "udp") {
     $hostNet = @("transport=steam", "steam_mock=1", "mock_id=1", "mock_friends=2")
     $guestNet = @("transport=steam", "steam_mock=1", "mock_id=2", "mock_friends=1")
 }
-foreach ($d in "J:\coop-test\DDDA", "J:\coop-test\DDDA2") { Remove-Item (Join-Path $d "dump_end_*") -ErrorAction SilentlyContinue }
+foreach ($d in $copy1, $copy2) { Remove-Item (Join-Path $d "dump_end_*") -ErrorAction SilentlyContinue }
 $route = Join-Path $tests "route_guild_to_underground.txt"
 $run = & (Join-Path $tools "run_pair.ps1") -Seconds 350 -OutDir $out -Shots 240, 330 `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "bot_load_game_p2.txt") `
@@ -21,8 +24,8 @@ $run = & (Join-Path $tools "run_pair.ps1") -Seconds 350 -OutDir $out -Shots 240,
     -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "net_late=1") + $hostNet) `
     -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "net_late=1", "send_character=0") + $guestNet) 2>$null
 $run | ForEach-Object { "   $_" }
-Copy-Item "J:\coop-test\DDDA\dump_end_enemies.txt" (Join-Path $out "host_enemies.txt") -ErrorAction SilentlyContinue
-Copy-Item "J:\coop-test\DDDA2\dump_end_enemies.txt" (Join-Path $out "guest_enemies.txt") -ErrorAction SilentlyContinue
+Copy-Item "$copy1\dump_end_enemies.txt" (Join-Path $out "host_enemies.txt") -ErrorAction SilentlyContinue
+Copy-Item "$copy2\dump_end_enemies.txt" (Join-Path $out "guest_enemies.txt") -ErrorAction SilentlyContinue
 foreach ($f in "host_enemies.txt", "guest_enemies.txt") { if (-not (Test-Path (Join-Path $out $f))) { New-Item (Join-Path $out $f) | Out-Null } }
 $checks = @(python -I (Join-Path $tools "check_enemies.py") $out)
 if ($run -match "saves and owner config unchanged: True") { $checks += "PASS  owner's saves and config unchanged" } else { $checks += "FAIL  owner's saves and config unchanged" }

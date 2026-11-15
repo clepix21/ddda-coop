@@ -4,10 +4,13 @@
 # alone (no role, keep_progress=1) loads its own save: the gains are added (backup first) and its next
 # save holds them. Prints PASS/FAIL lines and a summary.
 param([ValidateSet("udp", "mock")][string]$Transport = "udp")
+# the copies: Steam's DDDA, DDDA2, or GOG's gog1, gog2 (COOP_GOG=1, run_pair.ps1)
+$copy1 = if ($env:COOP_GOG -eq "1") { "J:\coop-test\gog1" } else { "J:\coop-test\DDDA" }
+$copy2 = if ($env:COOP_GOG -eq "1") { "J:\coop-test\gog2" } else { "J:\coop-test\DDDA2" }
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
 $out = "J:\coop-test\re\runs\progress_$Transport"
-$guestDir = "J:\coop-test\DDDA2"
+$guestDir = $copy2
 $own = "J:\coop-test\saves\guest_lv44.sav"
 if ($Transport -eq "udp") {
     $hostNet = @("transport=udp"); $guestNet = @("transport=udp", "peer=127.0.0.1")
@@ -16,7 +19,7 @@ if ($Transport -eq "udp") {
     $hostNet = @("transport=steam", "steam_mock=1", "mock_id=1", "mock_friends=2")
     $guestNet = @("transport=steam", "steam_mock=1", "mock_id=2", "mock_friends=1")
 }
-foreach ($d in "J:\coop-test\DDDA", $guestDir) {
+foreach ($d in $copy1, $guestDir) {
     Remove-Item (Join-Path $d "coop_progress") -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $d "write_*.sav") -ErrorAction SilentlyContinue
 }

@@ -48,7 +48,17 @@ $cfgDir = Join-Path $GameDir "coop_appdata\CAPCOM\DRAGONS DOGMA DARK ARISEN"
 New-Item -ItemType Directory -Force $cfgDir | Out-Null
 Copy-Item $OwnerConfig (Join-Path $cfgDir "config.ini") -Force
 $botPath = Join-Path $GameDir "bot.txt"
-if ($Bot) { Copy-Item $Bot $botPath -Force } elseif (Test-Path $botPath) { Remove-Item $botPath }
+# a GOG copy (J:\coop-test\gogN): saves in its own folder, and one more A at 93 s for the load bots (loading
+# first tries GOG's pawn server and shows "connection failed"), as run_pair.ps1 does
+$gog = (Split-Path $GameDir -Leaf) -like "gog*"
+if ($gog) { Add-Content (Join-Path $GameDir "coop.ini") "private_storage=1" -Encoding ascii }
+if ($Bot -and $gog) {
+    $steps = @(Get-Content $Bot | ForEach-Object { $i = 0 } { $l = ($_ -split '#')[0].Trim(); if ($l -match '^\d+') { [pscustomobject]@{ T = [int64]($l -split '\s+')[0]; I = $i++; L = $l } } })
+    if ($steps | Where-Object { $_.L -match '^82000\s+0\s+1000' }) {
+        $steps += [pscustomobject]@{ T = 93000; I = 100000; L = "93000 0 1000" }, [pscustomobject]@{ T = 93300; I = 100001; L = "93300 0 0" }
+    }
+    $steps | Sort-Object T, I | ForEach-Object { $_.L } | Set-Content $botPath -Encoding ascii
+} elseif ($Bot) { Copy-Item $Bot $botPath -Force } elseif (Test-Path $botPath) { Remove-Item $botPath }
 $before = Get-SaveHashes
 $start = Get-Date
 $p = Start-Process (Join-Path $GameDir "DDDA.exe") -WorkingDirectory $GameDir -PassThru
