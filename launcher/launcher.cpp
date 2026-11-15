@@ -7,6 +7,9 @@
 // Files next to DDDA-Coop.exe: dinput8.dll (the mod), coop.ini (template, optional),
 // DDDA-Coop.ini (the launcher's own choices). Tests: --game <dir> and --steam <dir> replace the
 // folders found in the registry, --docs <dir> replaces Documents, --no-launch skips starting Steam.
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
 #include <windows.h>
 #include <bcrypt.h>
 #include <commctrl.h>
@@ -32,13 +35,17 @@
 namespace {
 
 const wchar_t kTitle[] = L"DDDA Coop";
+// the two DDDA.exe the mod knows: Steam build 2364871, and GOG's (2017-06-06, no Steam: LAN / direct IP only)
 const char kSupportedSha[] = "19FACC2642F79A09D14CE55EACE5F228161F2F8BAB60EC67EB3C6196CC6277B8";
+const char kGogSha[] = "27140654C0FC5B78C26E377799E53B1C1CACACB4E4635918711D8EB0AE86BDE8";
+const int kLanPort = 27101;
 const char kOurMarker[] = "ddda-pawn-coop loaded"; // a string only our dinput8.dll holds
 
 enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
     ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP,
     ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_BACKUP_LIST, ID_UPDATE, ID_CHECK_UPDATES, ID_PROJECT, ID_LANG,
+    ID_LAN,
     ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
 };
 // the screens, in the sidebar's order
@@ -102,7 +109,7 @@ int g_game_state = 0;     // 0 DDDA.exe not found, 1 found but another version, 
 bool g_log_unseen = false; // a warning or an error in the journal since it was last shown (a dot on its icon)
 
 HWND g_wnd, g_game_edit, g_version, g_host, g_guest, g_solo, g_own_char, g_keep, g_debug, g_launch, g_state, g_events,
-    g_players, g_backup_note, g_update, g_check_updates;
+    g_players, g_backup_note, g_update, g_check_updates, g_lan;
 HFONT g_font, g_bold, g_head, g_title, g_icon, g_small, g_small_icon, g_code_font;
 HBRUSH g_bg_brush, g_card_brush;
 int g_dpi = 96;
@@ -117,6 +124,7 @@ bool g_no_launch = false;
 std::wstring g_test_update; // --test-update <tag>
 int g_start_page = 0;       // --page <n>: the screen shown first (after a change of language)
 bool g_supported = false;
+bool g_gog = false; // the game folder holds GOG's DDDA.exe: no Steam, LAN / direct IP only
 COLORREF g_state_color = kMuted;
 FILETIME g_launch_time = {};
 long long g_log_pos = 0;
@@ -288,6 +296,18 @@ std::wstring find_game(const std::wstring &steam)
     return {};
 }
 
+// GOG's install (GOG Galaxy or the offline installer): HKLM\SOFTWARE\GOG.com\Games\1242384383, value "path".
+std::wstring find_gog_game()
+{
+    wchar_t buf[MAX_PATH] = {};
+    DWORD size = sizeof buf;
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\GOG.com\\Games\\1242384383", L"path", RRF_RT_REG_SZ, // 32-bit: WOW6432Node
+                     nullptr, buf, &size))
+        return {};
+    std::wstring game = buf;
+    return exists(game + L"\\DDDA.exe") ? game : std::wstring();
+}
+
 // ---- the launcher's own settings (DDDA-Coop.ini next to the exe) ----
 
 std::wstring settings_path() { return g_exe_dir + L"\\DDDA-Coop.ini"; }
@@ -317,6 +337,7 @@ void save_settings()
     WritePrivateProfileStringW(L"launcher", L"own_character", switch_on(g_own_char) ? L"1" : L"0", p.c_str());
     WritePrivateProfileStringW(L"launcher", L"debug_log", switch_on(g_debug) ? L"1" : L"0", p.c_str());
     WritePrivateProfileStringW(L"launcher", L"check_updates", switch_on(g_check_updates) ? L"1" : L"0", p.c_str());
+    WritePrivateProfileStringW(L"launcher", L"lan", switch_on(g_lan) ? L"1" : L"0", p.c_str());
 }
 
 // ---- the update check: the project's newest release on GitHub (a release from the public repo) ----
@@ -696,6 +717,63 @@ void draw_event(const DRAWITEMSTRUCT *d)
 
 bool guest_role() { return g_role == ROLE_GUEST; }
 bool solo_role() { return g_role == ROLE_SOLO; }
+// LAN / direct IP instead of Steam: the switch in Paramètres, and always for GOG's game (no Steam)
+bool lan_mode() { return g_gog || switch_on(g_lan); }
+
+// "192.168.1.20" or "192.168.1.20:27101" (a dotted IPv4 address, an optional port)
+bool parse_address(const std::wstring &text, std::string &ip, int &port)
+{
+    std::wstring t;
+    for (wchar_t c : text)
+        if (c != L' ')
+            t += c;
+    port = kLanPort;
+    size_t colon = t.find(L':');
+    if (colon != std::wstring::npos) {
+        std::wstring p = t.substr(colon + 1);
+        if (p.empty() || p.size() > 5 || p.find_first_not_of(L"0123456789") != std::wstring::npos)
+            return false;
+        port = _wtoi(p.c_str());
+        if (port < 1 || port > 65535)
+            return false;
+        t = t.substr(0, colon);
+    }
+    if (t.empty() || t.find_first_not_of(L"0123456789.") != std::wstring::npos)
+        return false;
+    in_addr a;
+    std::string n(t.begin(), t.end());
+    if (inet_pton(AF_INET, n.c_str(), &a) != 1)
+        return false;
+    ip = n;
+    return true;
+}
+
+// This PC's IPv4 addresses on its network cards that are up (no loopback), for the host's lobby.
+std::vector<std::wstring> local_addresses()
+{
+    std::vector<std::wstring> out;
+    ULONG size = 16 * 1024;
+    std::vector<unsigned char> buf(size);
+    auto *a = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(buf.data());
+    ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    if (GetAdaptersAddresses(AF_INET, flags, nullptr, a, &size) == ERROR_BUFFER_OVERFLOW) {
+        buf.resize(size);
+        a = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(buf.data());
+    }
+    if (GetAdaptersAddresses(AF_INET, flags, nullptr, a, &size) != NO_ERROR)
+        return out;
+    for (; a; a = a->Next) {
+        if (a->OperStatus != IfOperStatusUp || a->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
+            continue;
+        for (auto *u = a->FirstUnicastAddress; u; u = u->Next) {
+            wchar_t txt[64] = {};
+            auto *sin = reinterpret_cast<sockaddr_in *>(u->Address.lpSockaddr);
+            if (InetNtopW(AF_INET, &sin->sin_addr, txt, 64) && wcsncmp(txt, L"169.254.", 8) != 0)
+                out.push_back(txt);
+        }
+    }
+    return out;
+}
 
 void update_controls()
 {
@@ -703,7 +781,7 @@ void update_controls()
     if (g_copy_code) {
         bool salon = g_page == PAGE_SALON;
         ShowWindow(g_copy_code, salon && g_role == ROLE_HOST ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_copy_code, g_self_steam != 0);
+        EnableWindow(g_copy_code, lan_mode() || g_self_steam != 0);
         ShowWindow(g_code_edit, salon && g_role == ROLE_GUEST ? SW_SHOW : SW_HIDE);
         ShowWindow(g_code_clear, salon && g_role == ROLE_GUEST ? SW_SHOW : SW_HIDE);
     }
@@ -712,6 +790,8 @@ void update_controls()
     ShowWindow(g_keep, g_page == PAGE_PLAY && guest_role() ? SW_SHOW : SW_HIDE);
     ShowWindow(g_update, g_page == PAGE_PLAY && !g_update_tag.empty() ? SW_SHOW : SW_HIDE);
     EnableWindow(g_launch, g_supported);
+    if (g_lan)
+        EnableWindow(g_lan, !g_gog);
 }
 
 void check_game()
@@ -724,9 +804,12 @@ void check_game()
     } else {
         SetWindowTextW(g_version, tr(L"Vérification de DDDA.exe…"));
         UpdateWindow(g_version);
-        g_supported = sha256_file(g_game_dir + L"\\DDDA.exe") == kSupportedSha;
-        SetWindowTextW(g_version, g_supported ? tr(L"Version du jeu prise en charge.")
-                                              : tr(L"Version de DDDA.exe non prise en charge : le mod ne marcherait pas."));
+        std::string sha = sha256_file(g_game_dir + L"\\DDDA.exe");
+        g_gog = sha == kGogSha;
+        g_supported = sha == kSupportedSha || g_gog;
+        SetWindowTextW(g_version, g_gog         ? tr(L"Version GOG du jeu prise en charge (réseau local ou IP directe, sans Steam).")
+                                  : g_supported ? tr(L"Version du jeu prise en charge.")
+                                                : tr(L"Version de DDDA.exe non prise en charge : le mod ne marcherait pas."));
         g_game_state = g_supported ? 2 : 1;
     }
     update_controls();
@@ -815,7 +898,7 @@ bool write_coop_ini()
     std::string base;
     if (!read_file(g_game_dir + L"\\coop.ini", base) && !read_file(g_exe_dir + L"\\coop.ini", base))
         base = "p2_pad=1\nidle_pad=3\nauto_possess=0\nblock_saves=0\nguest_cam_pawn=1\n";
-    const char *ours[] = {"role=", "#role=", "transport=", "debug_log=", "send_character=", "keep_progress=", "peer_steamid=",
+    const char *ours[] = {"role=", "#role=", "transport=", "debug_log=", "send_character=", "keep_progress=", "peer_steamid=", "peer=", "port=",
                           "# Lines below are set by DDDA-Coop.exe"};
     std::string out, line;
     for (size_t i = 0; i <= base.size(); ++i) {
@@ -836,14 +919,23 @@ bool write_coop_ini()
     out += "# Lines below are set by DDDA-Coop.exe\n";
     if (!solo_role()) { // solo: the mod only adds the co-op progress kept for this PC's character
         out += guest ? "role=guest\n" : "role=host\n";
-        out += "transport=steam\n";
+        if (lan_mode()) { // the mod's UDP transport: the host listens on the port, a guest sends to the host's address
+            std::string ip;
+            int port = kLanPort;
+            out += "transport=udp\n";
+            if (guest && g_code_edit && parse_address(window_text(g_code_edit), ip, port))
+                out += "peer=" + ip + "\n";
+            out += "port=" + std::to_string(port) + "\n";
+        } else {
+            out += "transport=steam\n";
+        }
     }
     out += switch_on(g_keep) ? "keep_progress=1\n" : "keep_progress=0\n";
     out += switch_on(g_debug) ? "debug_log=1\n" : "debug_log=0\n";
     if (guest && !switch_on(g_own_char))
         out += "send_character=0\n";
     uint64_t host_id = 0;
-    if (guest && g_code_edit && steam_from_code(window_text(g_code_edit), host_id)) // the salon's code: this host only
+    if (guest && !lan_mode() && g_code_edit && steam_from_code(window_text(g_code_edit), host_id)) // the salon's code: this host only
         out += "peer_steamid=" + std::to_string(host_id) + "\n";
     return write_file(g_game_dir + L"\\coop.ini", out);
 }
@@ -972,9 +1064,15 @@ void on_launch()
     g_watching = true;
     g_friends = 0;
     g_world_received = false;
-    if (!g_no_launch)
-        ShellExecuteW(g_wnd, L"open", L"steam://rungameid/367500", nullptr, nullptr, SW_SHOWNORMAL);
-    add_event(tr(L"Lancement du jeu par Steam…"));
+    if (g_gog) { // GOG's game: DDDA.exe itself, from its folder (no Steam)
+        if (!g_no_launch)
+            ShellExecuteW(g_wnd, L"open", (g_game_dir + L"\\DDDA.exe").c_str(), nullptr, g_game_dir.c_str(), SW_SHOWNORMAL);
+        add_event(tr(L"Lancement du jeu (GOG)…"));
+    } else {
+        if (!g_no_launch)
+            ShellExecuteW(g_wnd, L"open", L"steam://rungameid/367500", nullptr, nullptr, SW_SHOWNORMAL);
+        add_event(tr(L"Lancement du jeu par Steam…"));
+    }
     set_state(guest ? tr(L"Lancement… Reste sur l'écran titre jusqu'à ce que l'hôte soit trouvé.")
                     : tr(L"Lancement… Charge ta partie normalement."),
               kMuted);
@@ -1419,8 +1517,8 @@ void update_players()
                      (r.ping ? std::to_wstring(r.ping) + L" ms" : r.link);
     SetWindowTextW(g_players, words.c_str());
     InvalidateRect(g_players, nullptr, FALSE);
-    if (g_copy_code && bool(IsWindowEnabled(g_copy_code)) != (g_self_steam != 0)) {
-        EnableWindow(g_copy_code, g_self_steam != 0);
+    if (g_copy_code && bool(IsWindowEnabled(g_copy_code)) != (lan_mode() || g_self_steam != 0)) {
+        EnableWindow(g_copy_code, lan_mode() || g_self_steam != 0);
         InvalidateRect(g_wnd, nullptr, FALSE);
     }
 }
@@ -1795,7 +1893,7 @@ ButtonKind kind_of(int id)
 // time, so the window fits a laptop's screen (~768 px high) without scrolling (owner's direction,
 // 2026-10-29). Each screen's controls are listed in g_pages and shown or hidden together.
 const int kW = 960, kH = 600, kSide = 84, kX = kSide + 28, kCW = kW - kX - 28, kHeaderH = 112;
-const int kDangerY = 262; // Paramètres: the sensitive card's top
+const int kDangerY = 298; // Paramètres: the sensitive card's top
 int g_height = kH;
 std::vector<HWND> g_pages[PAGE_COUNT];
 int g_building = PAGE_PLAY; // the screen the controls made now belong to
@@ -1890,7 +1988,7 @@ void build_window()
     g_copy_code = add(make(L"BUTTON", tr(L"&Copier le code"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 170 - 18, 444, 170, 38, ID_COPY_CODE));
     g_code_edit = add(make(L"EDIT", setting(L"host_code", L"").c_str(), WS_BORDER | WS_TABSTOP | ES_UPPERCASE | ES_AUTOHSCROLL, L + 18,
                            444, 200, 36, ID_CODE_EDIT, g_code_font));
-    SendMessageW(g_code_edit, EM_LIMITTEXT, 12, 0);
+    SendMessageW(g_code_edit, EM_LIMITTEXT, 21, 0); // a Steam code ABC-DEFG, or an address 255.255.255.255:65535
     SendMessageW(g_code_edit, EM_SETCUEBANNER, TRUE, LPARAM(L"ABC-DEFG"));
     g_code_clear = add(make(L"BUTTON", tr(L"&Effacer"), BS_PUSHBUTTON | WS_TABSTOP, L + 230, 444, 110, 36, ID_CODE_CLEAR));
 
@@ -1920,6 +2018,8 @@ void build_window()
     g_switches.push_back({g_debug, true, tr(L"&Journal détaillé (utile pour signaler un problème)")});
     g_check_updates = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 212, W, 32, ID_CHECK_UPDATES));
     g_switches.push_back({g_check_updates, true, tr(L"&Mettre à jour automatiquement au démarrage (GitHub)")});
+    g_lan = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 248, W, 32, ID_LAN));
+    g_switches.push_back({g_lan, false, tr(L"Jouer sans Steam : réseau &local ou IP directe (port UDP 27101)")});
     // the sensitive part in a card of its own (painted), red-tinted
     add(make(L"STATIC", tr(L"Zone sensible"), 0, L + 18, kDangerY + 14, W - 36, 22, 0, g_bold));
     add(make(L"STATIC",
@@ -1950,6 +2050,7 @@ void build_window()
     g_switches[1].on = setting(L"keep_progress", L"1") == L"1";
     g_switches[2].on = setting(L"debug_log", L"1") == L"1";
     g_switches[3].on = setting(L"check_updates", L"1") == L"1";
+    g_switches[4].on = setting(L"lan", L"0") == L"1";
     refresh_names();
     update_players();
     show_page(PAGE_PLAY);
@@ -2006,7 +2107,18 @@ void paint(HWND h)
             SelectObject(dc, g_font);
             SetTextColor(dc, kMuted);
             RECT hint = {card.left + px(18), card.top + px(40), card.right - px(18), card.top + px(58)};
-            if (g_role == ROLE_HOST) {
+            if (g_role == ROLE_HOST && lan_mode()) {
+                DrawTextW(dc, tr(L"Donne cette adresse à tes amis (réseau local, ou ton IP publique avec le port UDP 27101 ouvert)."), -1,
+                          &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+                RECT code = {card.left + px(18), px(444), card.right - px(220), px(482)};
+                SelectObject(dc, g_code_font);
+                SetTextColor(dc, kText);
+                std::vector<std::wstring> ips = local_addresses();
+                std::wstring c = ips.empty() ? L"–" : ips[0];
+                for (size_t k = 1; k < ips.size() && k < 3; ++k)
+                    c += L"  " + ips[k];
+                DrawTextW(dc, c.c_str(), -1, &code, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+            } else if (g_role == ROLE_HOST) {
                 DrawTextW(dc, tr(L"Donne ce code à tes amis : ils le collent dans leur salon pour te rejoindre toi précisément."), -1,
                           &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
                 RECT code = {card.left + px(18), px(444), card.right - px(220), px(482)};
@@ -2019,6 +2131,17 @@ void paint(HWND h)
                     RECT why = {code.left + px(150), code.top, code.right, code.bottom};
                     DrawTextW(dc, tr(L"lance le jeu en hôte (Steam) pour l'obtenir"), -1, &why, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
                 }
+            } else if (g_role == ROLE_GUEST && lan_mode()) {
+                DrawTextW(dc, tr(L"L'adresse de ton hôte (par exemple 192.168.1.20, ou 192.168.1.20:27101)."), -1, &hint,
+                          DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+                std::wstring txt = window_text(g_code_edit);
+                std::string ip;
+                int port = 0;
+                bool ok = parse_address(txt, ip, port);
+                RECT v = {px(kX + 356), px(444), card.right - px(18), px(480)};
+                SetTextColor(dc, ok ? kOk : kBad);
+                DrawTextW(dc, ok ? tr(L"✔  adresse valide") : tr(L"✖  adresse manquante ou invalide"), -1, &v,
+                          DT_LEFT | DT_SINGLELINE | DT_VCENTER);
             } else if (g_role == ROLE_GUEST) {
                 DrawTextW(dc, tr(L"Le code de ton hôte pour le rejoindre lui précisément ; vide : le premier ami Steam qui héberge."),
                           -1, &hint, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
@@ -2192,6 +2315,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_OWN_CHAR:
         case ID_DEBUG:
         case ID_CHECK_UPDATES:
+        case ID_LAN:
             for (Switch &sw : g_switches)
                 if (sw.h == HWND(l))
                     sw.on = !sw.on;
@@ -2215,8 +2339,9 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
             break;
         case ID_PROJECT: ShellExecuteW(h, L"open", kRepoUrl, nullptr, nullptr, SW_SHOWNORMAL); break;
         case ID_COPY_CODE:
-            if (g_self_steam && OpenClipboard(h)) {
-                std::wstring c = code_from_steam(g_self_steam);
+            if ((lan_mode() || g_self_steam) && OpenClipboard(h)) {
+                std::vector<std::wstring> ips = local_addresses();
+                std::wstring c = lan_mode() ? (ips.empty() ? std::wstring() : ips[0]) : code_from_steam(g_self_steam);
                 EmptyClipboard();
                 if (HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, (c.size() + 1) * sizeof(wchar_t))) {
                     memcpy(GlobalLock(mem), c.c_str(), (c.size() + 1) * sizeof(wchar_t));
@@ -2393,6 +2518,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     g_game_dir = !game_arg.empty() ? game_arg : setting(L"game", L"");
     if (g_game_dir.empty())
         g_game_dir = find_game(g_steam_dir);
+    if (g_game_dir.empty())
+        g_game_dir = find_gog_game();
 
     HDC screen = GetDC(nullptr);
     g_dpi = GetDeviceCaps(screen, LOGPIXELSY);

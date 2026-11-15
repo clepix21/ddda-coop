@@ -35,7 +35,7 @@ Pop-Location
 if ($rcFailed) { throw "windres failed" }
 & $cxx -O2 -std=c++17 -Wall -municode -mwindows -static -static-libgcc -static-libstdc++ `
     (Join-Path $PSScriptRoot "launcher\launcher.cpp") $res `
-    -lcomctl32 -lwinhttp -lbcrypt -lshell32 -lole32 -luuid -lgdiplus -ldwmapi -luxtheme -lgdi32 `
+    -lcomctl32 -lwinhttp -lbcrypt -lshell32 -lole32 -luuid -lgdiplus -ldwmapi -luxtheme -lgdi32 -lws2_32 -liphlpapi `
     -o (Join-Path $out "DDDA-Coop.exe")
 if ($LASTEXITCODE) { throw "launcher link failed" }
 

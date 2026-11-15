@@ -492,6 +492,33 @@ T = [
      'Nel gioco\n  • Ospite: attendi «Connesso!» in questa finestra prima di premere Start.\n  • Esplorare da solo / tornare: tieni premuti LB + RB + Y per 1,5 s (o F7).\n  • Rialzare un giocatore a terra: tieni premuto B accanto a lui (3 s).\n  • Afferrare un giocatore o un piccolo mostro: RT.\n\nQui\n  • A ogni avvio viene fatto un backup dei tuoi salvataggi;\n    «Fai il backup dei salvataggi» ne fa uno subito e apre la cartella.\n  • In caso di problemi: «Esporta il registro» e invia il file.\n  • Tastiera: Alt + la lettera sottolineata, Tab per passare da un elemento all\'altro.',
      'Im Spiel\n  • Gast: Warte auf „Verbunden!“ in diesem Fenster, bevor du Start drückst.\n  • Allein erkunden / zurückkehren: LB + RB + Y 1,5 s gedrückt halten (oder F7).\n  • Einem Spieler am Boden aufhelfen: Halte B neben ihm gedrückt (3 s).\n  • Einen Spieler oder ein kleines Monster packen: RT.\n\nHier\n  • Bei jedem Start wird eine Sicherung deiner Spielstände angelegt;\n    „Spielstände sichern“ legt sofort eine an und öffnet den Ordner.\n  • Bei Problemen: „Protokoll exportieren“ und die Datei schicken.\n  • Tastatur: Alt + der unterstrichene Buchstabe, Tab, um von einem Element zum nächsten zu wechseln.',
      'En el juego\n  • Invitado: espera a «¡Conectado!» en esta ventana antes de pulsar Start.\n  • Explorar solo / volver: mantén LB + RB + Y 1,5 s (o F7).\n  • Levantar a un jugador caído: mantén B a su lado (3 s).\n  • Agarrar a un jugador o a un monstruo pequeño: RT.\n\nAquí\n  • En cada inicio se hace una copia de seguridad de tus partidas;\n    «Copiar mis partidas» hace una al momento y abre la carpeta.\n  • Si algo va mal: «Exportar el registro» y envía el archivo.\n  • Teclado: Alt + la letra subrayada, Tab para pasar de un elemento a otro.'),
+
+    # LAN / direct IP, GOG's game
+    (r'Version GOG du jeu prise en charge (réseau local ou IP directe, sans Steam).',
+     'GOG version of the game supported (local network or direct IP, no Steam).',
+     'Versione GOG del gioco supportata (rete locale o IP diretto, senza Steam).',
+     'GOG-Version des Spiels wird unterstützt (lokales Netzwerk oder direkte IP, ohne Steam).',
+     'Versión GOG del juego compatible (red local o IP directa, sin Steam).'),
+    (r'Jouer sans Steam : réseau &local ou IP directe (port UDP 27101)',
+     'Play without Steam: &local network or direct IP (UDP port 27101)',
+     'Gioca senza Steam: rete &locale o IP diretto (porta UDP 27101)',
+     'Ohne Steam spielen: &lokales Netzwerk oder direkte IP (UDP-Port 27101)',
+     'Jugar sin Steam: red &local o IP directa (puerto UDP 27101)'),
+    (r'Donne cette adresse à tes amis (réseau local, ou ton IP publique avec le port UDP 27101 ouvert).',
+     'Give this address to your friends (local network, or your public IP with UDP port 27101 open).',
+     'Dai questo indirizzo ai tuoi amici (rete locale, o il tuo IP pubblico con la porta UDP 27101 aperta).',
+     'Gib deinen Freunden diese Adresse (lokales Netzwerk, oder deine öffentliche IP mit offenem UDP-Port 27101).',
+     'Da esta dirección a tus amigos (red local, o tu IP pública con el puerto UDP 27101 abierto).'),
+    (r"L'adresse de ton hôte (par exemple 192.168.1.20, ou 192.168.1.20:27101).",
+     "Your host's address (for example 192.168.1.20, or 192.168.1.20:27101).",
+     "L'indirizzo del tuo host (per esempio 192.168.1.20, o 192.168.1.20:27101).",
+     'Die Adresse deines Hosts (zum Beispiel 192.168.1.20 oder 192.168.1.20:27101).',
+     'La dirección de tu anfitrión (por ejemplo 192.168.1.20, o 192.168.1.20:27101).'),
+    (r'✔  adresse valide', '✔  valid address', '✔  indirizzo valido', '✔  gültige Adresse', '✔  dirección válida'),
+    (r'✖  adresse manquante ou invalide', '✖  missing or invalid address', '✖  indirizzo mancante o non valido',
+     '✖  Adresse fehlt oder ist ungültig', '✖  dirección ausente o no válida'),
+    (r'Lancement du jeu (GOG)…', 'Launching the game (GOG)…', 'Avvio del gioco (GOG)…', 'Spiel wird gestartet (GOG)…',
+     'Iniciando el juego (GOG)…'),
 ]
 
 LANG_NAMES = ['Français', 'English', 'Italiano', 'Deutsch', 'Español']
