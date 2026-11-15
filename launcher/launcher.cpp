@@ -342,7 +342,8 @@ void save_settings()
     WritePrivateProfileStringW(L"launcher", L"own_character", switch_on(g_own_char) ? L"1" : L"0", p.c_str());
     WritePrivateProfileStringW(L"launcher", L"debug_log", switch_on(g_debug) ? L"1" : L"0", p.c_str());
     WritePrivateProfileStringW(L"launcher", L"check_updates", switch_on(g_check_updates) ? L"1" : L"0", p.c_str());
-    WritePrivateProfileStringW(L"launcher", L"lan", switch_on(g_lan) ? L"1" : L"0", p.c_str());
+    // "direct_ip", not the first builds' "lan": those saved the switch on whenever a GOG game had been chosen
+    WritePrivateProfileStringW(L"launcher", L"direct_ip", switch_on(g_lan) ? L"1" : L"0", p.c_str());
 }
 
 // ---- the update check: the project's newest release on GitHub (a release from the public repo) ----
@@ -796,12 +797,12 @@ void update_controls()
     ShowWindow(g_keep, g_page == PAGE_PLAY && guest_role() ? SW_SHOW : SW_HIDE);
     ShowWindow(g_update, g_page == PAGE_PLAY && !g_update_tag.empty() ? SW_SHOW : SW_HIDE);
     EnableWindow(g_launch, g_supported);
-    if (g_lan) { // GOG's game has no Steam: the switch shows on and cannot be turned off
+    if (g_lan) { // GOG's game has no Steam: the switch shows on and cannot be turned off, but the player's own
+                 // choice (sw.on, saved) is kept for when a Steam game is chosen again
         EnableWindow(g_lan, !g_gog);
         for (Switch &sw : g_switches)
-            if (sw.h == g_lan && g_gog && !sw.on) {
-                sw.on = true;
-                SetWindowTextW(g_lan, (sw.label + tr(L" : activé")).c_str());
+            if (sw.h == g_lan) {
+                SetWindowTextW(g_lan, (sw.label + (sw.on || g_gog ? tr(L" : activé") : tr(L" : désactivé"))).c_str());
                 InvalidateRect(g_lan, nullptr, FALSE);
             }
     }
@@ -1843,7 +1844,7 @@ void draw_button(const DRAWITEMSTRUCT *d)
         return;
     }
     if (kind == BTN_SWITCH) { // label on the left, a pill switch on the right (accent when on)
-        bool on = switch_on(d->hwndItem);
+        bool on = switch_on(d->hwndItem) || (d->hwndItem == g_lan && g_gog); // GOG: shown on, not saved on
         std::wstring label;
         for (const Switch &w : g_switches)
             if (w.h == d->hwndItem)
@@ -2152,7 +2153,7 @@ void build_window()
     g_switches[1].on = setting(L"keep_progress", L"1") == L"1";
     g_switches[2].on = setting(L"debug_log", L"1") == L"1";
     g_switches[3].on = setting(L"check_updates", L"1") == L"1";
-    g_switches[4].on = setting(L"lan", L"0") == L"1";
+    g_switches[4].on = setting(L"direct_ip", L"0") == L"1";
     refresh_names();
     update_players();
     show_page(PAGE_PLAY);
