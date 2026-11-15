@@ -126,7 +126,7 @@ normally, the guest removes `role=guest` first.
 Options: `peer_steamid=<SteamID64>` to pick the other player instead of searching the friends
 list; `transport=udp` with `peer=<address>` and `port=` (default 27101) for a LAN.
 
-### Shared world (`shared_world=1`, work in progress on branch shared-world)
+### Shared world (`shared_world=1`, the default)
 
 Every player plays its own character in its own copy of the host's world, all the time (no keys):
 
