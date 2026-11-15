@@ -22,10 +22,10 @@
 
 namespace {
 
-constexpr uintptr_t kInputSize = 0x2B38; // sQlocInput DTI size
+const uintptr_t kInputSize = game::by_build(0x2B38, 0x2B28); // sQlocInput DTI size
 constexpr uintptr_t kPadBase = 0x3C;     // sPad::mPad[4]
 constexpr uintptr_t kPadSize = 0x400;
-constexpr uintptr_t kToggles = 0x1085; // 3 bytes the builder writes back into the input object
+const uintptr_t kToggles = game::by_build(0x1085, 0x1075); // 3 bytes the builder writes back into the input object
 constexpr uintptr_t kTogglesLen = 3;
 
 int g_p2 = 1;   // pad slot of player 2 (local split screen)

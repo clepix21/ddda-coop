@@ -21,7 +21,7 @@
 namespace {
 
 using Grant_t = void(__stdcall *)(uintptr_t gs, int exp, float factor, char fixed); // RET 0x10 (0x004437BD)
-constexpr uintptr_t kGrant = 0x00443470;
+const uintptr_t kGrant = game::va(0x00443470);
 constexpr uintptr_t kArisenParam = 0xA76D0, kExp = 0x2C4, kDiscipline = 0x344; // FUN_00782D10: [0xB1], [0xD1]
 Grant_t g_orig = nullptr;
 thread_local bool g_applying = false;

@@ -49,7 +49,7 @@ DWORD g_poke_until = 0;
 
 bool camera_forward(float &fx, float &fz)
 {
-    uintptr_t holder = game::at<uintptr_t>(0, 0x018D0B6C);
+    uintptr_t holder = game::at<uintptr_t>(0, game::va(0x018D0B6C));
     if (!holder)
         return false;
     uintptr_t cam = game::at<uintptr_t>(holder, 0x34);
@@ -149,12 +149,12 @@ void run_line(const char *line)
         char who[16] = {};
         unsigned off = 0, count = 20;
         if (sscanf(line + 6, "%15s %x %u", who, &off, &count) >= 2) {
-            uintptr_t holder = game::at<uintptr_t>(0, 0x018D0B6C);
+            uintptr_t holder = game::at<uintptr_t>(0, game::va(0x018D0B6C));
             uintptr_t ch = strcmp(who, "pawn") == 0     ? possess_main_pawn()
                            : strcmp(who, "camera") == 0 ? (holder ? game::at<uintptr_t>(holder, 0x34) : 0)
                                                          : possess_arisen();
             if (!ch && strcmp(who, "arisen") == 0) // in a menu: the party table ([0x018FA4EC] + 0x99C)
-                if (uintptr_t party = game::at<uintptr_t>(0x018FA4EC, 0))
+                if (uintptr_t party = game::at<uintptr_t>(game::va(0x018FA4EC), 0))
                     ch = game::at<uintptr_t>(party, 0x99C);
             if (ch)
                 watch_start(ch + off, long(count), strcmp(who, "camera") == 0 ? 0 : ch);
@@ -502,7 +502,7 @@ void run_line(const char *line)
         strcpy(g_current, line);
     } else if (strncmp(line, "items ", 6) == 0) { // items <member 0-3>: [0x018FA4D4]+0x178+m*0x11E8, number:flags
         int m = atoi(line + 6);
-        uintptr_t mgr = game::at<uintptr_t>(0x018FA4D4, 0);
+        uintptr_t mgr = game::at<uintptr_t>(game::va(0x018FA4D4), 0);
         if (mgr && m >= 0 && m < 4) {
             uintptr_t list = mgr + 0x178 + uintptr_t(m) * 0x11E8;
             uint32_t n = game::at<uint32_t>(list, 8);
@@ -517,7 +517,7 @@ void run_line(const char *line)
         strcpy(g_current, line);
     } else if (strncmp(line, "equip ", 6) == 0) { // equip <member 0-3>: mpEquip[12] ([0x018FA4D4] + 0x3D0 + m * 0x11E8), number:flags each
         int m = atoi(line + 6);
-        uintptr_t mgr = game::at<uintptr_t>(0x018FA4D4, 0);
+        uintptr_t mgr = game::at<uintptr_t>(game::va(0x018FA4D4), 0);
         if (mgr && m >= 0 && m < 4) {
             uintptr_t bag = mgr + 0x178 + uintptr_t(m) * 0x11E8; // FUN_00459100 writes mpEquip at +0x3D0
             char buf[600];
@@ -534,7 +534,7 @@ void run_line(const char *line)
         strcpy(g_current, line);
     } else if (strncmp(line, "eqset ", 6) == 0) { // eqset <member> <slot> <from member> <from slot>: copy an mpEquip pointer
         int m = -1, k = -1, fm = -1, fk = -1;
-        uintptr_t mgr = game::at<uintptr_t>(0x018FA4D4, 0);
+        uintptr_t mgr = game::at<uintptr_t>(game::va(0x018FA4D4), 0);
         if (mgr && sscanf(line + 6, "%d %d %d %d", &m, &k, &fm, &fk) == 4 && m >= 0 && m < 4 && fm >= 0 && fm < 4 &&
             k >= 0 && k < 12 && fk >= 0 && fk < 12) {
             uintptr_t &to = game::at<uintptr_t>(mgr, 0x3D0 + (m * 0x47A + k) * 4);
@@ -604,7 +604,7 @@ void run_line(const char *line)
         static bool have = false;
         uintptr_t a = possess_arisen();
         if (!a) // in a menu: the party table itself ([0x018FA4EC] + 0x99C, the Arisen)
-            if (uintptr_t party = game::at<uintptr_t>(0x018FA4EC, 0))
+            if (uintptr_t party = game::at<uintptr_t>(game::va(0x018FA4EC), 0))
                 a = game::at<uintptr_t>(party, 0x99C);
         if (a && !mem_readable(reinterpret_cast<void *>(a), sizeof snap))
             a = 0; // the object ends before 0x8000 bytes with nothing mapped after it: nothing read
@@ -731,7 +731,7 @@ void run_line(const char *line)
         }
         _snprintf(g_current, sizeof g_current, "watcha %08X", addr);
     } else if (strncmp(line, "camscan", 7) == 0) { // where does the camera point at the Arisen?
-        uintptr_t holder = game::at<uintptr_t>(0, 0x018D0B6C), ar = possess_arisen();
+        uintptr_t holder = game::at<uintptr_t>(0, game::va(0x018D0B6C)), ar = possess_arisen();
         uintptr_t cam = holder ? game::at<uintptr_t>(holder, 0x34) : 0;
         logf("bridge: camscan holder %p camera %p arisen %p vt %08X", (void *)holder, (void *)cam, (void *)ar,
              cam ? unsigned(game::at<uintptr_t>(cam, 0)) : 0u);
@@ -1178,7 +1178,7 @@ void run_line(const char *line)
         // savereq <mode hex> <slot>: a request to the save/load machine [0x018FA518], written the
         // way the game's menu does it (FUN_00532110), only when the machine is idle (+0x648 = 0)
         unsigned mode = 0, slot = 0;
-        uintptr_t sm = game::at<uintptr_t>(0x018FA518, 0);
+        uintptr_t sm = game::at<uintptr_t>(game::va(0x018FA518), 0);
         if (sscanf(line + 8, "%x %u", &mode, &slot) == 2 && sm && game::at<uint8_t>(sm, 0x648) == 0) {
             game::at<int32_t>(sm, 0xA44) = -1;
             game::at<int32_t>(sm, 0xA48) = -1;
@@ -1306,7 +1306,7 @@ void steer()
 void watch_save_machine()
 {
     static uint32_t last = 0xFFFFFFFF;
-    uintptr_t sm = game::at<uintptr_t>(0x018FA518, 0);
+    uintptr_t sm = game::at<uintptr_t>(game::va(0x018FA518), 0);
     if (!sm || !mem_readable(reinterpret_cast<void *>(sm + 0x638), 0x20))
         return;
     uint32_t now = game::at<uint8_t>(sm, 0x648) | game::at<uint8_t>(sm, 0x649) << 8 | game::at<uint8_t>(sm, 0x638) << 16;
@@ -1396,7 +1396,7 @@ void bridge_game_tick()
     if (!ch || !game::at<uintptr_t>(ch, 0x3DEC))
         return;
     using Rebuild_t = void(__fastcall *)(uintptr_t);
-    reinterpret_cast<Rebuild_t>(0x00B5CE10)(ch);
+    reinterpret_cast<Rebuild_t>(game::va(0x00B5CE10))(ch);
     logf("bridge: rebuild %d (%p) done", int(who), (void *)ch);
 }
 

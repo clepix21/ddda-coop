@@ -39,7 +39,7 @@ CRITICAL_SECTION g_lock;
 volatile LONG g_ready = 0;
 std::string g_pending;          // another world's quest state to take
 uint32_t g_pending_crc = 0;
-constexpr uintptr_t kQuestManager = 0x018FA4F0, kGetOrCreateQuest = 0x00484D90, kStartQuest = 0x0078D6D0;
+const uintptr_t kQuestManager = game::va(0x018FA4F0), kGetOrCreateQuest = game::va(0x00484D90), kStartQuest = game::va(0x0078D6D0);
 constexpr int kLiveMax = 16;
 uint32_t g_live_ids[kLiveMax] = {}; // quests to add on the game thread (g_lock)
 int g_live_n = 0;

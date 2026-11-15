@@ -12,6 +12,7 @@
 #include <cstdint>
 
 #include "MinHook.h"
+#include "game.h"
 #include "mod.h"
 
 extern "C" {
@@ -47,7 +48,7 @@ __attribute__((naked)) static void catchup_stub()
 
 void catchup_install()
 {
-    void *target = reinterpret_cast<void *>(0x00B88710);
+    void *target = reinterpret_cast<void *>(game::va(0x00B88710));
     MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void *>(&catchup_stub), &g_catchup_orig);
     if (st == MH_OK)
         st = MH_EnableHook(target);

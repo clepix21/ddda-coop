@@ -197,6 +197,7 @@ DWORD possess_last_update(); // tick of the Arisen's last update (0 = never)
 void hang_note_main_thread(); // hang_watch.cpp: called on the game's main thread
 void hang_note_update_thread(); // and on the characters' updates
 void hang_watch_start();
+void hang_dump_early(int every_s); // tests: test_dump_main=<s>
 uintptr_t possess_main_pawn();
 void possess_set(bool on);
 bool possess_on();
@@ -213,6 +214,10 @@ uintptr_t possess_pawn_ptr(int pawn);      // by mCmcId, 0 = not seen
 
 // input_redirect.cpp: per-thread input object for the command builder.
 bool input_redirect_install();
+void gog_early_install();  // gog.cpp: no_galaxy=1 (GOG build, tests) skips the game's GOG Galaxy init
+bool gog_galaxy_skipped();
+void va_missing(uintptr_t steam);              // build.cpp: game::va() got an address the GOG table lacks
+int va_missing_take(uintptr_t *out, int max); // those addresses (count; at most 16 kept)
 bool input_redirect_active();
 void input_redirect_set(uintptr_t input, bool hide_kbm, uintptr_t camera_holder = 0);
 

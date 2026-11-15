@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "game.h"
 #include "mod.h"
 
 namespace {
@@ -41,11 +42,11 @@ static_assert(sizeof(ZStream) == 0x38, "z_stream size");
 using DeflateInit_t = int(__cdecl *)(ZStream *, int, const char *, int);
 using Deflate_t = int(__cdecl *)(ZStream *, int);
 using InflateInit_t = int(__cdecl *)(ZStream *, const char *, int);
-const auto z_deflateInit = reinterpret_cast<DeflateInit_t>(0x00CF2C40);
-const auto z_deflate = reinterpret_cast<Deflate_t>(0x00CF16F0);
-const auto z_deflateEnd = reinterpret_cast<int(__cdecl *)(ZStream *)>(0x00CF1AF0);
-const auto z_inflateInit = reinterpret_cast<InflateInit_t>(0x00CF01C0);
-const auto z_inflate = reinterpret_cast<Deflate_t>(0x00CF02E0);
+const auto z_deflateInit = reinterpret_cast<DeflateInit_t>(game::va(0x00CF2C40));
+const auto z_deflate = reinterpret_cast<Deflate_t>(game::va(0x00CF16F0));
+const auto z_deflateEnd = reinterpret_cast<int(__cdecl *)(ZStream *)>(game::va(0x00CF1AF0));
+const auto z_inflateInit = reinterpret_cast<InflateInit_t>(game::va(0x00CF01C0));
+const auto z_inflate = reinterpret_cast<Deflate_t>(game::va(0x00CF02E0));
 constexpr int Z_FINISH = 4, Z_STREAM_END = 1;
 constexpr size_t kSaveSize = 524288;
 

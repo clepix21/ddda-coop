@@ -20,7 +20,7 @@
 
 namespace {
 
-constexpr uintptr_t kSaveMachine = 0x018FA518;
+const uintptr_t kSaveMachine = game::va(0x018FA518);
 constexpr uint32_t kReloadBit = 1u << 26, kGameOverBit = 1u << 25;
 constexpr DWORD kQuietMs = 3000;   // the world must be quiet that long before a reload starts
 constexpr DWORD kStepMs = 15000;   // a step that takes longer is given up (tried again later)

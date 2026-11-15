@@ -7,6 +7,7 @@
 #include <cstdio>
 
 #include "MinHook.h"
+#include "game.h"
 #include "mod.h"
 #include "version.h"
 
@@ -33,7 +34,7 @@ void logf(const char *fmt, ...)
     perf_add(PERF_LOG, t0);
 }
 
-// Only build 2364871's exe is supported: its offsets are what we reverse engineered.
+// Steam's build 2364871 (its offsets are what we reverse engineered) or GOG's (game.h, addr_gog.h).
 static bool exe_is_supported()
 {
     auto base = reinterpret_cast<const BYTE *>(GetModuleHandleA(nullptr));
@@ -41,7 +42,8 @@ static bool exe_is_supported()
     auto nt = reinterpret_cast<const IMAGE_NT_HEADERS32 *>(base + dos->e_lfanew);
     DWORD stamp = nt->FileHeader.TimeDateStamp;
     logf("exe base %p TimeDateStamp 0x%08lX SizeOfImage 0x%08lX", base, stamp, nt->OptionalHeader.SizeOfImage);
-    return stamp == 0x5A314C31; // 2017-12-13 15:50:09 UTC
+    logf("DDDA.exe build: %s", game::build_name()); // Steam 0x5A314C31 (2017-12-13), GOG 0x5936ABAB (2017-06-06)
+    return game::build() != game::BUILD_UNKNOWN;
 }
 
 static DWORD WINAPI pad_thread(LPVOID)
@@ -56,12 +58,20 @@ static DWORD WINAPI pad_thread(LPVOID)
     if (cfg_role() != NET_OFF && !early_flag("test_no_catchup_hook"))
         catchup_install();
     save_guard_install(cfg_block_saves()); // storage hooks always; writes blocked only when asked
-    if (cfg_role() == NET_GUEST && !early_flag("test_no_owner_patch")) // tests: show what the patch avoids
+    // GOG: every role, so a save made on another account (a friend's, a Steam one) loads too
+    if ((cfg_role() == NET_GUEST || game::build() == game::BUILD_GOG) && !early_flag("test_no_owner_patch")) // tests: show what the patch avoids
         storage_guest_patch();
     if (!cfg_block_saves())
         logf("save-guard: off (saves work normally)");
     probe_install();
     exp_sync_install();
+    if (game::build() == game::BUILD_GOG) { // a Steam address the GOG table lacks is a bug: said in the log
+        uintptr_t miss[16];
+        int n = va_missing_take(miss, 16);
+        for (int i = 0; i < n && i < 16; ++i)
+            logf("gog: address %08X asked for has no GOG entry (the Steam one was used)", unsigned(miss[i]));
+        logf("gog: %d address(es) without a GOG entry so far", n);
+    }
     loot_install();
     cutscene_install();
     flags_install();
@@ -137,6 +147,10 @@ void mod_start(HINSTANCE)
         private_appdata_install();
     MH_STATUS st = MH_Initialize();
     logf("MinHook init: %s", MH_StatusToString(st));
+    gog_early_install(); // GOG, tests: no_galaxy=1
+    char dump_every[8] = "";
+    if (cfg_str("test_dump_main", dump_every, sizeof dump_every))
+        hang_dump_early(atoi(dump_every)); // called on the main thread (the loader's)
     InterlockedExchange(&g_running, 1);
     if (HANDLE t = CreateThread(nullptr, 0, pad_thread, nullptr, 0, nullptr))
         CloseHandle(t);

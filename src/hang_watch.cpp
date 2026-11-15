@@ -215,3 +215,25 @@ void hang_watch_start()
     if (HANDLE t = CreateThread(nullptr, 0, watch_thread, nullptr, 0, nullptr))
         CloseHandle(t);
 }
+
+// Tests (test_dump_main=<s>): the main thread's place every <s> seconds, 6 times, from the start (the main
+// thread is the one that loaded the DLL). For a game that never shows its title (GOG port, 2026-11-15).
+static DWORD WINAPI dump_early_thread(LPVOID p)
+{
+    int every = int(reinterpret_cast<intptr_t>(p));
+    for (int i = 0; i < 6; ++i) {
+        Sleep(DWORD(every) * 1000);
+        dump_main_thread();
+    }
+    return 0;
+}
+
+void hang_dump_early(int every_s)
+{
+    if (every_s <= 0)
+        return;
+    if (!g_main_tid)
+        InterlockedExchange(&g_main_tid, LONG(GetCurrentThreadId()));
+    if (HANDLE t = CreateThread(nullptr, 0, dump_early_thread, reinterpret_cast<LPVOID>(intptr_t(every_s)), 0, nullptr))
+        CloseHandle(t);
+}

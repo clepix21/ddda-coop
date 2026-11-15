@@ -33,12 +33,12 @@ void net_send_event(int32_t event); // net.cpp
 namespace {
 
 using EventStart_t = void(__stdcall *)(uintptr_t ctl);
-constexpr uintptr_t kEventStart = 0x0050BE20;
+const uintptr_t kEventStart = game::va(0x0050BE20);
 EventStart_t g_orig = nullptr;
 volatile uintptr_t g_ctl = 0;
 
 using CtlUpdate_t = void(__fastcall *)(uintptr_t ctl);
-constexpr uintptr_t kCtlUpdate = 0x00504330;
+const uintptr_t kCtlUpdate = game::va(0x00504330);
 CtlUpdate_t g_orig_upd = nullptr;
 
 volatile LONG g_want = -1;       // an event to start here (another player's, or tests: bridge cutplay)
@@ -118,7 +118,7 @@ void __fastcall hk_ctl_update(uintptr_t ctl)
 // (and sGameSys +0xB883C bit 7). Logged here (who calls, the controller's state) to tell the menu's pause
 // from the others (cutscenes, loads).
 using Pause_t = void(__stdcall *)(char on);
-constexpr uintptr_t kPauseA = 0x0043F6C0, kPauseB = 0x0043F7E0;
+const uintptr_t kPauseA = game::va(0x0043F6C0), kPauseB = game::va(0x0043F7E0);
 Pause_t g_orig_pa = nullptr, g_orig_pb = nullptr;
 
 void __stdcall hk_pause_a(char on)
@@ -144,7 +144,7 @@ void __stdcall hk_pause_a(char on)
         logf("scene: the pause menu %s the world in co-op (menu_runs_world=%d)", keep ? "does not stop" : "stops", keep);
     }
     if (on && state == 9 && keep && net_shared()) {
-        uintptr_t unit = game::at<uintptr_t>(0x018D09E0, 0);
+        uintptr_t unit = game::at<uintptr_t>(game::va(0x018D09E0), 0);
         if (unit && 0x39 < game::at<uint32_t>(unit, 0xD28)) {
             game::at<uint32_t>(unit, 0xD30 + (0x39 / 32) * 4) |= 1u << (0x39 % 32);
             g_menu_world = 1;

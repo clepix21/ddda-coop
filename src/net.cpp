@@ -797,7 +797,7 @@ uintptr_t lantern_item(uintptr_t ch)
     if (uintptr_t it = game::at<uintptr_t>(ch, 0x3D70))
         return it;
     int m = party_member(ch);
-    uintptr_t mgr = game::at<uintptr_t>(0x018FA4D4, 0);
+    uintptr_t mgr = game::at<uintptr_t>(game::va(0x018FA4D4), 0);
     if (m < 0 || m > 3 || !mgr)
         return 0;
     uintptr_t list = mgr + 0x178 + uintptr_t(m) * 0x11E8;
@@ -2693,7 +2693,7 @@ DWORD WINAPI net_thread(LPVOID)
                 m.away = net_guest_roaming() ? 1 : 0;
                 if (!m.away && possess_arisen() && pads_read_raw(0, &s) == ERROR_SUCCESS)
                     m.pad = s.Gamepad;
-                uintptr_t holder = game::at<uintptr_t>(0, 0x018D0B6C);
+                uintptr_t holder = game::at<uintptr_t>(0, game::va(0x018D0B6C));
                 uintptr_t cam = holder ? game::at<uintptr_t>(holder, 0x34) : 0;
                 if (cam && !m.away) {
                     memcpy(m.eye, reinterpret_cast<void *>(cam + 0x40), sizeof m.eye);
@@ -3380,7 +3380,7 @@ void net_guest_camera()
 // Move the camera's references to `from` (a character) over to `to`; returns how many it moved.
 int camera_follow(uintptr_t from, uintptr_t to)
 {
-    uintptr_t holder = game::at<uintptr_t>(0, 0x018D0B6C);
+    uintptr_t holder = game::at<uintptr_t>(0, game::va(0x018D0B6C));
     uintptr_t cam = holder ? game::at<uintptr_t>(holder, 0x34) : 0;
     if (!from || !to || !cam)
         return 0;

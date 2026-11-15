@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "MinHook.h"
+#include "game.h"
 #include "mod.h"
 
 namespace {
@@ -284,7 +285,7 @@ bool __attribute__((thiscall)) hk_stream_false(void *, uint64_t)
 // The save/load machine [0x018FA518] runs a save (modes 2, 7, 0xF: FUN_004B8280 -> FUN_004B8DF0).
 uint8_t machine_mode()
 {
-    uintptr_t sm = *reinterpret_cast<uintptr_t *>(0x018FA518);
+    uintptr_t sm = *reinterpret_cast<uintptr_t *>(game::va(0x018FA518));
     return sm ? *reinterpret_cast<uint8_t *>(sm + 0x648) : 0;
 }
 bool saving()
@@ -598,12 +599,118 @@ void *__cdecl hk_get_remote_storage()
     return iface;
 }
 
+// GOG's build: no Steam. The game reads and writes DDDA.sav through its own small wrappers around
+// GOG Galaxy's IStorage ("GA::RemoteStorage::*", __cdecl): FileExists(name) 0x00CFCFE0,
+// GetFileSize(name) 0x00CFD070, FileRead(name, buf, cap) 0x00CFD110, FileWrite(name, data, size)
+// 0x00CFD1B0 (Ghidra, 2026-11-15). They are hooked and the Steam slot hooks above run on them: the
+// slots' "originals" become the thunks below. With private_storage=1 (tests: several copies on one PC
+// would share Galaxy's storage) the files live in the game folder's gog_storage folder instead.
+using GogExists_t = bool(__cdecl *)(const char *);
+using GogSize_t = int32_t(__cdecl *)(const char *);
+using GogRead_t = int32_t(__cdecl *)(const char *, void *, int32_t);
+using GogWrite_t = bool(__cdecl *)(const char *, const void *, int32_t);
+GogExists_t g_gog_exists = nullptr;
+GogSize_t g_gog_size = nullptr;
+GogRead_t g_gog_read = nullptr;
+GogWrite_t g_gog_write = nullptr;
+bool g_private_storage = false;
+
+std::string private_path(const char *name)
+{
+    std::string n = name ? name : "";
+    for (char &c : n)
+        if (c == '/' || c == '\\' || c == ':')
+            c = '_';
+    return "gog_storage\\" + n;
+}
+
+bool __attribute__((thiscall)) gog_orig_exists(void *, const char *name)
+{
+    if (!g_private_storage)
+        return g_gog_exists(name);
+    return GetFileAttributesA(private_path(name).c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+int32_t __attribute__((thiscall)) gog_orig_size(void *, const char *name)
+{
+    if (!g_private_storage)
+        return g_gog_size(name);
+    WIN32_FILE_ATTRIBUTE_DATA a;
+    if (!GetFileAttributesExA(private_path(name).c_str(), GetFileExInfoStandard, &a))
+        return -1;
+    return int32_t(a.nFileSizeLow);
+}
+
+int32_t __attribute__((thiscall)) gog_orig_read(void *, const char *name, void *data, int32_t cap)
+{
+    if (!g_private_storage)
+        return g_gog_read(name, data, cap);
+    FILE *f = fopen(private_path(name).c_str(), "rb");
+    if (!f)
+        return 0;
+    int32_t n = int32_t(fread(data, 1, size_t(cap > 0 ? cap : 0), f));
+    fclose(f);
+    return n;
+}
+
+bool __attribute__((thiscall)) gog_orig_write(void *, const char *name, const void *data, int32_t size)
+{
+    if (!g_private_storage)
+        return g_gog_write(name, data, size);
+    CreateDirectoryA("gog_storage", nullptr);
+    std::string path = private_path(name), tmp = path + ".tmp";
+    FILE *f = fopen(tmp.c_str(), "wb");
+    if (!f)
+        return false;
+    bool ok = fwrite(data, 1, size_t(size), f) == size_t(size);
+    ok = fclose(f) == 0 && ok;
+    return ok && MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
+}
+
+bool __cdecl gog_hk_exists(const char *name) { return hk_file_exists(nullptr, name); }
+int32_t __cdecl gog_hk_size(const char *name) { return hk_get_file_size(nullptr, name); }
+int32_t __cdecl gog_hk_read(const char *name, void *data, int32_t cap) { return hk_file_read(nullptr, name, data, cap); }
+bool __cdecl gog_hk_write(const char *name, const void *data, int32_t size) { return hk_file_write(nullptr, name, data, size); }
+
+bool gog_install()
+{
+    g_private_storage = early_flag("private_storage");
+    g_orig_slot[FileExists] = reinterpret_cast<void *>(&gog_orig_exists);
+    g_orig_slot[GetFileSize] = reinterpret_cast<void *>(&gog_orig_size);
+    g_orig_slot[FileRead] = reinterpret_cast<void *>(&gog_orig_read);
+    g_orig_slot[FileWrite] = reinterpret_cast<void *>(&gog_orig_write);
+    struct {
+        uintptr_t at;
+        void *hook;
+        void **orig;
+    } hooks[] = {{0x00CFCFE0, reinterpret_cast<void *>(&gog_hk_exists), reinterpret_cast<void **>(&g_gog_exists)},
+                 {0x00CFD070, reinterpret_cast<void *>(&gog_hk_size), reinterpret_cast<void **>(&g_gog_size)},
+                 {0x00CFD110, reinterpret_cast<void *>(&gog_hk_read), reinterpret_cast<void **>(&g_gog_read)},
+                 {0x00CFD1B0, reinterpret_cast<void *>(&gog_hk_write), reinterpret_cast<void **>(&g_gog_write)}};
+    for (auto &h : hooks) {
+        MH_STATUS st = MH_CreateHook(reinterpret_cast<void *>(h.at), h.hook, h.orig);
+        if (st == MH_OK)
+            st = MH_EnableHook(reinterpret_cast<void *>(h.at));
+        if (st != MH_OK) {
+            logf("storage: GOG hook at %08X failed: %s", unsigned(h.at), MH_StatusToString(st));
+            return false;
+        }
+    }
+    InterlockedExchange(&g_patched, 1);
+    logf("%s: GOG's RemoteStorage wrappers hooked%s%s", g_block ? "save-guard: ACTIVE, storage" : "storage",
+         g_block ? ", writes blocked" : " (saves allowed)",
+         g_private_storage ? "; files in gog_storage\\ (private_storage=1)" : "; files in GOG Galaxy's storage");
+    return true;
+}
+
 } // namespace
 
 bool save_guard_install(bool block)
 {
     g_block = block;
     InitializeCriticalSection(&g_save_lock);
+    if (game::build() == game::BUILD_GOG)
+        return gog_install();
     HMODULE steam = nullptr;
     for (int i = 0; i < 500 && !steam; ++i) { // wait up to 5 s for the static import
         steam = GetModuleHandleA("steam_api.dll");
@@ -855,8 +962,11 @@ uint32_t storage_guest_sigs(uint32_t *read, bool *read_any)
 // success path). The guest never saves, so the foreign id is never written anywhere.
 bool storage_guest_patch()
 {
-    auto *at = reinterpret_cast<uint8_t *>(0x0040FA31);
-    const uint8_t want[2] = {0x75, 0x09}, patch[2] = {0xEB, 0x17};
+    // GOG's build compares the save's id with the Galaxy id (0x00CFC7F0) and also takes a save with no
+    // id: its jne at 0x0040F8D9 (75 09) becomes jmp 0x0040F905 (EB 2A), the success path.
+    bool gog = game::build() == game::BUILD_GOG;
+    auto *at = reinterpret_cast<uint8_t *>(gog ? 0x0040F8D9 : 0x0040FA31);
+    const uint8_t want[2] = {0x75, 0x09}, patch[2] = {0xEB, uint8_t(gog ? 0x2A : 0x17)};
     if (memcmp(at, patch, 2) == 0)
         return true;
     if (memcmp(at, want, 2) != 0) {

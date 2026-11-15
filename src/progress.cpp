@@ -24,6 +24,7 @@
 #include <tuple>
 #include <vector>
 
+#include "game.h"
 #include "mod.h"
 
 size_t save_block_end(const std::string &xml, size_t pos); // savecodec.cpp
@@ -765,7 +766,7 @@ void progress_guest_gold_tick()
         logf("progress: gold after a load: back to %d, this session's changes %+lld: set to %lld", g, session, want);
         g = int32_t(want);
         // and the Arisen's own member parameter in sGameSys (+0xA76D0, as the gear sync writes it)
-        uintptr_t gs = *reinterpret_cast<uintptr_t *>(0x018FA4BC);
+        uintptr_t gs = *reinterpret_cast<uintptr_t *>(game::va(0x018FA4BC));
         if (gs && gs + 0xA76D0 != prm && mem_readable(reinterpret_cast<void *>(gs + 0xA76D0 + 0x348), 4))
             *reinterpret_cast<int32_t *>(gs + 0xA76D0 + 0x348) = int32_t(want);
         last = want;

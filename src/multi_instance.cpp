@@ -11,11 +11,12 @@
 #include <cwchar>
 
 #include "MinHook.h"
+#include "game.h"
 #include "mod.h"
 
 namespace {
 
-constexpr uintptr_t kIatCreateMutexA = 0x0139D254;
+const uintptr_t kIatCreateMutexA = game::va(0x0139D254);
 using CreateMutexA_t = HANDLE(WINAPI *)(LPSECURITY_ATTRIBUTES, BOOL, LPCSTR);
 CreateMutexA_t g_real = nullptr;
 
@@ -75,8 +76,8 @@ void __attribute__((thiscall)) my_set_active(void *self, char on)
     g_set_active(self, on);
     bool coop = cfg_role() != NET_OFF;
     if (!on && coop) {
-        if (uintptr_t sys = *reinterpret_cast<uintptr_t *>(0x018D0F50))
-            *reinterpret_cast<uint8_t *>(sys + 0x2566) = 1;
+        if (uintptr_t sys = *reinterpret_cast<uintptr_t *>(game::va(0x018D0F50)))
+            *reinterpret_cast<uint8_t *>(sys + game::by_build(0x2566, 0x2565)) = 1;
         InterlockedExchange(&g_background, 1);
         logf("window: in the background: the game goes on (co-op), its pads and keyboard off meanwhile");
     } else if (on && InterlockedExchange(&g_background, 0)) {
@@ -102,7 +103,7 @@ DWORD g_bg_at, g_bg_len;
 DWORD WINAPI background_test_thread(LPVOID)
 {
     Sleep(g_bg_at);
-    uintptr_t sys = *reinterpret_cast<uintptr_t *>(0x018D0F50);
+    uintptr_t sys = *reinterpret_cast<uintptr_t *>(game::va(0x018D0F50));
     HWND hwnd = sys ? *reinterpret_cast<HWND *>(sys + 0x12C) : nullptr;
     logf("window: tests: WM_ACTIVATEAPP(FALSE) sent to %p", (void *)hwnd);
     PostMessageW(hwnd, WM_ACTIVATEAPP, FALSE, 0);
@@ -129,12 +130,12 @@ void background_test_install()
 void keep_active_install(bool tests)
 {
     g_keep_active = tests;
-    void *target = reinterpret_cast<void *>(0x00DF0ED0);
+    void *target = reinterpret_cast<void *>(game::va(0x00DF0ED0));
     MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void *>(&my_set_active), reinterpret_cast<void **>(&g_set_active));
     if (st == MH_OK)
         st = MH_EnableHook(target);
     if (!tests) {
-        void *kb = reinterpret_cast<void *>(0x00DF3D20);
+        void *kb = reinterpret_cast<void *>(game::va(0x00DF3D20));
         MH_STATUS k = MH_CreateHook(kb, reinterpret_cast<void *>(&my_keyboard_off), reinterpret_cast<void **>(&g_keyboard_off));
         if (k == MH_OK)
             k = MH_EnableHook(kb);
@@ -149,7 +150,7 @@ void keep_active_install(bool tests)
 // owner's settings. SHGetFolderPathW is imported (IAT slot 0x0139D288); for CSIDL_LOCAL_APPDATA
 // we answer "<game dir>\coop_appdata" instead.
 namespace {
-constexpr uintptr_t kIatSHGetFolderPathW = 0x0139D288;
+const uintptr_t kIatSHGetFolderPathW = game::va(0x0139D288);
 using SHGetFolderPathW_t = HRESULT(WINAPI *)(HWND, int, HANDLE, DWORD, LPWSTR);
 SHGetFolderPathW_t g_real_shgfp = nullptr;
 HRESULT WINAPI my_shgfp(HWND w, int csidl, HANDLE tok, DWORD flags, LPWSTR out)
@@ -190,7 +191,7 @@ void private_appdata_install()
 // once it exists (HWND at [[0x018D0F50]+0x12C], the handle the window procedure compares).
 bool window_place(int x, int y, int w, int h)
 {
-    uintptr_t sys = *reinterpret_cast<uintptr_t *>(0x018D0F50);
+    uintptr_t sys = *reinterpret_cast<uintptr_t *>(game::va(0x018D0F50));
     HWND hwnd = sys ? *reinterpret_cast<HWND *>(sys + 0x12C) : nullptr;
     if (!hwnd || !IsWindow(hwnd))
         return false;

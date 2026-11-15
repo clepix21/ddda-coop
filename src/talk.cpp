@@ -11,7 +11,7 @@
 
 namespace {
 
-constexpr uintptr_t kTalkStart = 0x00B99290;
+const uintptr_t kTalkStart = game::va(0x00B99290);
 using TalkStart_t = void(__fastcall *)(uintptr_t);
 TalkStart_t g_talk_orig = nullptr;
 CRITICAL_SECTION g_lock;

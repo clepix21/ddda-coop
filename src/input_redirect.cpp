@@ -20,7 +20,13 @@ namespace {
 enum { EAX = 0, ECX = 1, EDX = 2, EBX = 3, EBP = 5, ESI = 6, EDI = 7 };
 enum Global { G_INPUT = 0, G_KEYBOARD, G_MOUSE, G_CAMERA, NGLOBALS };
 // G_CAMERA: holder of the camera the stick builder turns sticks with ([[0x018D0B6C]+0x34]).
-const uint32_t kGlobalAddr[NGLOBALS] = {game::kInput, game::kKeyboard, game::kMouse, 0x018D0B6C};
+// a function, not an array: game::kInput and the others are set when the DLL loads, maybe after this file's
+// own globals (an array made from them read 0 for the input object on GOG's build, 2026-11-15)
+uint32_t global_addr(int g)
+{
+    const uint32_t a[NGLOBALS] = {game::kInput, game::kKeyboard, game::kMouse, game::va(0x018D0B6C)};
+    return a[g];
+}
 
 // address, global, register (x86 encoding), length (6 = 8B modrm, 5 = A1 for eax)
 struct Site {
@@ -31,24 +37,24 @@ struct Site {
 };
 const Site kSites[] = {
     // sQlocInput loads in the command builder
-    {0xB51FFD, G_INPUT, EBX, 6}, {0xB52199, G_INPUT, EBX, 6}, {0xB5223A, G_INPUT, EBX, 6}, {0xB52544, G_INPUT, ESI, 6},
-    {0xB52A52, G_INPUT, EBP, 6}, {0xB52AB4, G_INPUT, EBP, 6}, {0xB52ADB, G_INPUT, EBP, 6}, {0xB52B3D, G_INPUT, EDX, 6},
-    {0xB52B50, G_INPUT, EAX, 5}, {0xB52BB0, G_INPUT, EAX, 5}, {0xB52C26, G_INPUT, EAX, 5}, {0xB52C50, G_INPUT, EDX, 6},
-    {0xB52C75, G_INPUT, EAX, 5}, {0xB52C9E, G_INPUT, EAX, 5}, {0xB52CC3, G_INPUT, EAX, 5}, {0xB52D06, G_INPUT, EAX, 5},
-    {0xB52D60, G_INPUT, ECX, 6}, {0xB52DB2, G_INPUT, EDX, 6}, {0xB52DF0, G_INPUT, EAX, 5}, {0xB52E30, G_INPUT, ECX, 6},
-    {0xB52E5A, G_INPUT, EDX, 6}, {0xB52E82, G_INPUT, EAX, 5}, {0xB52EA9, G_INPUT, ECX, 6}, {0xB52ED1, G_INPUT, EDX, 6},
-    {0xB52EF9, G_INPUT, EAX, 5}, {0xB52F20, G_INPUT, ECX, 6}, {0xB52F48, G_INPUT, EDX, 6}, {0xB52F70, G_INPUT, EAX, 5},
-    {0xB52F97, G_INPUT, ECX, 6}, {0xB52FBF, G_INPUT, EDX, 6}, {0xB52FE7, G_INPUT, EAX, 5},
+    {game::va(0xB51FFD), G_INPUT, EBX, 6}, {game::va(0xB52199), G_INPUT, EBX, 6}, {game::va(0xB5223A), G_INPUT, EBX, 6}, {game::va(0xB52544), G_INPUT, ESI, 6},
+    {game::va(0xB52A52), G_INPUT, EBP, 6}, {game::va(0xB52AB4), G_INPUT, EBP, 6}, {game::va(0xB52ADB), G_INPUT, EBP, 6}, {game::va(0xB52B3D), G_INPUT, EDX, 6},
+    {game::va(0xB52B50), G_INPUT, EAX, 5}, {game::va(0xB52BB0), G_INPUT, EAX, 5}, {game::va(0xB52C26), G_INPUT, EAX, 5}, {game::va(0xB52C50), G_INPUT, EDX, 6},
+    {game::va(0xB52C75), G_INPUT, EAX, 5}, {game::va(0xB52C9E), G_INPUT, EAX, 5}, {game::va(0xB52CC3), G_INPUT, EAX, 5}, {game::va(0xB52D06), G_INPUT, EAX, 5},
+    {game::va(0xB52D60), G_INPUT, ECX, 6}, {game::va(0xB52DB2), G_INPUT, EDX, 6}, {game::va(0xB52DF0), G_INPUT, EAX, 5}, {game::va(0xB52E30), G_INPUT, ECX, 6},
+    {game::va(0xB52E5A), G_INPUT, EDX, 6}, {game::va(0xB52E82), G_INPUT, EAX, 5}, {game::va(0xB52EA9), G_INPUT, ECX, 6}, {game::va(0xB52ED1), G_INPUT, EDX, 6},
+    {game::va(0xB52EF9), G_INPUT, EAX, 5}, {game::va(0xB52F20), G_INPUT, ECX, 6}, {game::va(0xB52F48), G_INPUT, EDX, 6}, {game::va(0xB52F70), G_INPUT, EAX, 5},
+    {game::va(0xB52F97), G_INPUT, ECX, 6}, {game::va(0xB52FBF), G_INPUT, EDX, 6}, {game::va(0xB52FE7), G_INPUT, EAX, 5},
     // keyboard / mouse loads in the command builder
-    {0xB52117, G_KEYBOARD, EDX, 6}, {0xB52182, G_MOUSE, EBX, 6}, {0xB521D2, G_KEYBOARD, EDI, 6}, {0xB52204, G_MOUSE, EDX, 6},
-    {0xB522A7, G_KEYBOARD, EDI, 6}, {0xB522D9, G_MOUSE, EDX, 6}, {0xB5233D, G_KEYBOARD, EDX, 6}, {0xB5236B, G_MOUSE, ECX, 6},
-    {0xB528B5, G_MOUSE, ECX, 6},
+    {game::va(0xB52117), G_KEYBOARD, EDX, 6}, {game::va(0xB52182), G_MOUSE, EBX, 6}, {game::va(0xB521D2), G_KEYBOARD, EDI, 6}, {game::va(0xB52204), G_MOUSE, EDX, 6},
+    {game::va(0xB522A7), G_KEYBOARD, EDI, 6}, {game::va(0xB522D9), G_MOUSE, EDX, 6}, {game::va(0xB5233D), G_KEYBOARD, EDX, 6}, {game::va(0xB5236B), G_MOUSE, ECX, 6},
+    {game::va(0xB528B5), G_MOUSE, ECX, 6},
     // camera holder load in the stick builder (FUN_00B51EE0)
-    {0xB51EF9, G_CAMERA, ECX, 6},
+    {game::va(0xB51EF9), G_CAMERA, ECX, 6},
     // keyboard / mouse loads in the action helpers (FUN_0040D200, FUN_0040D820 and neighbours)
-    {0x40D22A, G_KEYBOARD, EDX, 6}, {0x40D230, G_MOUSE, EAX, 5}, {0x40D568, G_KEYBOARD, EDX, 6}, {0x40D598, G_MOUSE, ECX, 6},
-    {0x40D6BD, G_KEYBOARD, EDX, 6}, {0x40D6EB, G_MOUSE, ECX, 6}, {0x40D7BD, G_KEYBOARD, EDX, 6}, {0x40D7EB, G_MOUSE, ECX, 6},
-    {0x40D898, G_KEYBOARD, EDX, 6}, {0x40D89E, G_MOUSE, EBX, 6},
+    {game::va(0x40D22A), G_KEYBOARD, EDX, 6}, {game::va(0x40D230), G_MOUSE, EAX, 5}, {game::va(0x40D568), G_KEYBOARD, EDX, 6}, {game::va(0x40D598), G_MOUSE, ECX, 6},
+    {game::va(0x40D6BD), G_KEYBOARD, EDX, 6}, {game::va(0x40D6EB), G_MOUSE, ECX, 6}, {game::va(0x40D7BD), G_KEYBOARD, EDX, 6}, {game::va(0x40D7EB), G_MOUSE, ECX, 6},
+    {game::va(0x40D898), G_KEYBOARD, EDX, 6}, {game::va(0x40D89E), G_MOUSE, EBX, 6},
 };
 
 DWORD g_tls[NGLOBALS] = {TLS_OUT_OF_INDEXES, TLS_OUT_OF_INDEXES, TLS_OUT_OF_INDEXES, TLS_OUT_OF_INDEXES};
@@ -60,7 +66,7 @@ alignas(16) uint8_t g_zero[0x4000] = {}; // "nothing pressed" device for keyboar
 bool site_matches(const Site &s)
 {
     auto p = reinterpret_cast<const uint8_t *>(s.addr);
-    const uint32_t global = kGlobalAddr[s.global];
+    const uint32_t global = global_addr(s.global);
     if (s.len == 5)
         return s.reg == EAX && p[0] == 0xA1 && memcmp(p + 1, &global, 4) == 0;
     return p[0] == 0x8B && p[1] == uint8_t(0x05 | (s.reg << 3)) && memcmp(p + 2, &global, 4) == 0;
@@ -112,7 +118,7 @@ bool input_redirect_install()
     const uint8_t regs[] = {EAX, ECX, EDX, EBX, EBP, ESI, EDI};
     for (int g = 0; g < NGLOBALS; ++g)
         for (uint8_t r : regs)
-            g_stub_for[g][r] = emit_stub(p, r, 0xE10 + 4 * g_tls[g], kGlobalAddr[g]); // TEB.TlsSlots, x86
+            g_stub_for[g][r] = emit_stub(p, r, 0xE10 + 4 * g_tls[g], global_addr(g)); // TEB.TlsSlots, x86
     DWORD old;
     VirtualProtect(g_stubs, 0x1000, PAGE_EXECUTE_READ, &old);
     for (const Site &s : kSites) {

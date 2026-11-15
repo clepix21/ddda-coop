@@ -93,13 +93,15 @@ int g_nseen = 0;
 
 const char *class_name(uintptr_t vt)
 {
-    switch (vt) {
-    case game::kVtPlayer: return "uPlayer";
-    case game::kVtCmc: return "uCmc";
-    case game::kVtNpc: return "uNpc";
-    case game::kVtPlayerBase: return "uPlayerBase";
-    default: return "other";
-    }
+    if (vt == game::kVtPlayer)
+        return "uPlayer";
+    if (vt == game::kVtCmc)
+        return "uCmc";
+    if (vt == game::kVtNpc)
+        return "uNpc";
+    if (vt == game::kVtPlayerBase)
+        return "uPlayerBase";
+    return "other";
 }
 
 void __fastcall hk_update(uintptr_t ch)
@@ -176,7 +178,7 @@ bool probe_install()
     if (st == MH_OK)
         st = MH_EnableHook(target);
     logf("probe: hook UpdateCommands %p: %s", target, MH_StatusToString(st));
-    void *fin = reinterpret_cast<void *>(0x0084BF60);
+    void *fin = reinterpret_cast<void *>(game::va(0x0084BF60));
     MH_STATUS st2 = MH_CreateHook(fin, reinterpret_cast<void *>(&hk_finalize), reinterpret_cast<void **>(&g_orig_finalize));
     if (st2 == MH_OK)
         st2 = MH_EnableHook(fin);

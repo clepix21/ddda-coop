@@ -16,7 +16,7 @@
 
 namespace {
 
-constexpr uintptr_t kRiftStoneUpdate = 0x00C495A0;
+const uintptr_t kRiftStoneUpdate = game::va(0x00C495A0);
 constexpr uintptr_t kState = 0x28, kFlags = 0x29A6, kA47 = 0x291C, kPrompt = 0x29F0;
 using Update_t = void(__fastcall *)(uintptr_t);
 Update_t g_orig = nullptr;

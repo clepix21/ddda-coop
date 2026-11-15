@@ -178,7 +178,7 @@ const char *action_class(int n)
 {
     if (n < 0 || n > 0x201)
         return "";
-    uintptr_t dti = game::at<uintptr_t>(0x01866C48 + uintptr_t(n) * 0x44, 0);
+    uintptr_t dti = game::at<uintptr_t>(game::va(0x01866C48) + uintptr_t(n) * 0x44, 0);
     const char *name = dti ? game::at<const char *>(dti, 4) : nullptr;
     return name && mem_readable(name, 1) ? name : "";
 }
@@ -346,36 +346,36 @@ extern "C" __attribute__((naked)) void actions_hp_thunk()
 bool actions_install()
 {
     {
-        void *t = reinterpret_cast<void *>(0x00888DA0);
+        void *t = reinterpret_cast<void *>(game::va(0x00888DA0));
         MH_STATUS st = MH_CreateHook(t, reinterpret_cast<void *>(&actions_hp_thunk), &g_hp_orig);
         if (st == MH_OK)
             st = MH_EnableHook(t);
         logf("actions: hook HpChange 00888DA0: %s", MH_StatusToString(st));
     }
     {
-        void *t = reinterpret_cast<void *>(0x006DEC80);
+        void *t = reinterpret_cast<void *>(game::va(0x006DEC80));
         MH_STATUS st = MH_CreateHook(t, reinterpret_cast<void *>(&hk_icon_update), reinterpret_cast<void **>(&g_icon_orig));
         if (st == MH_OK)
             st = MH_EnableHook(t);
         logf("actions: hook SaveIconUpdate 006DEC80: %s", MH_StatusToString(st));
     }
     {
-        void *t = reinterpret_cast<void *>(0x005AADC0);
+        void *t = reinterpret_cast<void *>(game::va(0x005AADC0));
         MH_STATUS st = MH_CreateHook(t, reinterpret_cast<void *>(&hk_msg_update), reinterpret_cast<void **>(&g_msg_orig));
         if (st == MH_OK)
             st = MH_EnableHook(t);
         logf("actions: hook PawnMessageUpdate 005AADC0: %s", MH_StatusToString(st));
     }
-    for (auto [addr, hook, orig] : {std::tuple<uintptr_t, void *, void **>{0x00B540B0, reinterpret_cast<void *>(&hk_set210),
+    for (auto [addr, hook, orig] : {std::tuple<uintptr_t, void *, void **>{game::va(0x00B540B0), reinterpret_cast<void *>(&hk_set210),
                                                                             reinterpret_cast<void **>(&g_set210_orig)},
-                                    std::tuple<uintptr_t, void *, void **>{0x00B6B270, reinterpret_cast<void *>(&hk_set214),
+                                    std::tuple<uintptr_t, void *, void **>{game::va(0x00B6B270), reinterpret_cast<void *>(&hk_set214),
                                                                             reinterpret_cast<void **>(&g_set214_orig)}}) {
         MH_STATUS st = MH_CreateHook(reinterpret_cast<void *>(addr), hook, orig);
         if (st == MH_OK)
             st = MH_EnableHook(reinterpret_cast<void *>(addr));
         logf("actions: hook SetAction %08X: %s", unsigned(addr), MH_StatusToString(st));
     }
-    void *target = reinterpret_cast<void *>(0x00B78BF0);
+    void *target = reinterpret_cast<void *>(game::va(0x00B78BF0));
     MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void *>(&hk_fall_check), reinterpret_cast<void **>(&g_fall_orig));
     if (st == MH_OK)
         st = MH_EnableHook(target);

@@ -24,8 +24,8 @@ function Capture([System.Diagnostics.Process]$p) {
 }
 # the copies: DDDA\ is the host, DDDA2\ the guest (DDDA3\ a second guest, not shown)
 $procs = Get-Process DDDA -ErrorAction SilentlyContinue
-$hostP = $procs | Where-Object { $_.Path -like "*\DDDA\DDDA.exe" } | Select-Object -First 1
-$guestP = $procs | Where-Object { $_.Path -like "*\DDDA2\DDDA.exe" } | Select-Object -First 1
+$hostP = $procs | Where-Object { $_.Path -like "*\DDDA\DDDA.exe" -or $_.Path -like "*\gog1\DDDA.exe" } | Select-Object -First 1
+$guestP = $procs | Where-Object { $_.Path -like "*\DDDA2\DDDA.exe" -or $_.Path -like "*\gog2\DDDA.exe" } | Select-Object -First 1
 $out = New-Object System.Drawing.Bitmap 1920, 540
 $g = [System.Drawing.Graphics]::FromImage($out); $g.Clear([System.Drawing.Color]::Black)
 $x = 0

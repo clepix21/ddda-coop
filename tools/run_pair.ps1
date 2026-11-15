@@ -38,9 +38,14 @@ param(
     [string]$Guest3Bot = "",
     [string[]]$Guest3Ini = @(),
     [string[]]$Guest3Bridge = @(),
-    [double]$Guest3StartAt = 0
+    [double]$Guest3StartAt = 0,
+    # GOG's build: the copies J:\coop-test\gog1..gog4, kept off GOG Galaxy (no_galaxy=1) with their saves
+    # in their own folder (private_storage=1); the owner's GOG Galaxy storage is checked unchanged too
+    [switch]$Gog,
+    [string]$GogStorage = "$env:LOCALAPPDATA\GOG.com\Galaxy\Applications\49987265717041704\Storage"
 )
 function Get-SaveHashes {
+    if ($Gog -and (Test-Path $GogStorage)) { Get-ChildItem $GogStorage -Recurse -File | Sort-Object FullName | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" } }
     Get-ChildItem $SaveDir -Recurse -File | Sort-Object FullName | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" }
     "$OwnerConfig|$((Get-FileHash $OwnerConfig).Hash)"   # the owner's game settings must not change either
 }
@@ -56,7 +61,18 @@ if ($Guest2Ini.Count -gt 0) {
     $sides += @{ Name = "guest2"; Dir = "J:\coop-test\DDDA3"; Bot = $Guest2Bot; Ini = $Guest2Ini; Bridge = $Guest2Bridge; Window = "-1920,540,960,540"; StartAt = $Guest2StartAt }
 }
 if ($Guest3Ini.Count -gt 0) {
-    $sides += @{ Name = "guest3"; Dir = "J:\coop-test\DDDA4"; Bot = $Guest3Bot; Ini = $Guest3Ini; Bridge = $Guest3Bridge; Window = "-960,0,960,540"; StartAt = $Guest3StartAt }
+    $sides += @{ Name = "guest3"; Dir = $(if ($Gog) { "J:\coop-test\gog4" } else { "J:\coop-test\DDDA4" }); Bot = $Guest3Bot; Ini = $Guest3Ini; Bridge = $Guest3Bridge; Window = "-960,0,960,540"; StartAt = $Guest3StartAt }
+}
+# COOP_GOG=1 (environment): every suite runs on the GOG copies without a change of its own
+if ($env:COOP_GOG -eq "1") { $Gog = $true }
+if ($Gog) {
+    $k = 1
+    foreach ($s in $sides) {
+        if ($s.Name -ne "guest3") { $s.Dir = "J:\coop-test\gog$k" }
+        $k++
+        # the game signs in to GOG Galaxy like the Steam build to Steam (its title waits for it); COOP_NO_GALAXY=1 keeps it off
+        $s.Ini = @("private_storage=1") + $(if ($env:COOP_NO_GALAXY -eq "1") { @("no_galaxy=1") } else { @() }) + $s.Ini
+    }
 }
 # Real Steam (rich presence on the owner's account, P2P to friends) only when asked for explicitly.
 foreach ($s in $sides) {
@@ -81,7 +97,15 @@ function Start-Side($s, $el) {
     $cfgDir = Join-Path $d "coop_appdata\CAPCOM\DRAGONS DOGMA DARK ARISEN"
     New-Item -ItemType Directory -Force $cfgDir | Out-Null
     (Get-Content $OwnerConfig) -replace '^FullScreen=ON$', 'FullScreen=OFF' | Set-Content (Join-Path $cfgDir "config.ini") -Encoding ascii
-    if ($s.Bot) { Copy-Item $s.Bot (Join-Path $d "bot.txt") }
+    if ($s.Bot -and $Gog) {
+        # GOG: loading a game first tries GOG's pawn server and shows "connection failed" (2026-11-15): one more
+        # A at 93 s for the load bots (their last A is at 82 s), the steps kept in time order
+        $steps = @(Get-Content $s.Bot | ForEach-Object { $i = 0 } { $l = ($_ -split '#')[0].Trim(); if ($l -match '^\d+') { [pscustomobject]@{ T = [int64]($l -split '\s+')[0]; I = $i++; L = $l } } })
+        if ($steps | Where-Object { $_.L -match '^82000\s+0\s+1000' }) {
+            $steps += [pscustomobject]@{ T = 93000; I = 100000; L = "93000 0 1000" }, [pscustomobject]@{ T = 93300; I = 100001; L = "93300 0 0" }
+        }
+        $steps | Sort-Object T, I | ForEach-Object { $_.L } | Set-Content (Join-Path $d "bot.txt") -Encoding ascii
+    } elseif ($s.Bot) { Copy-Item $s.Bot (Join-Path $d "bot.txt") }
     $s.Proc = Start-Process (Join-Path $d "DDDA.exe") -WorkingDirectory $d -PassThru
     $s.Guard = $false; $s.BridgeSent = ($s.Bridge.Count -eq 0); $s.Launched = $el
 }

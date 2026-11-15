@@ -27,11 +27,11 @@ namespace {
 
 using AddItem_t = int(__attribute__((thiscall)) *)(void *mgr, unsigned item, unsigned count, int who, int a5,
                                                     unsigned flags, unsigned a7);
-constexpr uintptr_t kAddItem = 0x0045E680, kItemManager = 0x018FA4D4, kPickupCall = 0x00C29471;
+const uintptr_t kAddItem = game::va(0x0045E680), kItemManager = game::va(0x018FA4D4), kPickupCall = game::va(0x00C29471);
 // Moving an item between bags and the storage ("Retirer" to oneself or to a pawn, giving to a pawn) adds it
 // through 0x0045FB56; a shop purchase through 0x006E676E (shop test 2026-11-06 23:09-23:11: item 727 bought,
 // to 0; item 22 withdrawn, to 0; item 50 given to the pawn showing the host, to 2).
-constexpr uintptr_t kMoveCall = 0x0045FB56, kShopCall = 0x006E676E;
+const uintptr_t kMoveCall = game::va(0x0045FB56), kShopCall = game::va(0x006E676E);
 // A gift rides the pickup stream: flags bit 31 set, bits 24-25 = the player it is for (item flags use the
 // low bits: quality in the low 4).
 constexpr unsigned kGift = 0x80000000u, kItemFlags = 0x00FFFFFFu;
@@ -98,7 +98,7 @@ int __attribute__((thiscall)) hk_add_item(void *mgr, unsigned item, unsigned cou
 // are not its character's), so a sale there turned the host's items into the guest's gold: the gold of a
 // sale is not kept for its own save (progress_guest_gold_tick takes it off).
 using AddGold_t = void(__attribute__((thiscall)) *)(void *self, int amount);
-constexpr uintptr_t kAddGold = 0x006E08D0;
+const uintptr_t kAddGold = game::va(0x006E08D0);
 AddGold_t g_orig_gold = nullptr;
 volatile LONG g_sale_gold = 0;
 
@@ -106,7 +106,7 @@ void __attribute__((thiscall)) hk_add_gold(void *self, int amount)
 {
     uintptr_t from = uintptr_t(__builtin_return_address(0));
     g_orig_gold(self, amount);
-    bool sale = from >= 0x006E3300 && from < 0x006E3400;
+    bool sale = from >= game::va(0x006E3300) && from < game::va(0x006E3400);
     if (cfg_debug_log())
         logf("loot: gold +%d from %08X%s", amount, unsigned(from), sale ? " (a sale)" : "");
     if (sale && amount > 0 && net_role() == NET_GUEST)

@@ -17,7 +17,7 @@ void *g_stage_load_orig = nullptr;
 
 // Loads that did not come from an aStage jump request (retry after death, last save, a game loaded
 // from the title): the host counts them so the guest reloads too (net.cpp).
-constexpr uintptr_t kJumpLoadRet = 0x0050F28A; // FUN_0050EF80's call, the gate / jump path
+const uintptr_t kJumpLoadRet = game::va(0x0050F28A); // FUN_0050EF80's call, the gate / jump path
 volatile LONG g_other_loads = 0;
 volatile LONG g_last_load_tick = 0, g_last_load_stage = -1; // any load, for the guest
 
