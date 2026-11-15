@@ -790,8 +790,17 @@ void update_controls()
     ShowWindow(g_keep, g_page == PAGE_PLAY && guest_role() ? SW_SHOW : SW_HIDE);
     ShowWindow(g_update, g_page == PAGE_PLAY && !g_update_tag.empty() ? SW_SHOW : SW_HIDE);
     EnableWindow(g_launch, g_supported);
-    if (g_lan)
+    if (g_lan) { // GOG's game has no Steam: the switch shows on and cannot be turned off
         EnableWindow(g_lan, !g_gog);
+        for (Switch &sw : g_switches)
+            if (sw.h == g_lan && g_gog && !sw.on) {
+                sw.on = true;
+                SetWindowTextW(g_lan, (sw.label + tr(L" : activé")).c_str());
+                InvalidateRect(g_lan, nullptr, FALSE);
+            }
+    }
+    if (g_code_edit) // the guest's field: a Steam code, or an address in LAN
+        SendMessageW(g_code_edit, EM_SETCUEBANNER, TRUE, LPARAM(lan_mode() ? L"192.168.1.20" : L"ABC-DEFG"));
 }
 
 void check_game()
@@ -856,9 +865,35 @@ std::wstring documents_dir()
 
 // Copies Steam\userdata\<id>\367500\remote of every account on this PC to
 // Documents\DDDA Coop\Sauvegardes\<date>\<id>. Returns the folder, or empty on failure.
+// GOG's game: its saves are in GOG Galaxy's storage for the game (every Galaxy account of this Windows
+// user), copied to <date>\GOG.
+std::wstring gog_storage_dir()
+{
+    wchar_t buf[MAX_PATH] = {};
+    if (!GetEnvironmentVariableW(L"LOCALAPPDATA", buf, MAX_PATH))
+        return {};
+    return std::wstring(buf) + L"\\GOG.com\\Galaxy\\Applications\\49987265717041704\\Storage";
+}
+
 std::wstring backup_saves(int *accounts)
 {
     *accounts = 0;
+    if (g_gog) {
+        std::wstring src = gog_storage_dir();
+        if (src.empty() || !is_dir(src))
+            return {};
+        wchar_t stamp[32];
+        SYSTEMTIME t;
+        GetLocalTime(&t);
+        swprintf(stamp, 32, L"%04d-%02d-%02d_%02d-%02d-%02d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+        std::wstring dest = documents_dir() + L"\\DDDA Coop\\Sauvegardes\\" + stamp;
+        for (int n = 2; exists(dest); ++n)
+            dest = documents_dir() + L"\\DDDA Coop\\Sauvegardes\\" + stamp + L"_" + std::to_wstring(n);
+        if (!copy_tree(src, dest + L"\\GOG"))
+            return {};
+        *accounts = 1;
+        return dest;
+    }
     if (g_steam_dir.empty())
         return {};
     wchar_t stamp[32];
@@ -1884,7 +1919,7 @@ ButtonKind kind_of(int id)
         return BTN_NAV;
     if (id == ID_HOST || id == ID_GUEST || id == ID_SOLO)
         return BTN_ROLE;
-    if (id == ID_OWN_CHAR || id == ID_KEEP || id == ID_DEBUG || id == ID_CHECK_UPDATES)
+    if (id == ID_OWN_CHAR || id == ID_KEEP || id == ID_DEBUG || id == ID_CHECK_UPDATES || id == ID_LAN)
         return BTN_SWITCH;
     return id == ID_LAUNCH ? BTN_PRIMARY : id == ID_REMOVE ? BTN_DANGER : id == ID_EVENTS_TOGGLE ? BTN_GHOST : BTN_SECONDARY;
 }
