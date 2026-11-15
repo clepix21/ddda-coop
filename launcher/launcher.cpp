@@ -45,7 +45,7 @@ enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
     ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP,
     ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_BACKUP_LIST, ID_UPDATE, ID_CHECK_UPDATES, ID_PROJECT, ID_LANG,
-    ID_LAN,
+    ID_LAN, ID_STORE_STEAM, ID_STORE_GOG, ID_GOG_HELP,
     ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
 };
 // the screens, in the sidebar's order
@@ -125,6 +125,11 @@ std::wstring g_test_update; // --test-update <tag>
 int g_start_page = 0;       // --page <n>: the screen shown first (after a change of language)
 bool g_supported = false;
 bool g_gog = false; // the game folder holds GOG's DDDA.exe: no Steam, LAN / direct IP only
+// the version picked in Paramètres (0 Steam, 1 GOG): follows the folder's DDDA.exe when it is a known one,
+// else the last button pressed; the two installs this PC has, found at the start
+int g_store = 0;
+std::wstring g_steam_game, g_gog_game;
+HWND g_store_steam = nullptr, g_store_gog = nullptr;
 COLORREF g_state_color = kMuted;
 FILETIME g_launch_time = {};
 long long g_log_pos = 0;
@@ -782,6 +787,7 @@ void update_controls()
         bool salon = g_page == PAGE_SALON;
         ShowWindow(g_copy_code, salon && g_role == ROLE_HOST ? SW_SHOW : SW_HIDE);
         EnableWindow(g_copy_code, lan_mode() || g_self_steam != 0);
+        SetWindowTextW(g_copy_code, lan_mode() ? tr(L"&Copier l'adresse") : tr(L"&Copier le code"));
         ShowWindow(g_code_edit, salon && g_role == ROLE_GUEST ? SW_SHOW : SW_HIDE);
         ShowWindow(g_code_clear, salon && g_role == ROLE_GUEST ? SW_SHOW : SW_HIDE);
     }
@@ -820,6 +826,19 @@ void check_game()
                                   : g_supported ? tr(L"Version du jeu prise en charge.")
                                                 : tr(L"Version de DDDA.exe non prise en charge : le mod ne marcherait pas."));
         g_game_state = g_supported ? 2 : 1;
+        if (g_supported)
+            g_store = g_gog ? 1 : 0;
+        // the first time a GOG game is chosen: how the GOG version plays, by itself once
+        if (g_gog && g_wnd && setting(L"gog_help_seen", L"0") != L"1") {
+            WritePrivateProfileStringW(L"launcher", L"gog_help_seen", L"1", settings_path().c_str());
+            PostMessageW(g_wnd, WM_COMMAND, ID_GOG_HELP, 0);
+        }
+    }
+    if (g_store_steam) { // the choice's names carry the state for screen readers, as the role cards do
+        SetWindowTextW(g_store_steam, (std::wstring(L"Steam") + (g_store == 0 ? tr(L", choisi") : L"")).c_str());
+        SetWindowTextW(g_store_gog, (std::wstring(L"GOG") + (g_store == 1 ? tr(L", choisi") : L"")).c_str());
+        InvalidateRect(g_store_steam, nullptr, FALSE);
+        InvalidateRect(g_store_gog, nullptr, FALSE);
     }
     update_controls();
     if (g_wnd)
@@ -1059,6 +1078,15 @@ void show_help()
                 tr(L"DDDA Coop \u2013 Aide"), MB_ICONINFORMATION | MB_OK);
 }
 
+// How the GOG version plays: no Steam, so the players meet by address; shown by Param\u00e8tres' button, and
+// once by itself the first time a GOG game is chosen.
+void show_gog_help()
+{
+    MessageBoxW(g_wnd,
+                tr(L"Sans Steam, on se rejoint par adresse IP (port UDP 27101). \u00ab\u00a0Jouer sans Steam\u00a0\u00bb reste donc activ\u00e9.\n\n1. L'h\u00f4te lance le jeu. Le Salon affiche ses adresses : \u00ab\u00a0Copier l'adresse\u00a0\u00bb et envoie-la \u00e0 ton ami.\n2. L'invit\u00e9 choisit \u00ab\u00a0Invit\u00e9\u00a0\u00bb, colle cette adresse dans le Salon (par exemple 192.168.1.20), puis lance le jeu.\n3. Sur le m\u00eame r\u00e9seau (m\u00eame box) : rien d'autre \u00e0 faire.\n    Par internet : l'h\u00f4te ouvre le port UDP 27101 sur sa box (redirection vers son PC), ou vous utilisez tous les deux un VPN de type r\u00e9seau local et l'adresse qu'il donne.\n\n\u00c0 savoir\n  \u2022 Garde GOG Galaxy ouvert et connect\u00e9 : sans lui, le jeu peut rester bloqu\u00e9 sur \u00ab\u00a0Accessing server...\u00a0\u00bb.\n  \u2022 En chargeant ta partie, le jeu GOG peut afficher \u00ab\u00a0\u00c9chec de la connexion\u00a0\u00bb (le serveur des pions de GOG) : appuie sur A ou Entr\u00e9e, la partie se charge.\n  \u2022 Tes sauvegardes GOG Galaxy sont copi\u00e9es \u00e0 chaque lancement dans Documents\\DDDA Coop\\Sauvegardes.\n  \u2022 Un ami sur Steam peut te rejoindre s'il active \u00ab\u00a0Jouer sans Steam\u00a0\u00bb dans ses Param\u00e8tres."),
+                tr(L"DDDA Coop \u2013 La version GOG"), MB_ICONINFORMATION | MB_OK);
+}
+
 void on_launch()
 {
     check_game();
@@ -1198,6 +1226,30 @@ void on_browse()
         }
         CoTaskMemFree(id);
     }
+}
+
+// Paramètres' Steam / GOG choice: the game folder becomes that version's install on this PC; when it is not
+// found, the folder is asked for.
+void pick_store(int store)
+{
+    g_store = store;
+    std::wstring before = g_game_dir;
+    const std::wstring &dir = store == 1 ? g_gog_game : g_steam_game;
+    if (dir.empty()) {
+        ask(store == 1 ? tr(L"La version GOG du jeu n'a pas été trouvée sur ce PC. Choisis le dossier qui contient son DDDA.exe.")
+                       : tr(L"La version Steam du jeu n'a pas été trouvée sur ce PC. Choisis le dossier qui contient son DDDA.exe."),
+            MB_ICONINFORMATION);
+        on_browse();
+    } else {
+        SetWindowTextW(g_game_edit, dir.c_str());
+        check_game();
+        save_settings();
+    }
+    check_game(); // the choice's look, also when the folder was not changed
+    if (g_supported && g_game_dir != before && (store == 1) != g_gog) // a folder of the other version was chosen
+        ask(store == 1 ? tr(L"Ce dossier contient la version Steam du jeu, pas celle de GOG.")
+                       : tr(L"Ce dossier contient la version GOG du jeu, pas celle de Steam."),
+            MB_ICONWARNING);
 }
 
 // ---- coop.log: turn the mod's lines into French states and events ----
@@ -1735,7 +1787,7 @@ void hover_step(HWND parent)
         KillTimer(parent, kHoverTimer);
 }
 
-enum ButtonKind { BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_NAV, BTN_ROLE, BTN_SWITCH, BTN_DANGER };
+enum ButtonKind { BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_NAV, BTN_ROLE, BTN_SWITCH, BTN_DANGER, BTN_CHOICE };
 // the role cards: icon (Segoe MDL2 Assets), title, short description
 struct RoleCard {
     const wchar_t *icon, *title, *text;
@@ -1867,6 +1919,9 @@ void draw_button(const DRAWITEMSTRUCT *d)
         fill = theme::mix(theme::kSurface, theme::kBad, pressed ? 0.28f : 0.06f + 0.14f * hv);
         border = theme::mix(theme::kBorder, theme::kBad, 0.7f);
         text = theme::kBad;
+    } else if (kind == BTN_CHOICE && (d->CtlID == ID_STORE_GOG) == (g_store == 1)) { // the version picked
+        fill = theme::mix(theme::kSurface, theme::kAccent, pressed ? 0.32f : 0.18f + 0.08f * hv);
+        border = theme::kAccent;
     } else {
         fill = theme::mix(theme::kSurfaceRaised, theme::kSurfaceHover, pressed ? 1.f : hv);
         border = theme::kBorder;
@@ -1883,6 +1938,10 @@ void draw_button(const DRAWITEMSTRUCT *d)
     }
     wchar_t label[256] = L"";
     GetWindowTextW(d->hwndItem, label, 256);
+    if (kind == BTN_CHOICE) { // the name without ", choisi" (screen readers), a check on the one picked
+        bool gog = d->CtlID == ID_STORE_GOG, picked = gog == (g_store == 1);
+        swprintf(label, 256, L"%ls%ls", picked ? L"\u2714  " : L"", gog ? L"GOG" : L"Steam");
+    }
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, text);
     HGDIOBJ old = SelectObject(dc, HFONT(SendMessageW(d->hwndItem, WM_GETFONT, 0, 0)));
@@ -1921,6 +1980,8 @@ ButtonKind kind_of(int id)
         return BTN_ROLE;
     if (id == ID_OWN_CHAR || id == ID_KEEP || id == ID_DEBUG || id == ID_CHECK_UPDATES || id == ID_LAN)
         return BTN_SWITCH;
+    if (id == ID_STORE_STEAM || id == ID_STORE_GOG)
+        return BTN_CHOICE;
     return id == ID_LAUNCH ? BTN_PRIMARY : id == ID_REMOVE ? BTN_DANGER : id == ID_EVENTS_TOGGLE ? BTN_GHOST : BTN_SECONDARY;
 }
 
@@ -1928,7 +1989,7 @@ ButtonKind kind_of(int id)
 // time, so the window fits a laptop's screen (~768 px high) without scrolling (owner's direction,
 // 2026-10-29). Each screen's controls are listed in g_pages and shown or hidden together.
 const int kW = 960, kH = 600, kSide = 84, kX = kSide + 28, kCW = kW - kX - 28, kHeaderH = 112;
-const int kDangerY = 298; // Paramètres: the sensitive card's top
+const int kDangerY = 346; // Paramètres: the sensitive card's top
 int g_height = kH;
 std::vector<HWND> g_pages[PAGE_COUNT];
 int g_building = PAGE_PLAY; // the screen the controls made now belong to
@@ -2030,7 +2091,7 @@ void build_window()
     // ---- Sauvegardes ----
     g_building = PAGE_SAVES;
     add(make(L"STATIC",
-             tr(L"Une copie de secours de tes sauvegardes Steam de Dragon's Dogma est faite à chaque lancement. Tu peux en faire une tout de suite."),
+             tr(L"Une copie de secours de tes sauvegardes de Dragon's Dogma (Steam ou GOG Galaxy) est faite à chaque lancement. Tu peux en faire une tout de suite."),
              0, L, 76, W, 44, 0));
     add(make(L"BUTTON", tr(L"Copier mes s&auvegardes"), BS_PUSHBUTTON | WS_TABSTOP, L, 126, 230, 40, ID_BACKUP));
     add(make(L"BUTTON", tr(L"&Ouvrir le dossier"), BS_PUSHBUTTON | WS_TABSTOP, L + 242, 126, 180, 40, ID_OPEN_BACKUPS));
@@ -2045,15 +2106,21 @@ void build_window()
 
     // ---- Paramètres ----
     g_building = PAGE_SETTINGS;
-    add(make(L"STATIC", tr(L"Dossier du jeu"), 0, L, 76, W, 22, 0, g_bold));
-    g_game_edit = add(make(L"EDIT", g_game_dir.c_str(), WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, L, 102, W - 132, 30, ID_GAME_EDIT));
-    add(make(L"BUTTON", tr(L"&Changer…"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 120, 102, 120, 30, ID_BROWSE));
-    g_version = add(make(L"STATIC", L"", 0, L, 140, W, 22, 0));
-    g_debug = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 176, W, 32, ID_DEBUG));
+    // the game's version: Steam or GOG (the folder follows), and how the GOG version plays
+    add(make(L"STATIC", tr(L"Version du jeu"), SS_CENTERIMAGE, L, 76, 150, 36, 0, g_bold));
+    g_store_steam = add(make(L"BUTTON", L"Steam", BS_PUSHBUTTON | WS_TABSTOP | WS_GROUP, L + 160, 76, 130, 36, ID_STORE_STEAM));
+    g_store_gog = add(make(L"BUTTON", L"GOG", BS_PUSHBUTTON | WS_TABSTOP, L + 300, 76, 130, 36, ID_STORE_GOG));
+    add(make(L"BUTTON", tr(L"Comment marche la version &GOG ?"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 290, 76, 290, 36, ID_GOG_HELP));
+    const int G = 48; // the rows under it
+    add(make(L"STATIC", tr(L"Dossier du jeu"), 0, L, 76 + G, W, 22, 0, g_bold));
+    g_game_edit = add(make(L"EDIT", g_game_dir.c_str(), WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, L, 102 + G, W - 132, 30, ID_GAME_EDIT));
+    add(make(L"BUTTON", tr(L"&Changer…"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 120, 102 + G, 120, 30, ID_BROWSE));
+    g_version = add(make(L"STATIC", L"", 0, L, 140 + G, W, 22, 0));
+    g_debug = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 176 + G, W, 32, ID_DEBUG));
     g_switches.push_back({g_debug, true, tr(L"&Journal détaillé (utile pour signaler un problème)")});
-    g_check_updates = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 212, W, 32, ID_CHECK_UPDATES));
+    g_check_updates = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 212 + G, W, 32, ID_CHECK_UPDATES));
     g_switches.push_back({g_check_updates, true, tr(L"&Mettre à jour automatiquement au démarrage (GitHub)")});
-    g_lan = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 248, W, 32, ID_LAN));
+    g_lan = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 248 + G, W, 32, ID_LAN));
     g_switches.push_back({g_lan, false, tr(L"Jouer sans Steam : réseau &local ou IP directe (port UDP 27101)")});
     // the sensitive part in a card of its own (painted), red-tinted
     add(make(L"STATIC", tr(L"Zone sensible"), 0, L + 18, kDangerY + 14, W - 36, 22, 0, g_bold));
@@ -2118,7 +2185,7 @@ void paint(HWND h)
         // "✓ DDDA détecté · Mod v0.9.0" (or what is wrong, in its colour)
         SelectObject(dc, g_font);
         std::wstring mod = L"Mod v" + widen(DDDA_COOP_VERSION);
-        std::wstring line = g_game_state == 2 ? tr(L"\u2714  DDDA détecté \u00b7 ") + mod
+        std::wstring line = g_game_state == 2 ? std::wstring(tr(L"\u2714  DDDA détecté \u00b7 ")) + (g_gog ? L"GOG \u00b7 " : L"Steam \u00b7 ") + mod
                             : g_game_state == 1 ? tr(L"\u2716  Version de DDDA.exe non prise en charge \u00b7 ") + mod
                                                 : tr(L"\u2716  DDDA.exe introuvable : choisis son dossier dans Paramètres \u00b7 ") + mod;
         SetTextColor(dc, g_game_state == 2 ? theme::kOk : theme::kBad);
@@ -2361,6 +2428,9 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_REMOVE: on_remove(); break;
         case ID_BACKUP: on_backup(); break;
         case ID_HELP: show_help(); break;
+        case ID_GOG_HELP: show_gog_help(); break;
+        case ID_STORE_STEAM: pick_store(0); break;
+        case ID_STORE_GOG: pick_store(1); break;
         case ID_LANG: pick_language(h); break;
         case ID_UPDATE: // installed here when the release has a checked zip, else its page, to download it
             if (!g_update_url.empty() || !g_test_update_zip.empty()) {
@@ -2551,10 +2621,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
         }
     g_steam_dir = steam_arg.empty() ? steam_dir() : steam_arg;
     g_game_dir = !game_arg.empty() ? game_arg : setting(L"game", L"");
+    g_steam_game = find_game(g_steam_dir);
+    g_gog_game = find_gog_game();
     if (g_game_dir.empty())
-        g_game_dir = find_game(g_steam_dir);
-    if (g_game_dir.empty())
-        g_game_dir = find_gog_game();
+        g_game_dir = !g_steam_game.empty() ? g_steam_game : g_gog_game;
 
     HDC screen = GetDC(nullptr);
     g_dpi = GetDeviceCaps(screen, LOGPIXELSY);

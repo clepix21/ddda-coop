@@ -399,11 +399,11 @@ T = [
      'Código de conexión copiado: '),
 
     # saves screen
-    (r'Une copie de secours de tes sauvegardes Steam de Dragon\'s Dogma est faite à chaque lancement. Tu peux en faire une tout de suite.',
-     'A backup of your Dragon\'s Dogma Steam saves is made at each launch. You can make one right now.',
-     'A ogni avvio viene fatto un backup dei tuoi salvataggi Steam di Dragon\'s Dogma. Puoi farne uno subito.',
-     'Bei jedem Start wird eine Sicherung deiner Dragon\'s-Dogma-Spielstände von Steam angelegt. Du kannst sofort eine anlegen.',
-     'En cada inicio se hace una copia de seguridad de tus partidas de Dragon\'s Dogma en Steam. Puedes hacer una ahora mismo.'),
+    (r'Une copie de secours de tes sauvegardes de Dragon\'s Dogma (Steam ou GOG Galaxy) est faite à chaque lancement. Tu peux en faire une tout de suite.',
+     'A backup of your Dragon\'s Dogma saves (Steam or GOG Galaxy) is made at each launch. You can make one right now.',
+     'A ogni avvio viene fatto un backup dei tuoi salvataggi di Dragon\'s Dogma (Steam o GOG Galaxy). Puoi farne uno subito.',
+     'Bei jedem Start wird eine Sicherung deiner Dragon\'s-Dogma-Spielstände (Steam oder GOG Galaxy) angelegt. Du kannst sofort eine anlegen.',
+     'En cada inicio se hace una copia de seguridad de tus partidas de Dragon\'s Dogma (Steam o GOG Galaxy). Puedes hacer una ahora mismo.'),
     (r'Copier mes s&auvegardes', '&Back up my saves', '&Fai il backup dei salvataggi', 'Spielstände &sichern', '&Copiar mis partidas'),
     (r'&Ouvrir le dossier', '&Open the folder', 'Apri la ca&rtella', 'Ordner ö&ffnen', '&Abrir la carpeta'),
     (r'Copies de secours (double-clic : ouvrir)', 'Backups (double-click: open)', 'Backup (doppio clic: apri)', 'Sicherungen (Doppelklick: öffnen)',
@@ -519,6 +519,74 @@ T = [
      '✖  Adresse fehlt oder ist ungültig', '✖  dirección ausente o no válida'),
     (r'Lancement du jeu (GOG)…', 'Launching the game (GOG)…', 'Avvio del gioco (GOG)…', 'Spiel wird gestartet (GOG)…',
      'Iniciando el juego (GOG)…'),
+    # the Steam / GOG choice (Paramètres) and how the GOG version plays
+    (r'Version du jeu', 'Game version', 'Versione del gioco', 'Spielversion', 'Versión del juego'),
+    (r'Comment marche la version &GOG ?', 'How the &GOG version works', 'Come funziona la versione &GOG', 'So funktioniert die &GOG-Version',
+     'Cómo funciona la versión &GOG'),
+    (r"&Copier l'adresse", '&Copy the address', "&Copia l'indirizzo", 'Adresse &kopieren', '&Copiar la dirección'),
+    (r"La version GOG du jeu n'a pas été trouvée sur ce PC. Choisis le dossier qui contient son DDDA.exe.",
+     "The GOG version of the game was not found on this PC. Choose the folder that holds its DDDA.exe.",
+     "La versione GOG del gioco non è stata trovata su questo PC. Scegli la cartella che contiene il suo DDDA.exe.",
+     "Die GOG-Version des Spiels wurde auf diesem PC nicht gefunden. Wähle den Ordner mit ihrer DDDA.exe.",
+     "No se ha encontrado la versión GOG del juego en este PC. Elige la carpeta que contiene su DDDA.exe."),
+    (r"La version Steam du jeu n'a pas été trouvée sur ce PC. Choisis le dossier qui contient son DDDA.exe.",
+     "The Steam version of the game was not found on this PC. Choose the folder that holds its DDDA.exe.",
+     "La versione Steam del gioco non è stata trovata su questo PC. Scegli la cartella che contiene il suo DDDA.exe.",
+     "Die Steam-Version des Spiels wurde auf diesem PC nicht gefunden. Wähle den Ordner mit ihrer DDDA.exe.",
+     "No se ha encontrado la versión Steam del juego en este PC. Elige la carpeta que contiene su DDDA.exe."),
+    (r'Ce dossier contient la version Steam du jeu, pas celle de GOG.',
+     'This folder holds the Steam version of the game, not the GOG one.',
+     'Questa cartella contiene la versione Steam del gioco, non quella GOG.',
+     'Dieser Ordner enthält die Steam-Version des Spiels, nicht die von GOG.',
+     'Esta carpeta contiene la versión Steam del juego, no la de GOG.'),
+    (r'Ce dossier contient la version GOG du jeu, pas celle de Steam.',
+     'This folder holds the GOG version of the game, not the Steam one.',
+     'Questa cartella contiene la versione GOG del gioco, non quella Steam.',
+     'Dieser Ordner enthält die GOG-Version des Spiels, nicht die von Steam.',
+     'Esta carpeta contiene la versión GOG del juego, no la de Steam.'),
+    (r'DDDA Coop – La version GOG', 'DDDA Coop – The GOG version', 'DDDA Coop – La versione GOG', 'DDDA Coop – Die GOG-Version',
+     'DDDA Coop – La versión GOG'),
+    (r"Sans Steam, on se rejoint par adresse IP (port UDP 27101). « Jouer sans Steam » reste donc activé.\n\n1. L'hôte lance le jeu. Le Salon affiche ses adresses : « Copier l'adresse » et envoie-la à ton ami.\n2. L'invité choisit « Invité », colle cette adresse dans le Salon (par exemple 192.168.1.20), puis lance le jeu.\n3. Sur le même réseau (même box) : rien d'autre à faire.\n    Par internet : l'hôte ouvre le port UDP 27101 sur sa box (redirection vers son PC), ou vous utilisez tous les deux un VPN de type réseau local et l'adresse qu'il donne.\n\nÀ savoir\n  • Garde GOG Galaxy ouvert et connecté : sans lui, le jeu peut rester bloqué sur « Accessing server... ».\n  • En chargeant ta partie, le jeu GOG peut afficher « Échec de la connexion » (le serveur des pions de GOG) : appuie sur A ou Entrée, la partie se charge.\n  • Tes sauvegardes GOG Galaxy sont copiées à chaque lancement dans Documents\\DDDA Coop\\Sauvegardes.\n  • Un ami sur Steam peut te rejoindre s'il active « Jouer sans Steam » dans ses Paramètres.",
+     "Without Steam, players join by IP address (UDP port 27101), so \"Play without Steam\" stays on.\n\n"
+     "1. The host starts the game. The Lobby shows its addresses: \"Copy the address\" and send it to your friend.\n"
+     "2. The guest picks \"Guest\", pastes that address in the Lobby (for example 192.168.1.20), then starts the game.\n"
+     "3. On the same network (same router): nothing else to do.\n"
+     "    Over the internet: the host opens UDP port 27101 on their router (forwarded to their PC), or you both use a LAN-style VPN and the address it gives.\n\n"
+     "Good to know\n"
+     "  • Keep GOG Galaxy open and signed in: without it, the game may stay stuck on \"Accessing server...\".\n"
+     "  • When loading your game, the GOG game may show a connection error (GOG's pawn server): press A or Enter and the game loads.\n"
+     "  • Your GOG Galaxy saves are copied at each launch to Documents\\DDDA Coop\\Sauvegardes.\n"
+     "  • A friend on Steam can join you if they turn on \"Play without Steam\" in their Settings.",
+     "Senza Steam, ci si raggiunge tramite indirizzo IP (porta UDP 27101): \"Gioca senza Steam\" resta quindi attivo.\n\n"
+     "1. L'host avvia il gioco. La Lobby mostra i suoi indirizzi: \"Copia l'indirizzo\" e mandalo al tuo amico.\n"
+     "2. L'ospite sceglie \"Ospite\", incolla quell'indirizzo nella Lobby (per esempio 192.168.1.20), poi avvia il gioco.\n"
+     "3. Sulla stessa rete (stesso router): nient'altro da fare.\n"
+     "    Via internet: l'host apre la porta UDP 27101 sul suo router (inoltrata al suo PC), oppure usate entrambi una VPN di tipo rete locale e l'indirizzo che fornisce.\n\n"
+     "Da sapere\n"
+     "  • Tieni GOG Galaxy aperto e connesso: senza, il gioco può restare bloccato su \"Accessing server...\".\n"
+     "  • Caricando la partita, il gioco GOG può mostrare un errore di connessione (il server delle pedine di GOG): premi A o Invio e la partita si carica.\n"
+     "  • I tuoi salvataggi GOG Galaxy vengono copiati a ogni avvio in Documents\\DDDA Coop\\Sauvegardes.\n"
+     "  • Un amico su Steam può raggiungerti se attiva \"Gioca senza Steam\" nelle sue Impostazioni.",
+     "Ohne Steam verbindet man sich über die IP-Adresse (UDP-Port 27101), daher bleibt „Ohne Steam spielen“ an.\n\n"
+     "1. Der Host startet das Spiel. Die Lobby zeigt seine Adressen: „Adresse kopieren“ und an deinen Freund schicken.\n"
+     "2. Der Gast wählt „Gast“, fügt diese Adresse in der Lobby ein (zum Beispiel 192.168.1.20) und startet dann das Spiel.\n"
+     "3. Im selben Netzwerk (selber Router): sonst nichts zu tun.\n"
+     "    Über das Internet: Der Host öffnet den UDP-Port 27101 an seinem Router (Weiterleitung auf seinen PC), oder ihr nutzt beide ein VPN im Stil eines lokalen Netzwerks und die Adresse, die es vergibt.\n\n"
+     "Gut zu wissen\n"
+     "  • Lass GOG Galaxy offen und angemeldet: Ohne es kann das Spiel bei „Accessing server...“ hängen bleiben.\n"
+     "  • Beim Laden deines Spielstands kann das GOG-Spiel einen Verbindungsfehler zeigen (GOGs Vasallen-Server): Drück A oder Enter, dann lädt der Spielstand.\n"
+     "  • Deine GOG-Galaxy-Spielstände werden bei jedem Start nach Documents\\DDDA Coop\\Sauvegardes kopiert.\n"
+     "  • Ein Freund auf Steam kann dir beitreten, wenn er in seinen Einstellungen „Ohne Steam spielen“ einschaltet.",
+     "Sin Steam, os unís por dirección IP (puerto UDP 27101), así que «Jugar sin Steam» queda activado.\n\n"
+     "1. El anfitrión inicia el juego. La Sala muestra sus direcciones: «Copiar la dirección» y envíasela a tu amigo.\n"
+     "2. El invitado elige «Invitado», pega esa dirección en la Sala (por ejemplo 192.168.1.20) y luego inicia el juego.\n"
+     "3. En la misma red (mismo router): nada más que hacer.\n"
+     "    Por internet: el anfitrión abre el puerto UDP 27101 en su router (redirigido a su PC), o los dos usáis una VPN de tipo red local y la dirección que da.\n\n"
+     "Para saber\n"
+     "  • Mantén GOG Galaxy abierto y conectado: sin él, el juego puede quedarse en «Accessing server...».\n"
+     "  • Al cargar tu partida, el juego de GOG puede mostrar un error de conexión (el servidor de peones de GOG): pulsa A o Intro y la partida se carga.\n"
+     "  • Tus partidas de GOG Galaxy se copian en cada inicio en Documents\\DDDA Coop\\Sauvegardes.\n"
+     "  • Un amigo en Steam puede unirse si activa «Jugar sin Steam» en sus Ajustes."),
 ]
 
 LANG_NAMES = ['Français', 'English', 'Italiano', 'Deutsch', 'Español']
