@@ -1,4 +1,4 @@
-﻿# Runs two copies of the test install side by side (host = DDDA, guest = DDDA2), each with its
+# Runs two copies of the test install side by side (host = DDDA, guest = DDDA2), each with its
 # own bot script and coop.ini lines, for N seconds or until <OutDir>\STOP exists. Checks that the
 # owner's save folder is byte-identical afterwards. Tests only: forces block_saves, debug_log
 # and multi_instance on both copies.
@@ -103,6 +103,13 @@ function Start-Side($s, $el) {
         $steps = @(Get-Content $s.Bot | ForEach-Object { $i = 0 } { $l = ($_ -split '#')[0].Trim(); if ($l -match '^\d+') { [pscustomobject]@{ T = [int64]($l -split '\s+')[0]; I = $i++; L = $l } } })
         if ($steps | Where-Object { $_.L -match '^82000\s+0\s+1000' }) {
             $steps += [pscustomobject]@{ T = 93000; I = 100000; L = "93000 0 1000" }, [pscustomobject]@{ T = 93300; I = 100001; L = "93300 0 0" }
+        }
+        # COOP_GOG_DELAY=<ms>: every step from the title on (50 s) that much later. With the GOG Galaxy client
+        # closed the GOG game reaches the title ~20 s later (its sign-in), so the fixed presses fell before the
+        # menus (2026-11-16 night: the guest ended on the main menu)
+        $delay = [int64]$(if ($env:COOP_GOG_DELAY) { $env:COOP_GOG_DELAY } else { 0 })
+        if ($delay -gt 0) {
+            $steps = @($steps | ForEach-Object { if ($_.T -ge 50000) { $p = $_.L -split '\s+', 2; [pscustomobject]@{ T = $_.T + $delay; I = $_.I; L = "$($_.T + $delay) $($p[1])" } } else { $_ } })
         }
         $steps | Sort-Object T, I | ForEach-Object { $_.L } | Set-Content (Join-Path $d "bot.txt") -Encoding ascii
     } elseif ($s.Bot) { Copy-Item $s.Bot (Join-Path $d "bot.txt") }
