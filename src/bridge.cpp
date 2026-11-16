@@ -38,6 +38,16 @@ struct Goto {
 };
 const float kTryOffsets[] = {60, -60, 120, -120, 170, 30, -30, 90, -90};
 Goto g_goto = {};
+// targets are kept as world places (field_to_world): a walk across a cell edge of the open world shifts every
+// place here by 10000 u (issue #4). world: x, z are world places already (wgoto), else places here now.
+void goto_start(float x, float z, float r, unsigned timeout, bool world)
+{
+    field_origin_scan(); // (tests without the network: nobody else looks for it)
+    float p[3] = {x, 0.f, z};
+    if (!world)
+        field_to_world(p);
+    g_goto = {true, p[0], p[2], r, GetTickCount() + timeout, 0, 0, GetTickCount() + 600, 0, 0, 0};
+}
 long g_lines_done = 0;
 char g_queue[256][128];
 int g_qhead = 0, g_qtail = 0;
@@ -93,8 +103,77 @@ void run_line(const char *line)
         pads_override(slot, g, GetTickCount() + ms);
         g_busy_until = GetTickCount() + ms + 100;
         _snprintf(g_current, sizeof g_current, "pad %u %04X for %u ms", slot, buttons, ms);
+    } else if (strncmp(line, "wwatch", 6) == 0) {
+        // wwatch: a write watch on the uWaterReflectionMap's copy of the cell origin x (+0x110), to find the code
+        // (and the object) it is copied from (issue #4)
+        for (uintptr_t g = game::va(0x01621000); g < game::va(0x019AB1E0); g += 4) {
+            uintptr_t q = game::at<uintptr_t>(g, 0);
+            if (q < 0x10000 || q >= 0x7FFF0000 || (q & 3) || !mem_readable(reinterpret_cast<void *>(q), 0x120))
+                continue;
+            if (strcmp(enemies_class_of(q), "uWaterReflectionMap") == 0) {
+                logf("bridge: wwatch [%08X] = %08X, +0x110 = %.0f", unsigned(g), unsigned(q), game::at<float>(q, 0x110));
+                watch_start(q + 0x110, 6, 0);
+                break;
+            }
+        }
+        strcpy(g_current, "wwatch");
+    } else if (strncmp(line, "gfind", 5) == 0) {
+        // gfind: every exe global (0x01621000..0x019AB1E0) pointing to an object whose first 0x400 bytes hold a
+        // float pair (x at +o, z at +o+8) of whole non-zero 10000s: candidates for the open world's cell origin
+        int hits = 0;
+        for (uintptr_t g = game::va(0x01621000); g < game::va(0x019AB1E0) && hits < 60; g += 4) {
+            uintptr_t q = game::at<uintptr_t>(g, 0);
+            if (q < 0x10000 || q >= 0x7FFF0000 || (q & 3) || !mem_readable(reinterpret_cast<void *>(q), 0x400))
+                continue;
+            for (size_t o = 0; o + 12 <= 0x400; o += 4) {
+                float fx = game::at<float>(q, o), fz = game::at<float>(q, o + 8);
+                auto cell = [](float v) { return v == v && v != 0.f && std::fabs(v) < 1e7f && std::fmod(v, 10000.f) == 0.f; };
+                if (cell(fx) && cell(fz) && std::fabs(fx) >= 10000.f && std::fabs(fz) >= 10000.f) {
+                    logf("bridge: gfind [%08X]=%08X (%s) +0x%X: %.0f %.0f", unsigned(g), unsigned(q), enemies_class_of(q), unsigned(o), fx, fz);
+                    ++hits;
+                }
+            }
+        }
+        logf("bridge: gfind done (%d)", hits);
+        strcpy(g_current, "gfind");
+    } else if (strncmp(line, "ffind", 5) == 0) {
+        // ffind: float pairs (x at +o, z at +o+8) that are whole non-zero 10000s, in the current aStage (0x8000
+        // bytes), sMain ([kGameMain], 0x10000) and the objects their first words point to (0x2000): where the
+        // open world keeps its cell origin (issue #4)
+        auto scan = [](const char *what, uintptr_t base, size_t size) {
+            int hits = 0;
+            for (size_t o = 0; o + 12 <= size && hits < 12; o += 4) {
+                if (!mem_readable(reinterpret_cast<void *>(base + o), 12))
+                    break;
+                float fx = game::at<float>(base, o), fz = game::at<float>(base, o + 8);
+                auto cell = [](float v) { return v == v && v != 0.f && std::fabs(v) < 1e7f && std::fmod(v, 10000.f) == 0.f; };
+                if (cell(fx) && cell(fz)) {
+                    logf("bridge: ffind %s %08X+0x%X: %.0f %.0f", what, unsigned(base), unsigned(o), fx, fz);
+                    ++hits;
+                }
+            }
+        };
+        uintptr_t st = current_stage_area(), gm = game::at<uintptr_t>(game::kGameMain, 0);
+        if (st && mem_readable(reinterpret_cast<void *>(st), 4)) {
+            scan("aStage", st, 0x8000);
+            for (size_t o = 0; o < 0x400; o += 4) {
+                uintptr_t q = game::at<uintptr_t>(st, o);
+                if (q > 0x10000 && q < 0x7FFF0000 && !(q & 3) && mem_readable(reinterpret_cast<void *>(q), 0x10)) {
+                    char what[32];
+                    _snprintf(what, sizeof what, "aStage+%X->", unsigned(o));
+                    scan(what, q, 0x2000);
+                }
+            }
+        }
+        if (gm)
+            scan("sMain", gm, 0x10000);
+        logf("bridge: ffind done (aStage %08X, sMain %08X)", unsigned(st), unsigned(gm));
+        strcpy(g_current, "ffind");
+    } else if (sscanf(line, "wgoto %f %f %f %u", &x, &z, &r, &timeout) == 4) { // wgoto: x, z as world places
+        goto_start(x, z, r, timeout, true);
+        _snprintf(g_current, sizeof g_current, "wgoto %.0f %.0f", x, z);
     } else if (sscanf(line, "goto %f %f %f %u", &x, &z, &r, &timeout) == 4) {
-        g_goto = {true, x, z, r, GetTickCount() + timeout, 0, 0, GetTickCount() + 600, 0, 0, 0};
+        goto_start(x, z, r, timeout, false);
         _snprintf(g_current, sizeof g_current, "goto %.0f %.0f", x, z);
     } else if (sscanf(line, "egoto #%u %f %u", &slot, &r, &timeout) == 3) {
         // egoto #slot <r> <ms> [class]: walk to a live enemy (only of that class: slots get reused)
@@ -106,7 +185,7 @@ void run_line(const char *line)
             if (unsigned(list[k].index) == slot && (!cls[0] || strcmp(list[k].name, cls) == 0)) {
                 x = game::at<float>(list[k].ptr, 0x40);
                 z = game::at<float>(list[k].ptr, 0x48);
-                g_goto = {true, x, z, r, GetTickCount() + timeout, 0, 0, GetTickCount() + 600, 0, 0, 0};
+                goto_start(x, z, r, timeout, false);
                 logf("bridge: egoto #%u %s at (%.0f, %.0f)", slot, list[k].name, x, z);
             }
         _snprintf(g_current, sizeof g_current, "egoto #%u", slot);
@@ -114,7 +193,7 @@ void run_line(const char *line)
         if (uintptr_t ch = possess_pawn_ptr(int(slot))) {
             x = game::at<float>(ch, 0x40);
             z = game::at<float>(ch, 0x48);
-            g_goto = {true, x, z, r, GetTickCount() + timeout, 0, 0, GetTickCount() + 600, 0, 0, 0};
+            goto_start(x, z, r, timeout, false);
             logf("bridge: pawngoto %u at (%.0f, %.0f)", slot, x, z);
         }
         _snprintf(g_current, sizeof g_current, "pawngoto %u", slot);
@@ -141,7 +220,7 @@ void run_line(const char *line)
         if (best >= 0) {
             x = game::at<float>(list[best].ptr, 0x40);
             z = game::at<float>(list[best].ptr, 0x48);
-            g_goto = {true, x, z, r, GetTickCount() + timeout, 0, 0, GetTickCount() + 600, 0, 0, 0};
+            goto_start(x, z, r, timeout, false);
             logf("bridge: enear #%d %s at (%.0f, %.0f)", list[best].index, list[best].name, x, z);
         }
         _snprintf(g_current, sizeof g_current, "enear");
@@ -697,11 +776,27 @@ void run_line(const char *line)
         constexpr uintptr_t lo = 0x01621000, hi = 0x019AB1E0;
         constexpr size_t n = (hi - lo) / 4;
         int hits = 0;
+        // "diffg cell": only words that moved by one (an int, or a short in either half) or a float that moved by
+        // 10000 (the stage 100 field shifts every place by 10000 u at its cell edges, issue #4)
+        bool cell = strstr(line, "cell") != nullptr;
         if (g_snaps[0].size() == g_snaps[1].size() && g_snaps[1].size() == g_snaps[2].size() && !g_snaps[0].empty())
             for (size_t k = 0; k < g_snaps[0].size() && hits < 80; ++k) {
                 uint32_t a0 = g_snaps[0][k], a1 = g_snaps[1][k], a2 = g_snaps[2][k];
                 if (a0 != a2 || a0 == a1)
                     continue;
+                if (cell) {
+                    int32_t di = int32_t(a1 - a0);
+                    int16_t lo0 = int16_t(a0 & 0xFFFF), lo1 = int16_t(a1 & 0xFFFF), hi0 = int16_t(a0 >> 16), hi1 = int16_t(a1 >> 16);
+                    float f0, f1;
+                    memcpy(&f0, &a0, 4);
+                    memcpy(&f1, &a1, 4);
+                    bool one = di == 1 || di == -1 || (hi0 == hi1 && (lo1 - lo0 == 1 || lo1 - lo0 == -1)) ||
+                               (lo0 == lo1 && (hi1 - hi0 == 1 || hi1 - hi0 == -1));
+                    float df = std::fabs(f1 - f0);
+                    bool ten = f0 == f0 && f1 == f1 && df > 9999.f && df < 10001.f;
+                    if (!one && !ten)
+                        continue;
+                }
                 if (k >= n) { // inside an object: only when the global pointed at the same one all along
                     size_t gk = g_snap_objs[(k - n) / 0x100];
                     if (g_snaps[0][gk] != g_snaps[1][gk] || g_snaps[0][gk] != g_snaps[2][gk])
@@ -1026,7 +1121,7 @@ void run_line(const char *line)
         }
         if (pick) {
             position(pick, x, z);
-            g_goto = {true, x, z, r, GetTickCount() + timeout, 0, 0, GetTickCount() + 600, 0, 0, 0};
+            goto_start(x, z, r, timeout, false);
             logf("bridge: ngoto #%u npc %p at (%.0f, %.0f)", slot, (void *)pick, x, z);
         }
         _snprintf(g_current, sizeof g_current, "ngoto #%u", slot);
@@ -1063,6 +1158,10 @@ void run_line(const char *line)
     } else if (strncmp(line, "where", 5) == 0) { // where: the Arisen's position
         if (uintptr_t a = possess_arisen())
             logf("bridge: where %.0f %.0f %.0f", game::at<float>(a, 0x40), game::at<float>(a, 0x44), game::at<float>(a, 0x48));
+        float fox, foz;
+        field_origin_scan();
+        bool known = field_origin(fox, foz);
+        logf("bridge: where origin (%.0f, %.0f)%s", fox, foz, known ? "" : ": none found");
         _snprintf(g_current, sizeof g_current, "where");
     } else if (strncmp(line, "partyhp", 7) == 0) { // HP of the Arisen and the three pawns
         const float *a = enemies_hp(possess_arisen());
@@ -1257,6 +1356,10 @@ void steer()
     float ax, az, fx, fz;
     if (!position(possess_arisen(), ax, az) || !camera_forward(fx, fz))
         return;
+    float wp[3] = {ax, 0.f, az}; // compared with the target in world places
+    field_to_world(wp);
+    ax = wp[0];
+    az = wp[2];
     float dx = g_goto.x - ax, dz = g_goto.z - az, d = std::sqrt(dx * dx + dz * dz);
     if (d <= g_goto.radius || GetTickCount() > g_goto.until) {
         logf("bridge: goto %s at (%.0f, %.0f), %.0f u from target", d <= g_goto.radius ? "reached" : "TIMEOUT", ax, az, d);

@@ -38,6 +38,14 @@ inline const uintptr_t kEnemyDeath = game::va(0x00AAB3B0); // uEnemy death handl
 // "aStage%03d" and stores the stage / entry point in [0x018FA4BC]+0x34 / +0x44.
 inline const uintptr_t kArea = game::va(0x018D099C);
 constexpr uintptr_t kAreaCurrent = 0x3834;
+// The open world (stage 100) is cut in 10000 u cells and every place is kept relative to the cell the
+// Arisen is in: crossing an edge shifts every place by 10000 u. The uWaterReflectionMap keeps that origin at
+// +0x110 (float x, y, z; copies at +0x170, +0x1B0): it went -40000 -> -30000 -> -40000 with the Arisen's x
+// 467 -> 9415 -> 468, and z -130000 -> -120000 across a z edge (bridge diffg cell / gfind, 2026-11-16), so
+// place in the world = place here - origin. The globals pointing to that object change from run to run: it
+// is found by its class name (enemies.cpp field_origin_scan), so no game address, the same for GOG. Found
+// for issue #4 (players in different cells saw each other and the enemies 10000 u off).
+constexpr uintptr_t kFieldOriginPos = 0x110;
 inline const uintptr_t kGameMain = game::va(0x018FA4BC);
 // sGameSys ([0x018FA4BC], size 0xBE470) fields found by dumps around a talk and an inn rest
 // (2026-10-26): +0x9E3A8 event state (256 normal, 7 during a talk), +0xB8760 day, +0xB876C hour,

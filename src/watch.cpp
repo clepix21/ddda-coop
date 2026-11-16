@@ -66,6 +66,16 @@ LONG CALLBACK on_exception(EXCEPTION_POINTERS *e)
         logf("watch: write to %08X by code before %08X (thread %lu) new value %.4f / %08X, ESI %08X EBX %08X",
              unsigned(g_addr), unsigned(c->Eip), GetCurrentThreadId(), f, *reinterpret_cast<unsigned *>(g_addr),
              unsigned(c->Esi), unsigned(c->Ebx));
+        {
+            char code[120];
+            int cl = 0;
+            const uint8_t *ip = reinterpret_cast<const uint8_t *>(c->Eip) - 24;
+            if (mem_readable(ip, 32))
+                for (int b = 0; b < 32; ++b)
+                    cl += _snprintf(code + cl, sizeof code - cl, "%02X%s", ip[b], b == 23 ? "|" : "");
+            logf("watch:   EAX %08X ECX %08X EDX %08X EDI %08X EBP %08X ESP %08X; code %s", unsigned(c->Eax), unsigned(c->Ecx),
+                 unsigned(c->Edx), unsigned(c->Edi), unsigned(c->Ebp), unsigned(c->Esp), cl ? code : "?");
+        }
         if (g_scan)
             scan_owner(c->Esi);
         // likely return addresses on the stack (values inside DDDA.exe's code section)

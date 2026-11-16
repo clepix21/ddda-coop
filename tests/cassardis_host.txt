@@ -1,0 +1,25 @@
+# Issue #4 repro, host (saves/ocean.sav, stage 100, starts on the coast at world (45940, 134195)): walks west
+# across a cell edge of the open world (world x 40000) to the goblins (about world (37600, 135800)), fights there,
+# dumps every enemy along the way (compare with the guest). wgoto: world places (field_to_world).
+wait 5000
+edump h0
+wgoto 43000 134800 300 30000
+wgoto 40000 135300 300 30000
+edump h1
+wgoto 38200 135700 300 30000
+wgoto 37600 135800 200 20000
+edump h2
+pad 0 4000 0 0 0 0 0 0 150
+wait 600
+pad 0 4000 0 0 0 0 0 0 150
+wait 600
+pad 0 4000 0 0 0 0 0 0 150
+wait 600
+pad 0 4000 0 0 0 0 0 0 150
+wait 8000
+edump h3
+pad 0 4000 0 0 0 0 0 0 150
+wait 600
+pad 0 4000 0 0 0 0 0 0 150
+wait 15000
+edump end

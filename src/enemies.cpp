@@ -14,6 +14,7 @@
 // The hook asks net.cpp whether to drop the hit (the guest, for enemies the host says are alive).
 #include <windows.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -130,6 +131,8 @@ void enemies_apply_damage(uintptr_t ch, float dmg)
 
 bool mem_readable(const void *p, size_t n)
 {
+    if (reinterpret_cast<uintptr_t>(p) + n < reinterpret_cast<uintptr_t>(p))
+        return false;
     MEMORY_BASIC_INFORMATION mbi;
     if (!VirtualQuery(p, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
         return false;
@@ -150,6 +153,8 @@ bool live_readable(const void *p, size_t n)
     static thread_local Region kept[8] = {};
     static thread_local int next = 0;
     uintptr_t a = reinterpret_cast<uintptr_t>(p);
+    if (a + n < a || a < 0x10000) // wraps (a code pointer read as FFFFFFFE passed through a kept region and crashed)
+        return false;
     DWORD now = GetTickCount();
     for (const Region &r : kept)
         if (a >= r.lo && a + n <= r.hi && int(r.until - now) > 0)
@@ -161,6 +166,140 @@ bool live_readable(const void *p, size_t n)
     kept[next] = {lo, hi, now + 250};
     next = (next + 1) % 8;
     return a + n <= hi;
+}
+
+// The object holding the open world's cell origin: the uWaterReflectionMap (game.h kFieldOriginPos), found by
+// its class name among the objects the exe's globals point to (field_origin_scan), 0 until found or once gone.
+volatile uintptr_t g_wmap = 0, g_wmap_vt = 0;
+
+uintptr_t field_origin_object()
+{
+    uintptr_t o = g_wmap, vt = g_wmap_vt;
+    if (!o || !vt || !live_readable(reinterpret_cast<void *>(o), game::kFieldOriginPos + 12) || game::at<uintptr_t>(o, 0) != vt)
+        return 0;
+    return o;
+}
+
+// Its own thread: looks for the uWaterReflectionMap once a second while there is none (a few thousand pointer
+// checks: the globals pointing to it change from run to run, its class does not; GOG's globals sit in the
+// same range, a little lower). A pass takes long (a VirtualQuery per pointer): on the net thread, away from
+// the open world where there is none, it held the players' states back 1-3 s (0.10.1 Steam series).
+void field_origin_pass();
+
+DWORD WINAPI field_origin_thread(void *)
+{
+    for (;;) {
+        Sleep(1000);
+        if (!field_origin_object() && possess_arisen()) // in game only: while the game starts or loads, globals point to memory being freed
+            field_origin_pass();
+    }
+}
+
+void field_origin_scan()
+{
+    static volatile LONG started = 0;
+    if (InterlockedExchange(&started, 1) == 0) {
+        HANDLE t = CreateThread(nullptr, 0, field_origin_thread, nullptr, 0, nullptr);
+        if (t) {
+            SetThreadPriority(t, THREAD_PRIORITY_BELOW_NORMAL);
+            CloseHandle(t);
+        }
+    }
+}
+
+void field_origin_pass()
+{
+    static uintptr_t rejected[64] = {};
+    static int n_rejected = 0;
+    // seen at 0x01877DB0 .. 0x018798B8 (Steam); GOG's globals sit about 0x1F030 lower
+    uintptr_t lo = game::build() == game::BUILD_GOG ? 0x01840000 : 0x01860000;
+    for (uintptr_t g = lo; g < lo + 0x30000; g += 4) {
+        // the exe's globals: one check a page (a VirtualQuery takes the address-space lock the game's
+        // threads need too)
+        if ((g & 0xFFF) == 0 && !mem_readable(reinterpret_cast<void *>(g), 0x1000)) {
+            g += 0x1000 - 4;
+            continue;
+        }
+        uintptr_t q = game::at<uintptr_t>(g, 0);
+        if (q < 0x10000 || q >= 0x7FFF0000 || (q & 3) || !mem_readable(reinterpret_cast<void *>(q), 4))
+            continue;
+        uintptr_t vt = game::at<uintptr_t>(q, 0);
+        if (vt < 0x00401000 || vt >= 0x01A00000)
+            continue;
+        if (g_wmap_vt) {
+            if (vt == g_wmap_vt && live_readable(reinterpret_cast<void *>(q), game::kFieldOriginPos + 12)) {
+                g_wmap = q;
+                logf("field: cell origin in uWaterReflectionMap %08X (global %08X)", unsigned(q), unsigned(g));
+                return;
+            }
+            continue;
+        }
+        bool seen = false;
+        for (int k = 0; k < n_rejected && !seen; ++k)
+            seen = rejected[k] == vt;
+        if (seen)
+            continue;
+        // the class name as class_of reads it, with every pointer in the exe image (always mapped) and no
+        // kept regions: class_of's live_readable passed a heap region freed meanwhile and crashed the
+        // scan on fn[0] (5 games in the 0.10.1 Steam series, 2026-11-16)
+        auto in_exe = [](uintptr_t a) { return a >= 0x00401000 && a < 0x01A00000; };
+        uintptr_t fnp = mem_readable(reinterpret_cast<void *>(vt + 16), 4) ? game::at<uintptr_t>(vt, 16) : 0;
+        if (!in_exe(fnp) || !mem_readable(reinterpret_cast<void *>(fnp), 6))
+            goto reject;
+        {
+            auto fn = reinterpret_cast<const uint8_t *>(fnp);
+            uintptr_t dti = 0, name = 0;
+            if (fn[0] == 0xB8 && fn[5] == 0xC3) // mov eax, imm32; ret
+                memcpy(&dti, fn + 1, 4);
+            if (in_exe(dti) && mem_readable(reinterpret_cast<void *>(dti + 4), 4))
+                name = game::at<uintptr_t>(dti, 4);
+            if (!in_exe(name) || !mem_readable(reinterpret_cast<void *>(name), 20)
+                || memcmp(reinterpret_cast<const char *>(name), "uWaterReflectionMap", 20) != 0)
+                goto reject;
+        }
+        if (live_readable(reinterpret_cast<void *>(q), game::kFieldOriginPos + 12)) {
+            g_wmap_vt = vt;
+            g_wmap = q;
+            logf("field: cell origin in uWaterReflectionMap %08X (global %08X, vtable %08X)", unsigned(q), unsigned(g), unsigned(vt));
+            return;
+        }
+    reject:
+        if (n_rejected < 64)
+            rejected[n_rejected++] = vt;
+    }
+}
+
+// The open world's cell origin (game.h kFieldOriginPos): place in the world = place here - origin, along x
+// and z. False (and 0) when there is none, or when it does not look like one (whole 10000s).
+bool field_origin(float &ox, float &oz)
+{
+    ox = oz = 0.f;
+    uintptr_t fo = field_origin_object();
+    if (!fo)
+        return false;
+    float x = game::at<float>(fo, game::kFieldOriginPos), z = game::at<float>(fo, game::kFieldOriginPos + 8);
+    auto cell = [](float v) { return v == v && std::fabs(v) < 1e7f && std::fmod(v, 10000.f) == 0.f; };
+    if (!cell(x) || !cell(z))
+        return false;
+    ox = x;
+    oz = z;
+    return true;
+}
+
+void field_to_world(float *p)
+{
+    float ox, oz;
+    field_origin(ox, oz);
+    p[0] -= ox;
+    p[2] -= oz;
+}
+
+void field_to_local(float *p)
+{
+    float ox, oz;
+    field_origin(ox, oz);
+    p[0] += ox;
+    p[2] += oz;
 }
 
 namespace {
@@ -245,9 +384,28 @@ void enemies_on_finalize(uintptr_t em)
     perf_add(PERF_WAIT, tw);
     int free_slot = -1, i = 0;
     uintptr_t death = 0;
+    // spawns and last places are kept in world places (field_to_world): the open world shifts every place
+    // by 10000 u when the Arisen crosses a cell edge, and a spawn kept as it was here then was 10000 u off
+    // the host's (stage 100 repro, issue #4, 2026-11-16)
+    float at[3];
+    memcpy(at, reinterpret_cast<void *>(em + 0x40), sizeof at);
+    field_to_world(at);
     for (; i < kMax; ++i) {
-        if (g_slots[i].ptr == em && g_slots[i].vt == game::at<uintptr_t>(em, 0))
+        if (g_slots[i].ptr == em && g_slots[i].vt == game::at<uintptr_t>(em, 0)) {
+            // the game freed it and made another of the same class at the same address: after a gap in its
+            // updates it stands far from where it was. The old slot (spawn, death) went on with the new
+            // enemy, and the guest's twin jumped 3400 u (stage 100 repro, issue #4, 2026-11-16)
+            EnemySlot &o = g_slots[i];
+            float d[3] = {at[0] - o.last_pos[0], at[1] - o.last_pos[1], at[2] - o.last_pos[2]};
+            if (o.settled && now - o.last_seen > 100 && d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > 1000.f * 1000.f) {
+                logf("enemy: #%d %s %p is a new enemy at the same address (%.0f u from its last place after %lu ms)", i, o.name,
+                     (void *)em, std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]), now - o.last_seen);
+                o.ptr = 0;
+                free_slot = i;
+                i = kMax;
+            }
             break;
+        }
         if (free_slot < 0 && (!g_slots[i].ptr || now - g_slots[i].last_seen > 3000))
             free_slot = i;
     }
@@ -261,7 +419,7 @@ void enemies_on_finalize(uintptr_t em)
         s.vt = game::at<uintptr_t>(em, 0);
         snprintf(s.name, sizeof s.name, "%s", class_of(em));
         s.kind = uint8_t(enemies_npc_kind(em));
-        memcpy(s.spawn, reinterpret_cast<void *>(em + 0x40), sizeof s.spawn);
+        memcpy(s.spawn, at, sizeof at);
         s.first_seen = now;
         logf("enemy: new #%d %s %p at (%.0f, %.0f, %.0f)", i, s.name, (void *)em, s.spawn[0], s.spawn[1], s.spawn[2]);
         // a slot still holding this address belongs to a freed enemy (the address was reused)
@@ -274,15 +432,15 @@ void enemies_on_finalize(uintptr_t em)
     if (i < kMax) {
         EnemySlot &s = g_slots[i];
         s.last_seen = now;
+        memcpy(s.last_pos, at, sizeof s.last_pos);
         // the spawn point is where it stands after 1 s: some classes (uEm8100) are created at
         // another place and moved there after their first frames, at a different moment on each PC
         if (!s.settled) {
-            const float *p = reinterpret_cast<const float *>(em + 0x40);
             // NPCs: the first place (they walk off at once, each game its own way: an inn walker was 20 u
             // apart at its first frame and 130 u after 1 s, inn suite 2026-11-08)
             if (now - s.first_seen < 1000) {
                 if (s.kind != ENEMY_NPC)
-                    memcpy(s.spawn, p, sizeof s.spawn);
+                    memcpy(s.spawn, at, sizeof at);
             } else {
                 s.settled = true;
                 logf("enemy: settled #%d %s at (%.0f, %.0f, %.0f)", i, s.name, s.spawn[0], s.spawn[1], s.spawn[2]);
@@ -402,7 +560,9 @@ void enemies_dump(const char *name)
             fwrite(reinterpret_cast<const void *>(s.ptr), 1, size, f);
             fclose(f);
         }
-        const float *p = reinterpret_cast<const float *>(s.ptr + 0x40);
+        float p[3]; // world places: the two copies may stand in different cells of the open world (issue #4)
+        memcpy(p, reinterpret_cast<const void *>(s.ptr + 0x40), sizeof p);
+        field_to_world(p);
         // HP candidate, as uPlayerBase copies it into cPlayerInfo+0x29C (FUN_00B63F70): [[ch+0x1D18]]+8
         // when ch+0x1D0C is set; the 8 floats from there are logged for comparison
         float hp[8] = {};

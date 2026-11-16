@@ -266,14 +266,22 @@ bool link_steam_profile(uint64_t id, std::string &name, std::vector<uint8_t> &rg
 struct EnemySlot {
     uintptr_t ptr, vt;
     char name[24];
-    float spawn[4]; // position when first seen
+    float spawn[4]; // position when first seen, in world places (field_to_world)
     DWORD first_seen, last_seen;
     int index;
     DWORD died; // tick of its death (uEnemy death handler FUN_00AAB3B0), 0 = alive
     bool settled;      // spawn final: some classes are placed after their first frames (uEm8100)
     uint8_t kind;      // ENEMY_*: a monster (uEnemy), a human foe (uHumanEnemy), an NPC (uNpc, uMultiNpc)
+    float last_pos[3]; // place at its last finalize (a new enemy of the same class at a reused address)
 };
 bool mem_readable(const void *p, size_t n); // committed, readable memory
+// enemies.cpp: the open world's cell origin (stage 100 shifts every place by 10000 u at cell edges, so two
+// games in different cells disagree on every place): world = here - origin, along x and z
+uintptr_t field_origin_object(); // the uWaterReflectionMap holding it, 0 if none found
+void field_origin_scan();         // starts the thread looking for it once a second while there is none
+bool field_origin(float &ox, float &oz); // false (and 0, 0) when there is none
+void field_to_world(float *p); // a place here -> in the world
+void field_to_local(float *p); // a place in the world -> here
 bool stages_install(); // stages.cpp: log every stage load
 bool talk_install();   // talk.cpp: the talk start
 bool rift_install();   // rift.cpp: the Rift stone does nothing while co-op is on

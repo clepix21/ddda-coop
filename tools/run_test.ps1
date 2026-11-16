@@ -23,14 +23,28 @@ function Get-SaveHashes {
     Get-ChildItem $SaveDir -Recurse -File | Sort-Object FullName | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" }
     "$OwnerConfig|$((Get-FileHash $OwnerConfig).Hash)"   # the owner's game settings must not change either
 }
+# the test copy's own window only (PrintWindow, PW_RENDERFULLCONTENT), never the screen: a screen copy
+# can catch the owner's other windows (as shot2.ps1)
+Add-Type -Namespace Coop -Name Win -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool PrintWindow(System.IntPtr h, System.IntPtr dc, uint flags);
+[DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r);
+public struct RECT { public int Left, Top, Right, Bottom; }
+'@
 function Save-Shot([string]$path) {
-    $r = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $bmp = New-Object System.Drawing.Bitmap $r.Width, $r.Height
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($r.Location, [System.Drawing.Point]::Empty, $r.Size)
-    $small = New-Object System.Drawing.Bitmap $bmp, ([int]($r.Width / 2)), ([int]($r.Height / 2))
-    $small.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-    $g.Dispose(); $bmp.Dispose(); $small.Dispose()
+    $p.Refresh()
+    $hw = $p.MainWindowHandle
+    if ($hw -eq [IntPtr]::Zero) { return }
+    $r = New-Object Coop.Win+RECT; [Coop.Win]::GetWindowRect($hw, [ref]$r) | Out-Null
+    $w = $r.Right - $r.Left; $h = $r.Bottom - $r.Top
+    if ($w -le 0 -or $h -le 0) { return }
+    $bmp = New-Object System.Drawing.Bitmap $w, $h
+    $g = [System.Drawing.Graphics]::FromImage($bmp); $dc = $g.GetHdc()
+    $ok = [Coop.Win]::PrintWindow($hw, $dc, 2); $g.ReleaseHdc($dc); $g.Dispose()
+    if ($ok) {
+        $small = New-Object System.Drawing.Bitmap $bmp, ([int]($w / 2)), ([int]($h / 2))
+        $small.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $small.Dispose()
+    }
+    $bmp.Dispose()
 }
 
 New-Item -ItemType Directory -Force $OutDir | Out-Null

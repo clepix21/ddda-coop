@@ -1,8 +1,8 @@
-﻿DDDA Coop 0.10.0 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam or GOG, 2 to 4 players)
+DDDA Coop 0.10.1 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam or GOG, 2 to 4 players)
 =======================================================================================================
 
 Each player needs the game (Steam or GOG, current version) on their own PC, and this same mod
-version (0.10.0).
+version (0.10.1).
 - Steam: guests must be Steam friends with the host. No IP address or port to set.
 - GOG: players join by IP address (direct IP, UDP port 27101). See "GOG and direct IP" below.
 
@@ -56,6 +56,16 @@ Good to know
 ------------
 - Alpha: keep copies of your saves.
 - If the game folder already has another dinput8.dll (another mod), it is not replaced: remove it first.
+
+What's new in 0.10.1
+--------------------
+- Fixed (issue #4): in the open world, enemies, townsfolk and the other players were seen far from where
+  they are, or jumping, once the players stood in different parts of the map. The game counts places
+  from the part of the map its own player is in (10000 units wide); the mod now sends places that
+  every game reads the same way.
+- Fixed: an enemy could be matched with another one of its kind up to 1500 units away, and jumped there.
+- Fixed: an enemy the game made again at the same place in memory kept the old one's match.
+- Every player needs 0.10.1 (the message format changed).
 
 What's new in 0.10.0
 --------------------

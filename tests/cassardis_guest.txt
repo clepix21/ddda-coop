@@ -1,0 +1,8 @@
+# Issue #4 repro, guest: walks the host's way a little behind it (world places), dumps every enemy at the end.
+wait 8000
+wgoto 43000 134800 300 30000
+wgoto 40000 135300 300 30000
+wgoto 38200 135700 300 30000
+wgoto 37700 135900 250 20000
+wait 30000
+edump end

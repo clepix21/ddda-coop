@@ -82,12 +82,20 @@ struct Header {
     uint8_t type;
     uint32_t seq;
 };
+// The sender's open-world cell origin (field_origin): its places in the message are world places (here - origin),
+// or places in its own cell when ok is 0 (no origin found: the receiver then takes them as in its own cell, as
+// before 0.10.1). Issue #4.
+struct Org {
+    float x, z;
+    uint8_t ok;
+};
 struct InputMsg {
     Header h;
     XINPUT_GAMEPAD pad;
     uint8_t has_camera;
     float eye[3], target[3]; // the guest's camera, so the host turns the guest's stick the guest's way
     uint8_t away;            // the guest explores on its own (roam.cpp): its pawn goes back to its AI
+    Org org;
 };
 struct PingMsg { // the launcher's salon: a round trip, timed by the sender (PONG echoes t)
     Header h;
@@ -142,6 +150,7 @@ struct SnapMsg {
     int8_t pawn_of[4];        // the pawn showing each guest (by place), -1 = none
     uint64_t steam_of[4];     // each player's Steam id (by place), 0 = none or no Steam (the salon)
     uint16_t ping_of[4];      // the host's round trip to each guest, ms (0 = unknown), for the guests' salon
+    Org org;
 };
 struct QuestChunkMsg { // shared world: the quest state of the player at `origin`, deflated, in pieces
     Header h;
@@ -171,6 +180,7 @@ struct PStateMsg { // shared world, guest -> host: its own Arisen
     uint32_t loot_applied[4];  // the other players' pickups this guest applied, by place
     uint32_t flags_applied[4]; // the same for world flag changes
     uint8_t downed;            // revive.cpp
+    Org org;
 };
 constexpr int kFlagsPage = 80;
 struct FlagsMsg { // shared world: world flag changes of the player at `slot`, numbered from `first`
@@ -201,9 +211,11 @@ struct EnemyState {
 constexpr int kEnemiesPerPage = 20;
 struct EnemiesMsg {
     Header h;
+    Org org;
     uint8_t count;
     EnemyState e[kEnemiesPerPage];
 };
+constexpr int enemies_msg_size(int count) { return int(offsetof(EnemiesMsg, e) + count * sizeof(EnemyState)); }
 // Shared world: the enemies of an area the host is not in, from the player who runs them there (the
 // leader), relayed by the host to the other players in that stage.
 constexpr int kAreaPerPage = 16;
@@ -211,6 +223,7 @@ struct AreaEnemiesMsg {
     Header h;
     int32_t stage;
     uint8_t from; // the leader's slot (the host sets it from the sender)
+    Org org;
     uint8_t count;
     EnemyState e[kAreaPerPage];
 };
@@ -245,9 +258,97 @@ struct SaveNeedMsg {
 
 // The message format's version: 'DDC2' since 2026-10-29 (32-bit action numbers), 'DDC3' (the held
 // monster's place), 'DDC4' (players' Steam ids in the SNAP, for the launcher's salon), 'DDC5' (pings),
-// 'DDC6' (the lantern). Messages of another format ('DDCO', 'DDC2'...) come from a player with another mod
-// version: dropped, and said (the badge, the log).
-constexpr uint32_t kMagic = 0x36434444;
+// 'DDC6' (the lantern), 'DDC7' (places in world places: the open world's cells, issue #4). Messages of another
+// format ('DDCO', 'DDC2'...) come from a player with another mod version: dropped, and said (the badge, the log).
+constexpr uint32_t kMagic = 0x37434444;
+
+// The places in a message, between this game's cell and world places: the open world shifts every place by
+// 10000 u at its cell edges, each game at its own Arisen's crossing, and two players in different cells saw
+// each other and the enemies 10000 u off (issue #4, stage 100 repro 2026-11-16).
+// Before sending (to_world): the players' places become world places (here - origin; as they are when this
+// game has no origin) and the message carries this game's origin. Enemy states are world places already
+// (enemy_net_after_finalize, the spawns in enemies.cpp).
+// On arrival: the players' places become places here, the enemy states world places of this game; when one of
+// the two games has no origin, the sender's places are taken as in this game's cell (as before 0.10.1). The
+// message then carries this game's origin (the host relays the leaders' enemy pages).
+void msg_places(void *buf, int n, bool to_world)
+{
+    auto h = static_cast<Header *>(buf);
+    Org *org = nullptr;
+    if (h->type == MSG_INPUT && n == int(sizeof(InputMsg)))
+        org = &static_cast<InputMsg *>(buf)->org;
+    else if (h->type == MSG_PSTATE && n == int(sizeof(PStateMsg)))
+        org = &static_cast<PStateMsg *>(buf)->org;
+    else if (h->type == MSG_SNAP && n == int(sizeof(SnapMsg)))
+        org = &static_cast<SnapMsg *>(buf)->org;
+    else if (h->type == MSG_ENEMIES && n >= enemies_msg_size(0))
+        org = &static_cast<EnemiesMsg *>(buf)->org;
+    else if (h->type == MSG_AREA_ENEMIES && n >= area_msg_size(0))
+        org = &static_cast<AreaEnemiesMsg *>(buf)->org;
+    if (!org)
+        return;
+    float mx, mz;
+    bool mine_ok = field_origin(mx, mz);
+    // chars: added to a world place to get a place here; enemies: added to the sender's world place to get one
+    // of this game
+    float cx, cz, ex = 0.f, ez = 0.f;
+    if (to_world) {
+        cx = -mx; // here -> world: minus this game's origin (0 without one)
+        cz = -mz;
+    } else if (mine_ok && org->ok) {
+        cx = mx;
+        cz = mz;
+    } else { // one of the two has no origin: the sender's own places, taken as in this game's cell
+        cx = org->x;
+        cz = org->z;
+        ex = org->x - mx;
+        ez = org->z - mz;
+    }
+    auto ch = [cx, cz](float *p) {
+        p[0] += cx;
+        p[2] += cz;
+    };
+    auto en = [ex, ez](float *p) {
+        p[0] += ex;
+        p[2] += ez;
+    };
+    EnemyState *es = nullptr;
+    int count = 0;
+    if (h->type == MSG_INPUT) {
+        auto m = static_cast<InputMsg *>(buf);
+        if (m->has_camera) {
+            ch(m->eye);
+            ch(m->target);
+        }
+    } else if (h->type == MSG_PSTATE) {
+        auto m = static_cast<PStateMsg *>(buf);
+        if (m->me.valid)
+            ch(m->me.pos);
+    } else if (h->type == MSG_SNAP) {
+        auto m = static_cast<SnapMsg *>(buf);
+        for (CharState &c : m->ch)
+            if (c.valid)
+                ch(c.pos);
+        if (m->stage.talk_npc[0] || m->stage.talk_npc[2])
+            ch(m->stage.talk_npc);
+    } else if (h->type == MSG_ENEMIES) {
+        auto m = static_cast<EnemiesMsg *>(buf);
+        es = m->e;
+        count = n == enemies_msg_size(m->count) && m->count <= kEnemiesPerPage ? m->count : 0;
+    } else if (h->type == MSG_AREA_ENEMIES) {
+        auto m = static_cast<AreaEnemiesMsg *>(buf);
+        es = m->e;
+        count = n == area_msg_size(m->count) && m->count <= kAreaPerPage ? m->count : 0;
+    }
+    if (!to_world)
+        for (int k = 0; k < count; ++k) {
+            en(es[k].spawn);
+            en(es[k].pos);
+        }
+    org->x = mx;
+    org->z = mz;
+    org->ok = mine_ok ? 1 : 0;
+}
 bool other_version(uint32_t magic) { return (magic & 0x00FFFFFF) == 0x00434444 && magic != kMagic; }
 volatile LONG g_old_peer = 0;
 NetRole g_role = NET_OFF;
@@ -1422,6 +1523,7 @@ struct Follow {
     DWORD last;           // last finalize of the local enemy: a gone enemy's entry stays behind
     int paired_to;        // host_slot of the first update applied (the pairing's own jump is not an error)
     float host_spawn[3];  // the spawn of the host enemy it pairs with: a new one in that host slot ends the pair
+    bool loose;           // paired by "kind, closest" (not on its spawn): a spawn match may take its host enemy
 };
 Follow g_follow[kEnemySlots] = {};
 struct EnemyStats {
@@ -1637,6 +1739,7 @@ void receive_all()
                  unsigned(h->magic), n, unsigned(h->type), unsigned(from_steam % 10000));
         if (h->magic != kMagic)
             continue;
+        msg_places(buf, n, false); // the players' places arrive as world places: here, in this game's cell
         // which player sent it: the guest has one peer, its host
         int k = -1;
         for (int i = 0; i < kMaxPeers && k < 0; ++i) {
@@ -1990,10 +2093,10 @@ void receive_all()
                 }
             g_last_enemies_rx = now;
             LeaveCriticalSection(&g_enemy_lock);
-        } else if (g_role == NET_GUEST && h->type == MSG_ENEMIES && n >= int(sizeof(Header) + 1)) {
+        } else if (g_role == NET_GUEST && h->type == MSG_ENEMIES && n >= enemies_msg_size(0)) {
             auto m = reinterpret_cast<const EnemiesMsg *>(buf);
             int count = m->count;
-            if (count > kEnemiesPerPage || n != int(sizeof(Header) + 1 + count * sizeof(EnemyState)))
+            if (count > kEnemiesPerPage || n != enemies_msg_size(count))
                 continue;
             if (g_shared && g_lead != 0)
                 continue; // the host's enemies are not the ones around this guest
@@ -2064,8 +2167,10 @@ void send_enemies(DWORD now)
     }
     g_send_cursor = m.count == kEnemiesPerPage ? next : 0;
     LeaveCriticalSection(&g_enemy_lock);
-    if (m.count)
-        send_raw(&m, int(sizeof(Header) + 1 + m.count * sizeof(EnemyState)));
+    if (m.count) {
+        msg_places(&m, enemies_msg_size(m.count), true);
+        send_raw(&m, enemies_msg_size(m.count));
+    }
 }
 
 // An enemy of this world by the number the group's leader gives it (its own enemy table slot; a
@@ -2157,6 +2262,7 @@ void area_lead_update()
     pending = -2;
     InterlockedExchange(&g_lead_others, lead == me ? others : 0);
     EnterCriticalSection(&g_enemy_lock);
+    field_to_world(lp); // compared with the enemies' spawns, which are world places
     memcpy(g_lead_pos, lp, sizeof lp);
     if (lead != int(g_lead)) {
         memset(g_enemy_tick, 0, sizeof g_enemy_tick);
@@ -2194,8 +2300,10 @@ void send_area_enemies(DWORD now)
     }
     g_area_cursor = m.count == kAreaPerPage ? next : 0;
     LeaveCriticalSection(&g_enemy_lock);
-    if (m.count)
+    if (m.count) {
+        msg_places(&m, area_msg_size(m.count), true);
         send_raw(&m, area_msg_size(m.count));
+    }
 }
 
 // Shared world, net thread, every second: coop_status.txt in the game folder for DDDA-Coop.exe's
@@ -2684,6 +2792,7 @@ DWORD WINAPI net_thread(LPVOID)
                 p.last_seq = 0;
             }
         }
+        field_origin_scan(); // starts the thread looking for the open world's cell origin (issue #4)
         if (int(now - next_send) >= 0) {
             if (g_role == NET_GUEST) {
                 InputMsg m = {};
@@ -2700,6 +2809,7 @@ DWORD WINAPI net_thread(LPVOID)
                     memcpy(m.target, reinterpret_cast<void *>(cam + 0x60), sizeof m.target);
                     m.has_camera = 1;
                 }
+                msg_places(&m, sizeof m, true);
                 send_raw(&m, sizeof m);
                 next_send = now + 16;
                 guest_save_need(now);
@@ -2724,6 +2834,7 @@ DWORD WINAPI net_thread(LPVOID)
                     memcpy(ps.loot_applied, g_loot_applied, sizeof ps.loot_applied);
                     memcpy(ps.flags_applied, g_flags_applied, sizeof ps.flags_applied);
                     ps.downed = revive_down() ? 1 : 0;
+                    msg_places(&ps, sizeof ps, true);
                     send_raw(&ps, sizeof ps);
                     area_lead_update();
                     if (g_lead_others && g_lead == net_my_slot())
@@ -2800,6 +2911,7 @@ DWORD WINAPI net_thread(LPVOID)
                             memset(p.pstate.cmd + (0x34 - kCmdCopyFrom), 0, 4);
                         }
                 }
+                msg_places(&m, sizeof m, true); // the players' places as world places (issue #4)
                 m.exp_total[0] = exp_sync_total();
                 for (int k = 0; k < kMaxPeers; ++k)
                     m.exp_total[1 + k] = g_peers[k].used ? g_peers[k].exp_total : 0;
@@ -2890,6 +3002,27 @@ void net_capture(uintptr_t ch, int i)
 {
     if (!(g_role == NET_HOST || (g_shared && i == 0)) || i < 0 || i >= kParty)
         return;
+    if (i == 0) { // this game crossed a cell edge: the other players' latest places (kept as places here) move too
+        static float last_ox = 0.f, last_oz = 0.f;
+        float ox, oz;
+        field_origin(ox, oz);
+        if (ox != last_ox || oz != last_oz) {
+            float dx = ox - last_ox, dz = oz - last_oz;
+            EnterCriticalSection(&g_cap_lock);
+            for (int k = 0; k < kParty; ++k) {
+                g_rp[k].pos[0] += dx;
+                g_rp[k].pos[2] += dz;
+                for (int s = 0; s < g_rp_hist_n[k]; ++s) {
+                    g_rp_hist[k][s].pos[0] += dx;
+                    g_rp_hist[k][s].pos[2] += dz;
+                }
+            }
+            LeaveCriticalSection(&g_cap_lock);
+            logf("net: field cell origin (%.0f, %.0f) -> (%.0f, %.0f)", last_ox, last_oz, ox, oz);
+            last_ox = ox;
+            last_oz = oz;
+        }
+    }
     CharState s = {};
     capture_state(ch, s);
     s.hold_slot = -1;
@@ -3454,6 +3587,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         s.cls = class_hash(slot.name);
         memcpy(s.spawn, slot.spawn, sizeof s.spawn);
         memcpy(s.pos, reinterpret_cast<void *>(em + 0x40), sizeof s.pos);
+        field_to_world(s.pos); // enemy states travel in world places, as the spawns (issue #4)
         memcpy(s.rot, reinterpret_cast<void *>(em + 0x50), sizeof s.rot);
         s.yaw = game::at<float>(em, kYawA);
         if (float *hp = enemies_hp(em)) {
@@ -3472,7 +3606,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     perf_add(PERF_WAIT, tw);
     Follow &f = g_follow[i];
     if (f.first_seen != slot.first_seen) // a new enemy in this local slot
-        f = {slot.first_seen, -1, now, em, 0, false, 0, 0}; // never 0: int(now - 0) < 0 after 24.8 days of uptime
+        f = {slot.first_seen, -1, now, em, 0, false, 0, 0, 0, {}, false}; // never 0: int(now - 0) < 0 after 24.8 days of uptime
     f.last = now;
     if (f.host_slot >= 0 && (!g_enemy_tick[f.host_slot] || now - g_enemy_tick[f.host_slot] > 3000))
         f.host_slot = -1; // the host's enemy is gone (or the host stopped sending it)
@@ -3491,16 +3625,33 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         f.next_try = now + 500;
         uint32_t cls = class_hash(slot.name);
         ClassSet fam = class_family(slot.name);
-        bool claimed[kEnemySlots] = {};
+        // claimed[k]: 1 by a spawn or position pair, 2 by a loose ("kind, closest") one, which a spawn or
+        // position match takes over: a far loose pair holding this enemy's true twin pushed that twin to a
+        // far loose pair in turn (stage 100 repro, issue #4: 10 pairs over 400 u, enemies snapped 500-1400 u)
+        uint8_t claimed[kEnemySlots] = {};
+        int claimer[kEnemySlots];
         for (int k = 0; k < kEnemySlots; ++k)
-            if (k != i && g_follow[k].host_slot >= 0 && now - g_follow[k].last < 1000)
-                claimed[g_follow[k].host_slot] = true;
+            if (k != i && g_follow[k].host_slot >= 0 && now - g_follow[k].last < 1000) {
+                claimed[g_follow[k].host_slot] = g_follow[k].loose ? 2 : 1;
+                claimer[g_follow[k].host_slot] = k;
+            }
+        // its true twin is known (a host enemy of its kind spawned where it did, seen in the last 30 s, not
+        // held by an exact pair): wait for it rather than take a far one of the same kind
+        bool twin_known = false;
+        for (int k = 0; k < kEnemySlots && !twin_known; ++k) {
+            const EnemyState &h = g_enemy_state[k];
+            float dx = h.spawn[0] - slot.spawn[0], dy = h.spawn[1] - slot.spawn[1], dz = h.spawn[2] - slot.spawn[2];
+            twin_known = g_enemy_tick[k] && now - g_enemy_tick[k] < 30000 && claimed[k] != 1 && !h.died &&
+                         fam.has(h.cls) && dx * dx + dy * dy + dz * dz < 40.f * 40.f;
+        }
         // 1. same class, spawn within 40 u; 2. same class, standing within 40 u now (critters such as
         // uEm8100 move away from their spawn after their first frames, not at the same moment on both PCs);
         // 3. once it has been here 6 s: same class or a variant, the closest standing within 1500 u.
         // Packs (wolves, bats, harpies) spawn 100 to 1500 u apart in the two worlds (friends' logs,
         // 2026-10-28) and stayed apart: one of the same kind is as good as another.
-        const float *here = reinterpret_cast<const float *>(em + 0x40);
+        float here[3]; // in world places, as the host's states and the spawns
+        memcpy(here, reinterpret_cast<void *>(em + 0x40), sizeof here);
+        field_to_world(here);
         const char *how = "spawns";
         float best = 40.f * 40.f;
         for (int pass = 0; pass < 3 && f.host_slot < 0; ++pass) {
@@ -3509,13 +3660,20 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
                     break;
                 if (now - slot.first_seen < 6000) // passes 1 and 2 first: at 2 s it snapped critters (uEm8100) 784 u
                     break;
-                best = 1500.f * 1500.f; // packs spawned up to 1500 u apart (friends' logs)
+                if (twin_known)
+                    break;
+                // packs spawned up to 1500 u apart (friends' logs, two saves). In the shared world the guest
+                // plays the host's save, so the same enemies spawn at the same places: a twin 1400 u off is
+                // another enemy, and the snap was seen as enemies jumping (stage 100 repro, issue #4)
+                best = g_shared ? 400.f * 400.f : 1500.f * 1500.f;
                 how = "kind, closest";
             }
             const float *mine = pass == 0 ? slot.spawn : here;
             for (int k = 0; k < kEnemySlots; ++k) {
                 const EnemyState &h = g_enemy_state[k];
-                if (!g_enemy_tick[k] || now - g_enemy_tick[k] > 3000 || claimed[k] || (pass < 2 ? h.cls != cls : !fam.has(h.cls)))
+                if (!g_enemy_tick[k] || now - g_enemy_tick[k] > 3000 || (pass < 2 ? h.cls != cls : !fam.has(h.cls)))
+                    continue;
+                if (claimed[k] == 1 || (claimed[k] == 2 && pass == 2))
                     continue;
                 const float *theirs = pass == 0 ? h.spawn : h.pos;
                 float dx = theirs[0] - mine[0], dy = theirs[1] - mine[1], dz = theirs[2] - mine[2];
@@ -3530,6 +3688,15 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         }
         if (f.host_slot >= 0) {
             memcpy(f.host_spawn, g_enemy_state[f.host_slot].spawn, sizeof f.host_spawn);
+            f.loose = strcmp(how, "kind, closest") == 0;
+            if (claimed[f.host_slot] == 2) { // taken over from a loose pair: that enemy pairs again
+                Follow &other = g_follow[claimer[f.host_slot]];
+                logf("net: enemy #%d %s takes host #%d from enemy #%d (paired by kind only)", i, slot.name, f.host_slot,
+                     claimer[f.host_slot]);
+                other.host_slot = -1;
+                other.loose = false;
+                other.next_try = now;
+            }
             ++g_enemy_stats.matched_new;
             logf("net: enemy #%d %s paired with host #%d (%s %.1f u apart)", i, slot.name, f.host_slot, how,
                  std::sqrt(best));
@@ -3602,6 +3769,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         }
     }
     EnemyState s = g_enemy_state[f.host_slot];
+    field_to_local(s.pos); // the host's place, in this game's cell
     float *pos = reinterpret_cast<float *>(em + 0x40);
     float dx = s.pos[0] - pos[0], dy = s.pos[1] - pos[1], dz = s.pos[2] - pos[2];
     float err = std::sqrt(dx * dx + dy * dy + dz * dz);
@@ -3610,6 +3778,15 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     f.paired_to = f.host_slot + 1;
     if (!first && err > g_enemy_stats.worst_err)
         g_enemy_stats.worst_err = err;
+    if (!first && err > 500.f) { // a paired enemy far from its host twin: which one, and where both are (issue #4)
+        static DWORD next_far_log = 0;
+        if (!next_far_log || int(now - next_far_log) >= 0) {
+            next_far_log = (now + 500) | 1;
+            logf("net: enemy #%d %s far from host #%d: %.0f u (here (%.0f, %.0f, %.0f), host (%.0f, %.0f, %.0f), host state %lu ms old)",
+                 i, slot.name, f.host_slot, err, pos[0], pos[1], pos[2], s.pos[0], s.pos[1], s.pos[2],
+                 now - g_enemy_tick[f.host_slot]);
+        }
+    }
     LeaveCriticalSection(&g_enemy_lock);
     // same correction as the players' puppets: snap when far (with every copy the collision pass
     // keeps), ease otherwise; facing and quaternion forced
