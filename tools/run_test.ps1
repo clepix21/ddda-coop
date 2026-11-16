@@ -57,6 +57,12 @@ if ($Bot -and $gog) {
     if ($steps | Where-Object { $_.L -match '^82000\s+0\s+1000' }) {
         $steps += [pscustomobject]@{ T = 93000; I = 100000; L = "93000 0 1000" }, [pscustomobject]@{ T = 93300; I = 100001; L = "93300 0 0" }
     }
+    # COOP_GOG_DELAY=<ms>: the steps from the title on (50 s) that much later, as run_pair.ps1 (the GOG game
+    # reaches its menus ~20 s later with the Galaxy client closed)
+    $delay = [int64]$(if ($env:COOP_GOG_DELAY) { $env:COOP_GOG_DELAY } else { 0 })
+    if ($delay -gt 0) {
+        $steps = @($steps | ForEach-Object { if ($_.T -ge 50000) { $p = $_.L -split '\s+', 2; [pscustomobject]@{ T = $_.T + $delay; I = $_.I; L = "$($_.T + $delay) $($p[1])" } } else { $_ } })
+    }
     $steps | Sort-Object T, I | ForEach-Object { $_.L } | Set-Content $botPath -Encoding ascii
 } elseif ($Bot) { Copy-Item $Bot $botPath -Force } elseif (Test-Path $botPath) { Remove-Item $botPath }
 $before = Get-SaveHashes
