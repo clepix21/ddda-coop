@@ -135,6 +135,9 @@ static DWORD WINAPI pad_thread(LPVOID)
 void mod_start(HINSTANCE)
 {
     InitializeCriticalSection(&g_log_lock);
+    // the previous game's log kept as coop.prev.log: after a crash the player restarts the game before
+    // exporting the log, and the crash was lost (issue #4, 2026-11-14)
+    MoveFileExA("coop.log", "coop.prev.log", MOVEFILE_REPLACE_EXISTING);
     g_log = fopen("coop.log", "w"); // cwd is the game folder
     logf("ddda-pawn-coop loaded, version " DDDA_COOP_VERSION);
     if (!exe_is_supported()) {

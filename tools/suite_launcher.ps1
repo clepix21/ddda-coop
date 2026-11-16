@@ -262,6 +262,8 @@ if (-not $Only -or $Only -eq "goglaunch") {
     Set-Content "$storage\sub\marker.txt" "fake Galaxy storage for the launcher test" -Encoding ascii
     $empty = Join-Path $out "no_steam"; New-Item -ItemType Directory -Force $empty | Out-Null
     Prepare-Copy 'J:\coop-test\gog1' "0,0,1920,1080" @("private_storage=1", "test_save=J:\coop-test\saves\guild.sav") (Join-Path $tests "bot_load_game_p2.txt") -gog
+    Remove-Item 'J:\coop-test\gog1\coop.prev.log' -ErrorAction SilentlyContinue
+    Set-Content 'J:\coop-test\gog1\coop.log' 'the game before (crashed)' -Encoding ascii # the mod keeps it as coop.prev.log
     $l = Start-Launcher "goglaunch" @("role=host") @('--steam', $empty, '--gog', 'J:\coop-test\gog1', '--gog-storage', $storage) 100 -launch
     $said = @(Press-Launch $l)
     $said | ForEach-Object { "   launcher said: $_" }
@@ -286,6 +288,7 @@ if (-not $Only -or $Only -eq "goglaunch") {
     $log = Get-Content "$out\goglaunch.log" -ErrorAction SilentlyContinue
     $checks += Check ($guard -and -not $exited) "goglaunch: the mod loaded (save guard active), game still running after 2 min"
     $checks += Check (($log -match 'net: host, listening on port 27101').Count -gt 0) "goglaunch: the host listens on UDP 27101"
+    $checks += Check ((Get-Content 'J:\coop-test\gog1\coop.prev.log' -ErrorAction SilentlyContinue) -contains 'the game before (crashed)') "goglaunch: the previous game's log kept as coop.prev.log"
     Stop-Process -Id $l.Id -ErrorAction SilentlyContinue
 }
 

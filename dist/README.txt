@@ -65,6 +65,10 @@ What's new in 0.10.0
 - "Settings" > "Game version": Steam or GOG, and "How the GOG version works".
 - The launcher tells each step over direct IP: host ready, guest looking for the host, host found,
   no answer (with what to check), port already in use.
+- An unsupported DDDA.exe: the launcher says which versions the mod needs, with the exe's fingerprint.
+- The previous game's log is kept (coop.prev.log) and exported with the log: a crash is no longer
+  lost when the game is started again.
+- The Lobby no longer lists virtual machine network cards (VirtualBox, VMware, Hyper-V).
 
 Licence: MIT for the mod's own code; MinHook and Roboto: see LICENCES.txt.
 Unofficial mod, not affiliated with Capcom. Dragon's Dogma: Dark Arisen (c) Capcom.

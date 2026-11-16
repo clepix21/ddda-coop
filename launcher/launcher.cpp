@@ -1240,6 +1240,10 @@ void on_export()
         ask(tr(L"La copie du journal a échoué."), MB_ICONERROR);
         return;
     }
+    // the game's previous log too (the mod keeps it as coop.prev.log): the one of a game that crashed
+    std::wstring prev = g_game_dir + L"\\coop.prev.log";
+    if (exists(prev))
+        CopyFileW(prev.c_str(), (dest.substr(0, dest.size() - 4) + L"-previous.log").c_str(), FALSE);
     add_event(tr(L"Journal copié : ") + dest);
     std::wstring arg = L"/select,\"" + dest + L"\"";
     ShellExecuteW(g_wnd, L"open", L"explorer.exe", arg.c_str(), nullptr, SW_SHOWNORMAL);

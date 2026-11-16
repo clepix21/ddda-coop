@@ -38,6 +38,7 @@ If something goes wrong
 
 After
 -----
-- Everyone: "Log" > "Export the log" BEFORE restarting the game (it clears the log), and send
-  the file from Documents\DDDA Coop\Journaux, saying who you are.
+- Everyone: "Log" > "Export the log", and send the files from Documents\DDDA Coop\Journaux,
+  saying who you are. After a crash, export before starting the game twice (the log of the game
+  before is kept as "-previous").
 - Friends, back to your own game: "Solo" (your co-op gains are added) or "Remove the mod".
