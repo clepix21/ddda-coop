@@ -41,6 +41,8 @@ if ($LASTEXITCODE) { throw "launcher link failed" }
 
 # build\DDDA-Coop\ and build\DDDA-Coop.zip: what a player gets
 $pkg = Join-Path $out "DDDA-Coop"
+# emptied first: files of older versions (LISEZMOI.txt 0.9.3, TEST-A-PLUSIEURS.txt) stayed in the zip
+if (Test-Path $pkg) { Get-ChildItem $pkg -File | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force } }
 New-Item -ItemType Directory -Force $pkg | Out-Null
 Copy-Item (Join-Path $out "DDDA-Coop.exe"), (Join-Path $out "dinput8.dll"), `
     (Join-Path $PSScriptRoot "dist\coop.ini"), (Join-Path $PSScriptRoot "dist\README.txt"), `
