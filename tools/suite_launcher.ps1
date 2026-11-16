@@ -6,11 +6,12 @@
 #  steam: the owner's case of 2026-11-15 (an old lan=1, a GOG game chosen, then Steam): Steam is pressed,
 #         the host plays over Steam (the owner's real Steam account: presence only, no friend joins)
 #  gog:   host gog1 + guest gog2 through the launcher's direct IP (the guest's address 127.0.0.1)
+#  mixed: a Steam host with "Play without Steam" on (direct_ip=1) and a GOG guest (gog2), by 127.0.0.1
 #  goglaunch: the launcher starts GOG's game itself (no --no-launch): gog1 given as GOG's install (--gog),
 #         a fake Galaxy storage (--gog-storage) backed up into the test's Documents
 #  firstrun: no DDDA-Coop.ini: with only a GOG game, the help then the GOG help come by themselves, once,
 #         GOG chosen; with both games, Steam chosen and no GOG help; then the pages in the 5 languages
-# Prints PASS/FAIL lines. Usage: .\suite_launcher.ps1 [-Only steam|gog|goglaunch|firstrun]
+# Prints PASS/FAIL lines. Usage: .\suite_launcher.ps1 [-Only steam|gog|mixed|goglaunch|firstrun]
 param([string]$Only = "")
 $ErrorActionPreference = "Stop"
 $tools = $PSScriptRoot
@@ -219,6 +220,40 @@ if (-not $Only -or $Only -eq "gog") {
     foreach ($p in $lh, $lg) { Stop-Process -Id $p.Id -ErrorAction SilentlyContinue }
 }
 
+# ---- mixed: a Steam host with "Play without Steam" on, a GOG guest, through direct IP ----
+if (-not $Only -or $Only -eq "mixed") {
+    $fake = Join-Path $out "fake_steam"
+    New-Item -ItemType Directory -Force "$fake\steamapps\common" | Out-Null
+    if (-not (Test-Path "$fake\steamapps\common\DDDA")) { New-Item -ItemType Junction -Path "$fake\steamapps\common\DDDA" -Target 'J:\coop-test\DDDA' | Out-Null }
+    $storage = Join-Path $out "fake_galaxy_storage"; New-Item -ItemType Directory -Force "$storage\sub" | Out-Null
+    Set-Content "$storage\sub\marker.txt" "fake Galaxy storage for the launcher test" -Encoding ascii
+    Prepare-Copy 'J:\coop-test\DDDA' "0,0,1920,1080" @("test_save=J:\coop-test\saves\guild.sav") (Join-Path $tests "bot_load_game_p2.txt")
+    Prepare-Copy 'J:\coop-test\gog2' "-1920,0,1920,1080" @("private_storage=1", "test_save=J:\coop-test\saves\guest_arisen.sav") (Join-Path $tests "shared_guest_walk.txt") -gog
+    $lh = Start-Launcher "mixed_host" @("role=host", "direct_ip=1", "game=J:\coop-test\DDDA") @('--steam', $fake) 100
+    $lg = Start-Launcher "mixed_guest" @("role=guest", "game=J:\coop-test\gog2", "host_code=127.0.0.1") @('--gog-storage', $storage) 1000
+    foreach ($p in $lh, $lg) { Press-Launch $p | ForEach-Object { "   launcher said: $_" } }
+    $hi = Get-Content 'J:\coop-test\DDDA\coop.ini'; $gi = Get-Content 'J:\coop-test\gog2\coop.ini'
+    $checks += Check ($hi -contains "role=host" -and $hi -contains "transport=udp" -and $hi -contains "port=27101") "mixed: Steam host's coop.ini: transport=udp (Play without Steam on), port=27101"
+    $checks += Check ($gi -contains "role=guest" -and $gi -contains "transport=udp" -and $gi -contains "peer=127.0.0.1") "mixed: GOG guest's coop.ini: peer=127.0.0.1"
+    $gh = Start-Process 'J:\coop-test\DDDA\DDDA.exe' -WorkingDirectory 'J:\coop-test\DDDA' -PassThru; Start-Sleep 5
+    $gg = Start-Process 'J:\coop-test\gog2\DDDA.exe' -WorkingDirectory 'J:\coop-test\gog2' -PassThru
+    $t0 = Get-Date
+    while (((Get-Date) - $t0).TotalSeconds -lt 200) { Start-Sleep 2; if ($gh.HasExited -or $gg.HasExited) { break } }
+    $hw = [LW]::Texts($lh.MainWindowHandle); $gw = [LW]::Texts($lg.MainWindowHandle)
+    foreach ($p in $lh, $lg) { Cmd $p ($ID_NAV + 1) }
+    Start-Sleep 2
+    Shot $lh.MainWindowHandle "$out\mixed_host_salon.png"; Shot $lg.MainWindowHandle "$out\mixed_guest_salon.png"
+    $ex = $gh.HasExited -or $gg.HasExited
+    foreach ($p in $gh, $gg) { if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit(10000) | Out-Null } }
+    Copy-Item 'J:\coop-test\DDDA\coop.log' "$out\mixed_host.log" -ErrorAction SilentlyContinue
+    Copy-Item 'J:\coop-test\gog2\coop.log' "$out\mixed_guest.log" -ErrorAction SilentlyContinue
+    $hlog = Get-Content "$out\mixed_host.log" -ErrorAction SilentlyContinue; $glog = Get-Content "$out\mixed_guest.log" -ErrorAction SilentlyContinue
+    $checks += Check (-not $ex) "mixed: both games still running at the end"
+    $checks += Check (@($hlog -match 'TimeDateStamp 0x5A314C31').Count -gt 0 -and @($glog -match 'TimeDateStamp 0x5936ABAB').Count -gt 0) "mixed: the host ran Steam's exe, the guest GOG's"
+    $checks += Check (@($hlog -match 'net: guest connected from').Count -gt 0 -and @($glog -match "host's save version \d+ arrived").Count -gt 0) "mixed: the GOG guest reached the Steam host and got its world"
+    $checks += Check (@($gw -match 'H.te trouv').Count -gt 0 -and @($hw -match 'ami connect').Count -gt 0) "mixed: both launchers say so (host found / friend connected)"
+    foreach ($p in $lh, $lg) { Stop-Process -Id $p.Id -ErrorAction SilentlyContinue }
+}
 # ---- goglaunch: the launcher starts GOG's DDDA.exe itself ----
 if (-not $Only -or $Only -eq "goglaunch") {
     $others = @(Get-Process DDDA -ErrorAction SilentlyContinue).Count
@@ -282,6 +317,15 @@ if (-not $Only -or $Only -eq "firstrun") {
     $st = [LW]::Text([LW]::GetDlgItem($l.MainWindowHandle, 128))
     Stop-Process -Id $l.Id; Start-Sleep 1
     $checks += Check ((@($said | Where-Object { $_ -like '*version GOG*' }).Count -eq 0) -and $st -like '*choisi*') "firstrun: both games: Steam chosen (button: $st), no GOG help"
+    # an exe the mod does not know (issue #5): which versions it needs, once, with the exe's fingerprint
+    $bad = Join-Path $out "bad_game"; New-Item -ItemType Directory -Force $bad | Out-Null
+    Set-Content "$bad\DDDA.exe" "not the game" -Encoding ascii
+    $badSha = (Get-FileHash "$bad\DDDA.exe" -Algorithm SHA256).Hash
+    $l = Start-Launcher "bad_exe" @("game=$bad") @('--steam', $empty, '--gog', $empty) 100
+    $said = @(Read-Boxes $l 6)
+    $said | ForEach-Object { "   unsupported exe showed: $($_.Substring(0, [Math]::Min(160, $_.Length)))..." }
+    Stop-Process -Id $l.Id; Start-Sleep 1
+    $checks += Check ($said.Count -eq 1 -and $said[0] -match 'build 2364871' -and $said[0] -match 'GOG' -and $said[0] -match $badSha) "firstrun: unsupported exe: one box naming the Steam build, GOG, and the exe's fingerprint"
     # the pages in the five languages, with the GOG game (the longest texts), and the GOG help box
     foreach ($lang in "FR", "EN", "DE", "IT", "ES") {
         $l = Start-Launcher "lang_$lang" @("lang=$lang", "game=J:\coop-test\gog1") @('--steam', $fake, '--gog', 'J:\coop-test\gog1', '--page', '3') 100

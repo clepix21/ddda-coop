@@ -15,13 +15,14 @@
 <!-- badges: work/readme_badges.py -->
 <p align="center">
   <img src="https://img.shields.io/badge/status-alpha-8b1e2b" alt="status: alpha">
-  <img src="https://img.shields.io/badge/version-0.9.5-8a6d3b" alt="version: 0.9.5">
+  <img src="https://img.shields.io/badge/version-0.10.0-8a6d3b" alt="version: 0.10.0">
   <a href="https://github.com/clepix21/ddda-coop/releases"><img src="https://img.shields.io/github/downloads/clepix21/ddda-coop/total?label=downloads&color=2b3137&logo=github&logoColor=white" alt="downloads"></a>
   <img src="https://img.shields.io/badge/players-2%E2%80%934-2b3137" alt="players: 2–4">
   <img src="https://img.shields.io/badge/game-Dragon%27s%20Dogma%3A%20Dark%20Arisen-2b3137?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNic%2BPHBhdGggZmlsbD0nI2M4YTk2YScgZD0nTTggMWw2IDN2NWMwIDMtMyA1LTYgNi0zLTEtNi0zLTYtNlY0eicvPjwvc3ZnPg%3D%3D&logoColor=white" alt="game: Dragon's Dogma: Dark Arisen">
 <br>
   <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNic%2BPHBhdGggZmlsbD0nd2hpdGUnIGQ9J00wIDBoNy41djcuNUgwek04LjUgMEgxNnY3LjVIOC41ek0wIDguNWg3LjVWMTZIMHpNOC41IDguNUgxNlYxNkg4LjV6Jy8%2BPC9zdmc%2B&logoColor=white" alt="Windows 10 / 11">
   <img src="https://img.shields.io/badge/Steam-P2P-171a21?logo=steam&logoColor=white" alt="Steam P2P">
+  <img src="https://img.shields.io/badge/GOG-direct%20IP-86328A?logo=gogdotcom&logoColor=white" alt="GOG: direct IP">
   <img src="assets/readme/en/badge-languages.svg" alt="launcher: English, français, italiano, Deutsch, español">
 <br>
   <img src="https://img.shields.io/badge/C%2B%2B-00599C?logo=cplusplus&logoColor=white" alt="C++">
@@ -49,7 +50,8 @@
 
 ## In short
 
-The host plays their game as usual. Up to three Steam friends join, each on their own PC and with
+The host plays their game as usual. Up to three friends join (Steam friends, or by IP address on GOG),
+each on their own PC and with
 **their own character** (look, vocation, level, gear) taking the place of a pawn. Monsters, loot,
 quests and experience are shared. What your character earns at a friend's comes back to your solo game.
 
@@ -69,8 +71,9 @@ their own and come back whenever they like.
 2. Open `DDDA-Coop.exe`. It finds the game by itself and backs up your saves before each launch.
 3. Choose your role (**Host**, **Guest** or **Solo**), then click **Launch the game**.
 
-You need Dragon's Dogma: Dark Arisen on **Steam** (build 2364871, the current PC version). Everyone
-needs **the same version of the mod**: the window warns you otherwise.
+You need Dragon's Dogma: Dark Arisen on **Steam** (build 2364871, the current PC version) or on
+**GOG** (the current GOG version). Everyone needs **the same version of the mod**: the window warns you
+otherwise. Both installed? **Settings** › **Game version**: Steam or GOG.
 
 ## Play
 
@@ -82,6 +85,12 @@ then presses Start and loads a game: the host's world is what comes in.
 
 Several friends hosting at the same time? The host opens **Lobby** › **Copy the code**, and the guest
 pastes that code in their own **Lobby** before launching.
+
+**On GOG** (no Steam), players join by address: the host opens **Lobby** › **Copy the address** and
+sends it; the guest pastes it in their **Lobby** before launching. Same network: nothing else to do.
+Over the internet: the host forwards UDP port 27101 to their PC, or everyone uses a VPN that makes a
+local network. Keep GOG Galaxy open. A Steam player can join a GOG friend this way too, with
+**Settings** › **Play without Steam**.
 
 The controls and the details are in `README.txt` inside the zip; `HOW-TO-TEST.txt` is a short checklist for a first game with friends.
 
@@ -108,8 +117,8 @@ screen › **Export the log**).
 **How do I go back to the normal game?** **Settings** › **Remove the mod**. You can also delete
 `dinput8.dll` and `coop.ini` from the game folder.
 
-**Does it work outside Steam?** Not for now. There is a local network mode for tests (see the
-technical docs).
+**Does it work outside Steam?** Yes, on the GOG version, by IP address (since 0.10.0). When loading a
+game, the GOG game may show "Connection failed" (GOG's pawn server): press A, the game loads.
 
 </details>
 

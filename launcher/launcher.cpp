@@ -46,7 +46,7 @@ enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
     ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP,
     ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_BACKUP_LIST, ID_UPDATE, ID_CHECK_UPDATES, ID_PROJECT, ID_LANG,
-    ID_LAN, ID_STORE_STEAM, ID_STORE_GOG, ID_GOG_HELP,
+    ID_LAN, ID_STORE_STEAM, ID_STORE_GOG, ID_GOG_HELP, ID_UNSUPPORTED_HELP,
     ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
 };
 // the screens, in the sidebar's order
@@ -125,6 +125,8 @@ bool g_no_launch = false;
 std::wstring g_test_update; // --test-update <tag>
 int g_start_page = 0;       // --page <n>: the screen shown first (after a change of language)
 bool g_supported = false;
+std::string g_bad_sha;          // the last unsupported DDDA.exe's SHA-256 (told once per exe)
+std::wstring g_bad_told_for;    // the folder it was told for
 bool g_gog = false; // the game folder holds GOG's DDDA.exe: no Steam, LAN / direct IP only
 // the version picked in Paramètres (0 Steam, 1 GOG): follows the folder's DDDA.exe when it is a known one,
 // else the last button pressed; the two installs this PC has, found at the start
@@ -757,14 +759,16 @@ bool parse_address(const std::wstring &text, std::string &ip, int &port)
     return true;
 }
 
-// This PC's IPv4 addresses on its network cards that are up (no loopback), for the host's lobby.
+// This PC's IPv4 addresses on its network cards that are up, for the host's lobby: the card with the
+// router (a default gateway) first, VPN cards (Hamachi, ZeroTier, Radmin...) after; no loopback, and no
+// virtual machine's host-only card (VirtualBox, VMware, Hyper-V): friends cannot reach those.
 std::vector<std::wstring> local_addresses()
 {
-    std::vector<std::wstring> out;
+    std::vector<std::wstring> out, later;
     ULONG size = 16 * 1024;
     std::vector<unsigned char> buf(size);
     auto *a = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(buf.data());
-    ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_GATEWAYS;
     if (GetAdaptersAddresses(AF_INET, flags, nullptr, a, &size) == ERROR_BUFFER_OVERFLOW) {
         buf.resize(size);
         a = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(buf.data());
@@ -774,13 +778,18 @@ std::vector<std::wstring> local_addresses()
     for (; a; a = a->Next) {
         if (a->OperStatus != IfOperStatusUp || a->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
             continue;
+        std::wstring card = std::wstring(a->Description ? a->Description : L"") + L" " + (a->FriendlyName ? a->FriendlyName : L"");
+        if (card.find(L"VirtualBox") != std::wstring::npos || card.find(L"VMware") != std::wstring::npos ||
+            card.find(L"Hyper-V") != std::wstring::npos || card.find(L"vEthernet") != std::wstring::npos)
+            continue;
         for (auto *u = a->FirstUnicastAddress; u; u = u->Next) {
             wchar_t txt[64] = {};
             auto *sin = reinterpret_cast<sockaddr_in *>(u->Address.lpSockaddr);
             if (InetNtopW(AF_INET, &sin->sin_addr, txt, 64) && wcsncmp(txt, L"169.254.", 8) != 0)
-                out.push_back(txt);
+                (a->FirstGatewayAddress ? out : later).push_back(txt);
         }
     }
+    out.insert(out.end(), later.begin(), later.end());
     return out;
 }
 
@@ -832,6 +841,13 @@ void check_game()
         g_game_state = g_supported ? 2 : 1;
         if (g_supported)
             g_store = g_gog ? 1 : 0;
+        // an exe the mod does not know: which versions it needs, once per folder (issue #5: "which version
+        // of the game do we need?")
+        if (!g_supported && g_wnd && g_bad_told_for != g_game_dir) {
+            g_bad_told_for = g_game_dir;
+            g_bad_sha = sha;
+            PostMessageW(g_wnd, WM_COMMAND, ID_UNSUPPORTED_HELP, 0);
+        }
         // the first time a GOG game is chosen: how the GOG version plays, by itself once
         if (g_gog && g_wnd && setting(L"gog_help_seen", L"0") != L"1") {
             WritePrivateProfileStringW(L"launcher", L"gog_help_seen", L"1", settings_path().c_str());
@@ -1091,6 +1107,18 @@ void show_gog_help()
     MessageBoxW(g_wnd,
                 tr(L"Sans Steam, on se rejoint par adresse IP (port UDP 27101). \u00ab\u00a0Jouer sans Steam\u00a0\u00bb reste donc activ\u00e9.\n\n1. L'h\u00f4te lance le jeu. Le Salon affiche ses adresses : \u00ab\u00a0Copier l'adresse\u00a0\u00bb et envoie-la \u00e0 ton ami.\n2. L'invit\u00e9 choisit \u00ab\u00a0Invit\u00e9\u00a0\u00bb, colle cette adresse dans le Salon (par exemple 192.168.1.20), puis lance le jeu.\n3. Sur le m\u00eame r\u00e9seau (m\u00eame box) : rien d'autre \u00e0 faire.\n    Par internet : l'h\u00f4te ouvre le port UDP 27101 sur sa box (redirection vers son PC), ou vous utilisez tous les deux un VPN de type r\u00e9seau local et l'adresse qu'il donne.\n\n\u00c0 savoir\n  \u2022 Garde GOG Galaxy ouvert et connect\u00e9 : sans lui, le jeu peut rester bloqu\u00e9 sur \u00ab\u00a0Accessing server...\u00a0\u00bb.\n  \u2022 En chargeant ta partie, le jeu GOG peut afficher \u00ab\u00a0\u00c9chec de la connexion\u00a0\u00bb (le serveur des pions de GOG) : appuie sur A ou Entr\u00e9e, la partie se charge.\n  \u2022 Tes sauvegardes GOG Galaxy sont copi\u00e9es \u00e0 chaque lancement dans Documents\\DDDA Coop\\Sauvegardes.\n  \u2022 Un ami sur Steam peut te rejoindre s'il active \u00ab\u00a0Jouer sans Steam\u00a0\u00bb dans ses Param\u00e8tres."),
                 tr(L"DDDA Coop \u2013 La version GOG"), MB_ICONINFORMATION | MB_OK);
+}
+
+// Which versions of the game the mod works with, for an exe it does not know (with its fingerprint, to
+// report it).
+void show_unsupported_help()
+{
+    std::wstring sha(g_bad_sha.begin(), g_bad_sha.end());
+    MessageBoxW(g_wnd,
+                (tr(L"Ce DDDA.exe n'est pas une version prise en charge : le mod ne marcherait pas.\n\nDDDA Coop marche avec :\n  \u2022 Steam : la version actuelle (build 2364871). Dans Steam : clic droit sur le jeu > Propriétés > Fichiers installés > Vérifier l'intégrité des fichiers.\n  \u2022 GOG : la version actuelle (GOG Galaxy ou l'installeur GOG).\nUn exe modifié (patch, crack, version d'un autre magasin) n'est pas reconnu : remets celui d'origine.\n\nEmpreinte de ton DDDA.exe (à joindre si tu signales le problème) :\n") +
+                 sha)
+                    .c_str(),
+                tr(L"DDDA Coop \u2013 Version du jeu"), MB_ICONWARNING | MB_OK);
 }
 
 void on_launch()
@@ -2458,6 +2486,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_BACKUP: on_backup(); break;
         case ID_HELP: show_help(); break;
         case ID_GOG_HELP: show_gog_help(); break;
+        case ID_UNSUPPORTED_HELP: show_unsupported_help(); break;
         case ID_STORE_STEAM: pick_store(0); break;
         case ID_STORE_GOG: pick_store(1); break;
         case ID_LANG: pick_language(h); break;

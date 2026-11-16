@@ -15,13 +15,14 @@
 <!-- badges: work/readme_badges.py -->
 <p align="center">
   <img src="https://img.shields.io/badge/statut-alpha-8b1e2b" alt="statut: alpha">
-  <img src="https://img.shields.io/badge/version-0.9.5-8a6d3b" alt="version: 0.9.5">
+  <img src="https://img.shields.io/badge/version-0.10.0-8a6d3b" alt="version: 0.10.0">
   <a href="https://github.com/clepix21/ddda-coop/releases"><img src="https://img.shields.io/github/downloads/clepix21/ddda-coop/total?label=t%C3%A9l%C3%A9chargements&color=2b3137&logo=github&logoColor=white" alt="téléchargements"></a>
   <img src="https://img.shields.io/badge/joueurs-2%E2%80%934-2b3137" alt="joueurs: 2–4">
   <img src="https://img.shields.io/badge/jeu-Dragon%27s%20Dogma%3A%20Dark%20Arisen-2b3137?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNic%2BPHBhdGggZmlsbD0nI2M4YTk2YScgZD0nTTggMWw2IDN2NWMwIDMtMyA1LTYgNi0zLTEtNi0zLTYtNlY0eicvPjwvc3ZnPg%3D%3D&logoColor=white" alt="jeu: Dragon's Dogma: Dark Arisen">
 <br>
   <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNic%2BPHBhdGggZmlsbD0nd2hpdGUnIGQ9J00wIDBoNy41djcuNUgwek04LjUgMEgxNnY3LjVIOC41ek0wIDguNWg3LjVWMTZIMHpNOC41IDguNUgxNlYxNkg4LjV6Jy8%2BPC9zdmc%2B&logoColor=white" alt="Windows 10 / 11">
   <img src="https://img.shields.io/badge/Steam-P2P-171a21?logo=steam&logoColor=white" alt="Steam P2P">
+  <img src="https://img.shields.io/badge/GOG-IP%20directe-86328A?logo=gogdotcom&logoColor=white" alt="GOG : IP directe">
   <img src="assets/readme/fr/badge-languages.svg" alt="launcher: français, English, italiano, Deutsch, español">
 <br>
   <img src="https://img.shields.io/badge/C%2B%2B-00599C?logo=cplusplus&logoColor=white" alt="C++">
@@ -49,7 +50,8 @@
 
 ## En bref
 
-L'hôte joue sa partie comme d'habitude. Jusqu'à trois amis Steam le rejoignent, chacun sur son PC et
+L'hôte joue sa partie comme d'habitude. Jusqu'à trois amis le rejoignent (amis Steam, ou par adresse IP
+sur GOG), chacun sur son PC et
 avec **son propre perso** (apparence, vocation, niveau, équipement) qui prend la place d'un pion.
 Monstres, butin, quêtes et expérience sont partagés. Ce que ton perso gagne chez un ami revient dans ta
 partie solo.
@@ -70,8 +72,9 @@ explorer de son côté et revenir quand il veut.
 2. Ouvre `DDDA-Coop.exe`. Il trouve le jeu tout seul et sauvegarde tes parties avant chaque lancement.
 3. Choisis ton rôle (**Hôte**, **Invité** ou **Seul**) puis clique sur **Lancer le jeu**.
 
-Il te faut Dragon's Dogma: Dark Arisen sur **Steam** (build 2364871, la version PC actuelle). Tout le
-monde doit avoir **la même version du mod** : la fenêtre te prévient sinon.
+Il te faut Dragon's Dogma: Dark Arisen sur **Steam** (build 2364871, la version PC actuelle) ou sur
+**GOG** (la version GOG actuelle). Tout le monde doit avoir **la même version du mod** : la fenêtre te
+prévient sinon. Les deux installés ? **Paramètres** › **Version du jeu** : Steam ou GOG.
 
 ## Jouer
 
@@ -82,6 +85,12 @@ monde doit avoir **la même version du mod** : la fenêtre te prévient sinon.
 
 Plusieurs amis hébergent en même temps ? L'hôte ouvre **Salon** › **Copier le code**, et l'invité colle
 ce code dans son propre **Salon** avant de lancer.
+
+**Sur GOG** (sans Steam), on se rejoint par adresse : l'hôte ouvre **Salon** › **Copier l'adresse** et
+l'envoie ; l'invité la colle dans son **Salon** avant de lancer. Même réseau : rien d'autre à faire. Par
+internet : l'hôte redirige le port UDP 27101 vers son PC, ou tout le monde utilise un VPN de type réseau
+local. Garde GOG Galaxy ouvert. Un joueur Steam peut aussi rejoindre un ami GOG de cette façon, avec
+**Paramètres** › **Jouer sans Steam**.
 
 Les touches et les détails sont dans `README.txt` (en anglais), à l'intérieur du zip ; `HOW-TO-TEST.txt` est une courte liste pour une première partie entre amis.
 
@@ -110,8 +119,9 @@ dans `Documents\DDDA Coop\Sauvegardes`. Le jeu d'un invité ne sauvegarde jamais
 **Comment revenir au jeu normal ?** **Paramètres** › **Retirer le mod**. Tu peux aussi supprimer
 `dinput8.dll` et `coop.ini` du dossier du jeu.
 
-**Ça marche hors de Steam ?** Pas pour le moment. Il existe un mode réseau local pour les tests (voir la
-doc technique).
+**Ça marche hors de Steam ?** Oui, sur la version GOG, par adresse IP (depuis la 0.10.0). En chargeant
+une partie, le jeu GOG peut afficher « Échec de la connexion » (le serveur des pions de GOG) : appuie
+sur A, la partie se charge.
 
 </details>
 

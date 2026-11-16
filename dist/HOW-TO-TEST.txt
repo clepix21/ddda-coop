@@ -1,9 +1,11 @@
-﻿How to test DDDA Coop 0.9.8 with friends
+﻿How to test DDDA Coop 0.10.0 with friends
 ========================================
 
 Before
 ------
-- Everyone: the game up to date on Steam, and Steam friends with the host.
+- Everyone: the game up to date. Steam: Steam friends with the host.
+  GOG (or Steam with a GOG friend): direct IP, see "GOG and direct IP" in README.txt; the host's
+  address from their "Lobby"; over the internet, UDP port 27101 open on the host's router.
 - Everyone: unzip, open DDDA-Coop.exe. It must say "Game version supported".
   Windows may warn that the program is not signed: "More info", then "Run anyway".
 - Keep "Detailed log" on ("Settings").
@@ -28,6 +30,9 @@ Try
 If something goes wrong
 -----------------------
 - No Steam friend found in the game: be Steam friends, and in Dragon's Dogma.
+- Direct IP, "No answer from the host": check the address, that the host loaded their game, and
+  the host's UDP port 27101 (router, Windows firewall: allow DDDA.exe when Windows asks).
+- GOG, "Connection failed" when loading: press A or Enter, the game loads.
 - "Host not found" after a minute: restart the friend's game.
 - A crash or anything odd: note the time and what you were doing.
 
