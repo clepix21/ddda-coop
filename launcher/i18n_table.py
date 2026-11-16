@@ -587,6 +587,33 @@ T = [
      "  • Al cargar tu partida, el juego de GOG puede mostrar un error de conexión (el servidor de peones de GOG): pulsa A o Intro y la partida se carga.\n"
      "  • Tus partidas de GOG Galaxy se copian en cada inicio en Documents\\DDDA Coop\\Sauvegardes.\n"
      "  • Un amigo en Steam puede unirse si activa «Jugar sin Steam» en sus Ajustes."),
+
+    # direct IP states (0.10.0)
+    (r"Le port UDP de la co-op est déjà pris sur ce PC (un autre jeu lancé en hôte ?) : ferme-le, puis relance le jeu.",
+     'The co-op UDP port is already taken on this PC (another game started as host?): close it, then launch the game again.',
+     'La porta UDP della co-op è già occupata su questo PC (un altro gioco avviato come host?): chiudilo, poi riavvia il gioco.',
+     'Der UDP-Port der Co-op ist auf diesem PC schon belegt (ein anderes Spiel als Host gestartet?): Schließe es und starte das Spiel erneut.',
+     'El puerto UDP de la co-op ya está ocupado en este PC (¿otro juego iniciado como anfitrión?): ciérralo y vuelve a iniciar el juego.'),
+    (r"Port UDP déjà utilisé.", 'UDP port already in use.', 'Porta UDP già in uso.', 'UDP-Port bereits belegt.', 'Puerto UDP ya en uso.'),
+    (r"Prêt en IP directe, port UDP ", 'Ready over direct IP, UDP port ', 'Pronto con IP diretto, porta UDP ',
+     'Bereit über direkte IP, UDP-Port ', 'Listo por IP directa, puerto UDP '),
+    (r"Connexion à l'hôte en IP directe : ", 'Connecting to the host over direct IP: ', "Connessione all'host con IP diretto: ",
+     'Verbindung zum Host über direkte IP: ', 'Conectando con el anfitrión por IP directa: '),
+    (r"Recherche de l'hôte à son adresse… Reste sur l'écran titre.",
+     'Looking for the host at its address… Stay on the title screen.',
+     "Ricerca dell'host al suo indirizzo… Resta nella schermata del titolo.",
+     'Host wird unter seiner Adresse gesucht… Bleib auf dem Titelbildschirm.',
+     'Buscando al anfitrión en su dirección… Quédate en la pantalla de título.'),
+    (r"Le jeu n'a pas démarré en 2 minutes : vérifie que GOG Galaxy est ouvert, puis relance.",
+     'The game did not start within 2 minutes: check that GOG Galaxy is open, then launch again.',
+     'Il gioco non si è avviato in 2 minuti: controlla che GOG Galaxy sia aperto, poi riavvia.',
+     'Das Spiel ist nach 2 Minuten nicht gestartet: Prüfe, ob GOG Galaxy geöffnet ist, und starte erneut.',
+     'El juego no se ha iniciado en 2 minutos: comprueba que GOG Galaxy esté abierto y vuelve a iniciar.'),
+    (r"Aucune réponse de l'hôte : vérifie l'adresse dans le Salon, que l'hôte a lancé le jeu en « Hôte » et chargé sa partie, et, par internet, que son port UDP 27101 est ouvert. La recherche continue.",
+     'No answer from the host: check the address in the Lobby, that the host started the game as "Host" and loaded their save, and, over the internet, that their UDP port 27101 is open. Still looking.',
+     "Nessuna risposta dall'host: controlla l'indirizzo nella Lobby, che l'host abbia avviato il gioco come «Host» e caricato la sua partita e, via internet, che la sua porta UDP 27101 sia aperta. La ricerca continua.",
+     'Keine Antwort vom Host: Prüfe die Adresse in der Lobby, ob der Host das Spiel als „Host“ gestartet und seinen Spielstand geladen hat und, über das Internet, ob sein UDP-Port 27101 offen ist. Die Suche läuft weiter.',
+     'Ninguna respuesta del anfitrión: comprueba la dirección en la Sala, que el anfitrión haya iniciado el juego como «Anfitrión» y cargado su partida y, por internet, que su puerto UDP 27101 esté abierto. La búsqueda continúa.'),
 ]
 
 LANG_NAMES = ['Français', 'English', 'Italiano', 'Deutsch', 'Español']

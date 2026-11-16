@@ -6,7 +6,8 @@
 //
 // Files next to DDDA-Coop.exe: dinput8.dll (the mod), coop.ini (template, optional),
 // DDDA-Coop.ini (the launcher's own choices). Tests: --game <dir> and --steam <dir> replace the
-// folders found in the registry, --docs <dir> replaces Documents, --no-launch skips starting Steam.
+// folders found in the registry, --docs <dir> replaces Documents, --gog <dir> / --gog-storage <dir> replace GOG's install and
+// Galaxy's save storage, --no-launch skips starting the game.
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
@@ -128,7 +129,7 @@ bool g_gog = false; // the game folder holds GOG's DDDA.exe: no Steam, LAN / dir
 // the version picked in Paramètres (0 Steam, 1 GOG): follows the folder's DDDA.exe when it is a known one,
 // else the last button pressed; the two installs this PC has, found at the start
 int g_store = 0;
-std::wstring g_steam_game, g_gog_game;
+std::wstring g_steam_game, g_gog_game, g_gog_arg, g_gog_storage_arg; // --gog / --gog-storage: tests
 HWND g_store_steam = nullptr, g_store_gog = nullptr;
 COLORREF g_state_color = kMuted;
 FILETIME g_launch_time = {};
@@ -304,6 +305,8 @@ std::wstring find_game(const std::wstring &steam)
 // GOG's install (GOG Galaxy or the offline installer): HKLM\SOFTWARE\GOG.com\Games\1242384383, value "path".
 std::wstring find_gog_game()
 {
+    if (!g_gog_arg.empty()) // tests: that folder as GOG's install
+        return exists(g_gog_arg + L"\\DDDA.exe") ? g_gog_arg : std::wstring();
     wchar_t buf[MAX_PATH] = {};
     DWORD size = sizeof buf;
     if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\GOG.com\\Games\\1242384383", L"path", RRF_RT_REG_SZ, // 32-bit: WOW6432Node
@@ -889,6 +892,8 @@ std::wstring documents_dir()
 // user), copied to <date>\GOG.
 std::wstring gog_storage_dir()
 {
+    if (!g_gog_storage_arg.empty())
+        return g_gog_storage_arg;
     wchar_t buf[MAX_PATH] = {};
     if (!GetEnvironmentVariableW(L"LOCALAPPDATA", buf, MAX_PATH))
         return {};
@@ -1281,6 +1286,23 @@ void on_log_line(const std::string &l)
     } else if (has("unsupported DDDA.exe")) {
         add_event(tr(L"Version du jeu non prise en charge : le mod s'est désactivé."));
         set_state(tr(L"Mod désactivé : version du jeu non prise en charge."), kBad);
+    } else if (has("net: bind failed")) { // direct IP: the port is taken (another host on this PC)
+        add_event(tr(L"Le port UDP de la co-op est déjà pris sur ce PC (un autre jeu lancé en hôte ?) : ferme-le, puis relance le jeu."));
+        set_state(tr(L"Port UDP déjà utilisé."), kBad);
+    } else if (has("net: host, listening on port")) { // direct IP: the host is ready
+        g_link_up = true;
+        add_event(tr(L"Prêt en IP directe, port UDP ") + std::to_wstring(number_after(l, "listening on port ")) + L".");
+        set_state(tr(L"Prêt : en attente de tes amis. Tu peux jouer."), kMuted);
+    } else if (has("net: guest, ") && has(" port ")) { // direct IP: "net: guest, 192.168.1.20 port 27101"
+        g_link_up = true;
+        std::string ip = l.substr(l.find("net: guest, ") + 12);
+        ip = ip.substr(0, ip.find(' '));
+        add_event(tr(L"Connexion à l'hôte en IP directe : ") + std::wstring(ip.begin(), ip.end()));
+        set_state(tr(L"Recherche de l'hôte à son adresse… Reste sur l'écran titre."), kMuted);
+    } else if (has("net: save: receiving the host's save") && !g_host_found) { // direct IP: the host answered
+        g_host_found = true;
+        add_event(tr(L"Hôte trouvé, réception de son monde…"));
+        set_state(tr(L"Hôte trouvé. Réception de son monde… Reste sur l'écran titre."), kMuted);
     } else if (has("waiting for Steam")) {
         set_state(tr(L"En attente de Steam…"), kMuted);
     } else if (has("steam: link up")) {
@@ -1447,12 +1469,18 @@ void check_watchers()
              kBad);
     if (!g_game_seen && since > 120000)
         tell(g_told_no_mod, tr(L"Le jeu ne démarre pas."),
-             tr(L"Le jeu n'a pas démarré en 2 minutes : vérifie que Steam est ouvert et connecté, puis relance."), kBad);
+             g_gog ? tr(L"Le jeu n'a pas démarré en 2 minutes : vérifie que GOG Galaxy est ouvert, puis relance.")
+                   : tr(L"Le jeu n'a pas démarré en 2 minutes : vérifie que Steam est ouvert et connecté, puis relance."),
+             kBad);
     if (g_steam_wait_since && !g_link_up && GetTickCount() - g_steam_wait_since > 30000)
         tell(g_told_steam, tr(L"Steam ne répond pas."),
              tr(L"Le mod attend Steam depuis 30 s : vérifie que Steam est ouvert, connecté (pas en mode hors ligne), puis relance le jeu."),
              kBad);
-    if (guest_role() && g_link_up && !g_host_found && since > 90000)
+    if (guest_role() && g_link_up && !g_host_found && since > 90000 && lan_mode())
+        tell(g_told_no_host, tr(L"Hôte introuvable pour l'instant."),
+             tr(L"Aucune réponse de l'hôte : vérifie l'adresse dans le Salon, que l'hôte a lancé le jeu en « Hôte » et chargé sa partie, et, par internet, que son port UDP 27101 est ouvert. La recherche continue."),
+             kWarn);
+    if (guest_role() && g_link_up && !g_host_found && since > 90000 && !lan_mode())
         tell(g_told_no_host, tr(L"Hôte introuvable pour l'instant."),
              tr(L"Aucun hôte trouvé : vérifie que l'hôte a lancé le jeu avec « L'hôte », que vous êtes amis sur Steam, et que son statut Steam n'est pas « Invisible ». La recherche continue."),
              kWarn);
@@ -2590,6 +2618,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
             game_arg = argv[++i];
         else if (a == L"--steam" && i + 1 < argc)
             steam_arg = argv[++i];
+        else if (a == L"--gog" && i + 1 < argc)
+            g_gog_arg = argv[++i];
+        else if (a == L"--gog-storage" && i + 1 < argc)
+            g_gog_storage_arg = argv[++i];
         else if (a == L"--docs" && i + 1 < argc)
             g_docs_dir = argv[++i];
         else if (a == L"--no-launch")
