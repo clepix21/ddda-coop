@@ -279,6 +279,10 @@ struct SaveNeedMsg {
 // format ('DDCO', 'DDC2'...) come from a player with another mod version: dropped, and said (the badge, the log).
 constexpr uint32_t kMagic = 0x38434444;
 
+// this game's cell origin as net_capture last took it (game thread), for msg_places
+volatile float g_ack_ox = 0.f, g_ack_oz = 0.f;
+volatile bool g_ack_ok = false;
+
 // The places in a message, between this game's cell and world places: the open world shifts every place by
 // 10000 u at its cell edges, each game at its own Arisen's crossing, and two players in different cells saw
 // each other and the enemies 10000 u off (issue #4, stage 100 repro 2026-11-16).
@@ -304,8 +308,11 @@ void msg_places(void *buf, int n, bool to_world)
         org = &static_cast<AreaEnemiesMsg *>(buf)->org;
     if (!org)
         return;
-    float mx, mz;
-    bool mine_ok = field_origin(mx, mz);
+    // this game's origin as net_capture last took it (game thread, with the captured places and the shift of
+    // the kept ones): read live, a state that came between the game's cell change and that frame was turned
+    // with the new origin and then shifted again, 10000 u off for a frame (cassardis suite, 2026-11-17)
+    float mx = g_ack_ox, mz = g_ack_oz;
+    bool mine_ok = g_ack_ok;
     // chars: added to a world place to get a place here; enemies: added to the sender's world place to get one
     // of this game
     float cx, cz, ex = 0.f, ez = 0.f;
@@ -655,6 +662,15 @@ uintptr_t holder_of(uintptr_t ch)
             return p;
     return 0; // anything else (a monster's hold, a lift...): +0x40 left as it is
 }
+// tests (test_log_actions=1): read once (early_flag opens coop.ini: called per enemy per frame, it slowed the
+// game and broke the player grab suite's timing, 2026-11-17 series)
+bool log_actions_flag()
+{
+    static int v = -1;
+    if (v < 0)
+        v = early_flag("test_log_actions") ? 1 : 0;
+    return v == 1;
+}
 // Caught by a monster: the caught character plays one of the monster's actions (cEm0900ActCarryCatchPl, an
 // ogre's carry; cEm5000ActCatchPl...: dti), with its +0x40 relative to the monster (issue #4 logs 2026-11-16).
 bool monster_caught(uintptr_t ch)
@@ -701,7 +717,7 @@ void shared_apply_commands(uintptr_t ch, int i)
     if ((uint32_t(s.action) >> 16) != 0 && s.aim_pitch == s.aim_pitch && std::fabs(s.aim_pitch) < 1.6f) {
         static DWORD next_log[kParty] = {};
         float was = game::at<float>(ch, kAimPitch);
-        if ((std::fabs(was - s.aim_pitch) > 0.05f || early_flag("test_log_actions")) && (!next_log[i] || int(GetTickCount() - next_log[i]) >= 0)) {
+        if ((std::fabs(was - s.aim_pitch) > 0.05f || log_actions_flag()) && (!next_log[i] || int(GetTickCount() - next_log[i]) >= 0)) {
             next_log[i] = (GetTickCount() + 1000) | 1;
             logf("net: shared: party %d aims at pitch %.3f here, its player at %.3f (0x%X): set", i, was, s.aim_pitch,
                  unsigned(s.action));
@@ -3121,10 +3137,16 @@ void net_capture(uintptr_t ch, int i)
     if (i == 0) { // this game crossed a cell edge: the other players' latest places (kept as places here) move too
         static float last_ox = 0.f, last_oz = 0.f;
         float ox, oz;
-        field_origin(ox, oz);
-        if (ox != last_ox || oz != last_oz) {
+        bool ok = field_origin(ox, oz);
+        EnterCriticalSection(&g_cap_lock); // the origin msg_places uses, set with the kept places' shift
+        g_ack_ox = ox;
+        g_ack_oz = oz;
+        g_ack_ok = ok;
+        bool moved = ox != last_ox || oz != last_oz;
+        if (!moved)
+            LeaveCriticalSection(&g_cap_lock);
+        if (moved) {
             float dx = ox - last_ox, dz = oz - last_oz;
-            EnterCriticalSection(&g_cap_lock);
             for (int k = 0; k < kParty; ++k) {
                 g_rp[k].pos[0] += dx;
                 g_rp[k].pos[2] += dz;
@@ -3713,7 +3735,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         s.died = slot.died != 0;
         s.sid = slot.spawn_id;
         s.action = game::at<int32_t>(em, 0x2DD4);
-        if (early_flag("test_log_actions")) { // tests: each enemy's action as its number and its class
+        if (log_actions_flag()) { // tests: each enemy's action as its number and its class
             static int32_t logged[kEnemySlots] = {};
             static const char *logged_name[kEnemySlots] = {};
             const char *an = action_name(em);
@@ -3992,7 +4014,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         }
         if (here != s.action && (changed || now - off_since[i] > 300)) {
             static DWORD next_log = 0;
-            if (early_flag("test_log_actions") && (!next_log || int(now - next_log) >= 0)) {
+            if (log_actions_flag() && (!next_log || int(now - next_log) >= 0)) {
                 next_log = (now + 250) | 1;
                 logf("net: enemy #%d %s plays host #%d's action 0x%X (was 0x%X, %s)", i, slot.name, f.host_slot,
                      unsigned(s.action), unsigned(here), changed ? "new" : "its own AI meanwhile");
