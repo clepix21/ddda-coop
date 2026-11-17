@@ -66,6 +66,9 @@ What's new in 0.10.2
   its own AI on each PC (issue #4: "the combat itself is still not synced").
 - Bows and staves: the other players aim where their player aims, mouse aim included (issue #4: the
   arrows hit the ceiling).
+- Objects a player moves (crates, barrels, thrown or pushed things) move in the other players' games too:
+  each game sends the objects it moves, the others put theirs at the same place (issue #4). While an object
+  is carried, the others see it where it was picked up; it joins once thrown or set down.
 - A player caught by a monster (an ogre's carry...) is no longer thrown thousands of units away on the
   other screens; a catch seen on one PC only is ended there.
 - Every player needs 0.10.2 (the message format changed).

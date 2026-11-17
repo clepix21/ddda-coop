@@ -61,7 +61,7 @@ namespace {
 
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
                        MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11, MSG_REVIVE = 12, MSG_QUEST = 13,
-                       MSG_AREA_ENEMIES = 14, MSG_PING = 15, MSG_PONG = 16, MSG_EVENT = 17 };
+                       MSG_AREA_ENEMIES = 14, MSG_PING = 15, MSG_PONG = 16, MSG_EVENT = 17, MSG_OBJECTS = 18 };
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 constexpr uintptr_t kAimPitch = 0x32D4; // aim pitch (radians) while aiming a bow or a staff (bridge chdiff, 2026-11-17)
@@ -233,6 +233,17 @@ struct AreaEnemiesMsg {
     EnemyState e[kAreaPerPage];
 };
 constexpr int area_msg_size(int count) { return int(offsetof(AreaEnemiesMsg, e) + count * sizeof(EnemyState)); }
+// Shared world: objects a player's game moves (objects.cpp; issue #4, crates and barrels), to the others in
+// its stage (the host relays a guest's).
+constexpr int kObjPerMsg = 16;
+struct ObjectsMsg {
+    Header h;
+    int32_t stage;
+    uint8_t from; // the mover's place (the host sets it from the sender)
+    uint8_t count;
+    ObjState o[kObjPerMsg];
+};
+constexpr int objects_msg_size(int count) { return int(offsetof(ObjectsMsg, o) + count * sizeof(ObjState)); }
 constexpr int kSaveChunk = 1024;
 struct SaveChunkMsg {
     Header h;
@@ -2144,6 +2155,19 @@ void receive_all()
                     g.got.assign(g.got.size(), 0);
                 }
             }
+        } else if (h->type == MSG_OBJECTS && n >= objects_msg_size(0)) {
+            auto m = reinterpret_cast<ObjectsMsg *>(buf);
+            int count = m->count;
+            if (!g_shared || count > kObjPerMsg || n != objects_msg_size(count))
+                continue;
+            if (g_role == NET_HOST) { // to the other players in that stage
+                m->from = uint8_t(1 + k);
+                for (int q = 0; q < kMaxPeers; ++q)
+                    if (q != k && g_peers[q].used && g_peers[q].pstate_tick && g_peers[q].pstage == m->stage)
+                        send_to(g_peers[q], m, n);
+            }
+            if (m->stage == my_stage())
+                objects_receive(m->o, count);
         } else if (h->type == MSG_AREA_ENEMIES && n >= area_msg_size(0)) {
             auto m = reinterpret_cast<AreaEnemiesMsg *>(buf);
             int count = m->count;
@@ -2868,6 +2892,23 @@ DWORD WINAPI net_thread(LPVOID)
             }
         }
         field_origin_scan(); // starts the thread looking for the open world's cell origin (issue #4)
+        // the objects this game moves (crates, barrels; issue #4), 10 times a second, to the others in its stage
+        static DWORD obj_next = 0;
+        if (g_shared && (!obj_next || int(now - obj_next) >= 0)) {
+            obj_next = (now + 100) | 1;
+            bool anyone = false;
+            for (const Peer &p : g_peers)
+                anyone |= p.used;
+            if (anyone && possess_arisen()) {
+                ObjectsMsg om = {};
+                om.h = {kMagic, MSG_OBJECTS, ++g_seq};
+                om.stage = my_stage();
+                om.from = uint8_t(net_my_slot());
+                om.count = uint8_t(objects_collect(om.o, kObjPerMsg));
+                if (om.count)
+                    send_raw(&om, objects_msg_size(om.count));
+            }
+        }
         if (int(now - next_send) >= 0) {
             if (g_role == NET_GUEST) {
                 InputMsg m = {};

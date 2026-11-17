@@ -1,0 +1,13 @@
+# Objects test, host (saves/ocean.sav, stage 100 on the coast): once the guest stands here too, moves the object
+# nearest to it twice (as a player would) and logs the objects around; later logs them again after the guest
+# moved one (objects_guest.txt). Each game must follow the other's moves.
+wait 25000
+objnear
+objpush 150 0
+wait 1500
+objpush 0 150
+wait 5000
+objnear
+wait 15000
+objnear
+wait 10000

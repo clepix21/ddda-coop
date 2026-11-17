@@ -317,3 +317,21 @@ void units_scan(); // bridge "units": the game's unit lists (objects, issue #4)
 // an enemy's spawn entry (sSetManager::cUnitData): block, (index << 16) | group, kind; false if none
 bool enemy_spawn_entry(uintptr_t em, uint32_t &block, uint32_t &group_index, uint32_t &kind);
 void discord_start(); // discord.cpp: Discord Rich Presence through the local Discord app (discord_app_id)
+// objects.cpp: objects moved by a player (crates, barrels; issue #4), sent by the game that moves them
+struct ObjState {
+    uint32_t cls;  // FNV-1a of its class name (uOm*)
+    float home[3]; // its place when its area loaded (world places): with cls, the same object on every PC
+    float pos[3];  // its place now (world places)
+    float rot[4];  // +0x50
+};
+int objects_collect(ObjState *out, int cap);       // net thread: the objects this game moved in the last 2 s
+void objects_receive(const ObjState *in, int count); // net thread: those another game moves
+void objects_game_tick();                           // game thread: puts them where they are there
+bool mem_safe_read(uintptr_t a, void *out, size_t n); // enemies.cpp: ReadProcessMemory on this process
+const char *enemies_strict_class_of(uintptr_t q);     // its class name, reads that cannot fault (or nullptr)
+void units_each_raw(bool (*f)(uintptr_t unit, void *ctx), void *ctx); // every unit of sUnit's move lines
+template <class F> void units_each_unit(F f)
+{
+    units_each_raw([](uintptr_t u, void *c) { return (*static_cast<F *>(c))(u); }, &f);
+}
+void objects_debug(const char *what, float dx, float dz); // bridge objpush / objnear (tests)

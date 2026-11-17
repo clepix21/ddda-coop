@@ -1168,6 +1168,14 @@ void run_line(const char *line)
     } else if (sscanf(line, "cutplay %u", &slot) == 1) { // cutplay <event>: start that event (cutscene) here
         cutscene_play(int(slot));
         _snprintf(g_current, sizeof g_current, "cutplay %u", slot);
+    } else if (strncmp(line, "objpush ", 8) == 0) { // objpush <dx> <dz>: moves the nearest object (tests, issue #4)
+        float dx = 0.f, dz = 0.f;
+        if (sscanf(line + 8, "%f %f", &dx, &dz) == 2)
+            objects_debug("push", dx, dz);
+        _snprintf(g_current, sizeof g_current, "objpush");
+    } else if (strncmp(line, "objnear", 7) == 0) { // objnear: the objects around, as objects.cpp tracks them
+        objects_debug("near", 0.f, 0.f);
+        _snprintf(g_current, sizeof g_current, "objnear");
     } else if (strncmp(line, "units", 5) == 0) { // units: the game's unit lists and the objects in them (issue #4)
         units_scan();
         _snprintf(g_current, sizeof g_current, "units");

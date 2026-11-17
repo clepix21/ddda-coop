@@ -221,6 +221,7 @@ int possess_pre(uintptr_t ch, uint8_t **out_copy)
         quest_live_tick();
         progress_guest_gold_tick();
         bridge_game_tick();
+        objects_game_tick(); // objects other players move (issue #4)
         hang_note_update_thread();
         action_tick(ch);
         revive_game_tick(ch); // getting up, coming back next to a player

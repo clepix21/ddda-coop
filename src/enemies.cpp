@@ -717,11 +717,19 @@ bool enemy_spawn_entry(uintptr_t em, uint32_t &block, uint32_t &group_index, uin
 // Bridge "units": the game's sUnit (every live unit, in move lines) found among the exe's globals, its
 // fields, and for each pointer to a sUnit::MoveLine the classes of what it holds (objects: uOm*; issue #4,
 // carried crates and barrels).
-void units_scan()
+// The game's sUnit (sUnitExt; the static pointer at 018D09E0 on Steam): from +0x20, sUnit::MoveLine entries
+// 0x18 bytes apart (+0xC the first unit of the line, +0x10 the last); each unit's +0xC is the next one of its
+// line (units scan, Pawn Guild, 2026-11-17: objects uOmObj8530/8505/7010 in the line at +0x1B8).
+namespace {
+volatile uintptr_t g_sunit = 0, g_sunit_vt = 0, g_line_vt = 0;
+}
+bool sunit_find()
 {
+    bool ok;
+    if (g_sunit && safe_u32(g_sunit, ok) == g_sunit_vt && ok)
+        return true;
     static uint8_t page[0x1000];
-    uintptr_t su = 0, from = 0;
-    for (uintptr_t g = 0x01600000; g < 0x019C0000 && !su; g += 0x1000) {
+    for (uintptr_t g = 0x01600000; g < 0x019C0000; g += 0x1000) {
         if (!safe_read(g, page, sizeof page))
             continue;
         for (int o = 0; o < 0x1000; o += 4) {
@@ -730,71 +738,71 @@ void units_scan()
             if (q < 0x10000 || q >= 0x7FFF0000 || (q & 3) || strict_in_exe(q))
                 continue;
             const char *c = strict_class_of(q);
-            if (c && (strcmp(c, "sUnit") == 0 || strcmp(c, "sUnitExt") == 0)) {
-                su = q;
-                from = g + o;
-                break;
-            }
-        }
-    }
-    if (!su) {
-        logf("units: no sUnit among the exe's globals");
-        return;
-    }
-    logf("units: sUnit %08X (global %08X)", unsigned(su), unsigned(from));
-    // its first 0x400 bytes: pointers and what they are
-    int lines = 0;
-    for (int off = 4; off < 0x19F370 && lines < 40; off += 4) {
-        bool ok;
-        uintptr_t v = safe_u32(su + off, ok);
-        if (!ok)
-            break;
-        const char *c = strict_in_exe(v) ? strict_class_of(su + off) : strict_class_of(v);
-        if (!c)
-            continue;
-        uintptr_t line = strict_in_exe(v) ? su + off : v; // an embedded line, or a pointer to one
-        if (strncmp(c, "sUnit::", 7) != 0)
-            continue;
-        logf("units: sUnit +%X: %s %08X", off, c, unsigned(line));
-        if (strcmp(c, "sUnit::MoveLine") != 0)
-            continue;
-        ++lines;
-        // the line's words: unit pointers among them, then follow each unit's own words for the next one
-        uint32_t w[16] = {};
-        safe_read(line, w, sizeof w);
-        logf("units:   line %08X: %08X %08X %08X %08X %08X %08X %08X %08X", unsigned(line), w[0], w[1], w[2], w[3], w[4],
-             w[5], w[6], w[7]);
-        for (int j = 1; j < 16; ++j) {
-            const char *uc = strict_class_of(w[j]);
-            if (!uc)
+            if (!c || (strcmp(c, "sUnit") != 0 && strcmp(c, "sUnitExt") != 0))
                 continue;
-            // walk: from this unit, the field that leads to another unit of the line (tried +4..+0x20)
-            int shown = 0;
-            uintptr_t u = w[j];
-            int next_off = -1;
-            for (int no = 4; no <= 0x20 && next_off < 0; no += 4) {
-                uintptr_t n = safe_u32(u + no, ok);
-                if (ok && n != u && strict_class_of(n) && !strict_in_exe(n))
-                    next_off = no;
-            }
-            logf("units:   line +%X -> %s %08X (next at +%X)", j * 4, uc, unsigned(u), unsigned(next_off));
-            for (int k = 0; k < 400 && u && next_off > 0; ++k) {
-                const char *nc = strict_class_of(u);
-                if (!nc)
-                    break;
-                if (strncmp(nc, "uOm", 3) == 0 && shown < 60) {
-                    float p[3] = {};
-                    safe_read(u + 0x40, p, sizeof p);
-                    logf("units:     %s %08X at (%.0f, %.0f, %.0f)", nc, unsigned(u), p[0], p[1], p[2]);
-                    ++shown;
-                }
-                u = safe_u32(u + next_off, ok);
-                if (!ok)
-                    break;
-            }
-            break;
+            const char *lc = strict_class_of(q + 0x20);
+            if (!lc || strcmp(lc, "sUnit::MoveLine") != 0)
+                continue;
+            g_line_vt = safe_u32(q + 0x20, ok);
+            g_sunit_vt = safe_u32(q, ok);
+            g_sunit = q;
+            logf("units: sUnit %08X (global %08X)", unsigned(q), unsigned(g + o));
+            return true;
         }
     }
+    return false;
+}
+
+// Calls f(unit, line index) for every unit of every move line; stops early when f returns false.
+template <class F> void units_each(F f)
+{
+    if (!sunit_find())
+        return;
+    bool ok;
+    for (int k = 0; k < 64; ++k) {
+        uintptr_t line = g_sunit + 0x20 + k * 0x18;
+        if (safe_u32(line, ok) != g_line_vt || !ok)
+            break;
+        uintptr_t u = safe_u32(line + 0xC, ok);
+        for (int n = 0; ok && u && n < 4000; ++n) {
+            if (!f(u, k))
+                return;
+            u = safe_u32(u + 0xC, ok);
+        }
+    }
+}
+
+// Bridge "units": every move line's units by class, and the objects (uOm*) with their places (issue #4,
+// carried crates and barrels).
+void units_scan()
+{
+    struct Count {
+        const char *c;
+        int line, n;
+    };
+    static Count counts[256];
+    int nc = 0, objs = 0;
+    units_each([&](uintptr_t u, int line) {
+        const char *c = strict_class_of(u);
+        if (!c)
+            return true;
+        int j = 0;
+        while (j < nc && !(counts[j].c == c && counts[j].line == line))
+            ++j;
+        if (j == nc && nc < 256)
+            counts[nc++] = {c, line, 0};
+        if (j < nc)
+            ++counts[j].n;
+        if (strncmp(c, "uOm", 3) == 0 && objs < 120) {
+            ++objs;
+            float p[3] = {};
+            safe_read(u + 0x40, p, sizeof p);
+            logf("units: line %d %s %08X at (%.0f, %.0f, %.0f)", line, c, unsigned(u), p[0], p[1], p[2]);
+        }
+        return true;
+    });
+    for (int j = 0; j < nc; ++j)
+        logf("units: line %d: %d %s", counts[j].line, counts[j].n, counts[j].c);
 }
 
 // Bridge "setinfo": each enemy's spawn entry, then every unit of the manager (class, entry, place).
@@ -865,4 +873,12 @@ void enemies_dump(const char *name)
     if (idx)
         fclose(idx);
     logf("enemies: dumped %d enemies as %s", n, name);
+}
+
+// For objects.cpp: reads that cannot fault, class names, and every unit of the move lines.
+bool mem_safe_read(uintptr_t a, void *out, size_t n) { return safe_read(a, out, n); }
+const char *enemies_strict_class_of(uintptr_t q) { return strict_class_of(q); }
+void units_each_raw(bool (*f)(uintptr_t unit, void *ctx), void *ctx)
+{
+    units_each([&](uintptr_t u, int) { return f(u, ctx); });
 }

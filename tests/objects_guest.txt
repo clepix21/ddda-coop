@@ -1,0 +1,11 @@
+# Objects test, guest: logs the objects around before and after the host moves one (objects_host.txt), then
+# moves the one nearest to it and logs again: the host's copy must follow.
+wait 15000
+objnear
+wait 12000
+objnear
+wait 3000
+objpush -200 0
+wait 6000
+objnear
+wait 10000
