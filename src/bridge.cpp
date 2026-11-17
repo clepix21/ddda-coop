@@ -758,6 +758,19 @@ void run_line(const char *line)
             game::at<uint32_t>(g_poke_addr, 0) = v;
         }
         _snprintf(g_current, sizeof g_current, "gpoke %X", off);
+    } else if (strncmp(line, "chpoke ", 7) == 0) {
+        // chpoke <offset hex> <float> <ms>: writes the Arisen's float there every frame for ms (tests: an aim
+        // pitch as a mouse sets it, +0x32D4, without the sticks)
+        unsigned off = 0, dur = 0;
+        float v = 0.f;
+        uintptr_t a = possess_arisen();
+        if (sscanf(line + 7, "%x %f %u", &off, &v, &dur) == 3 && a && off < 0x8000) {
+            g_poke_addr = a + off;
+            memcpy(&g_poke_val, &v, 4);
+            g_poke_until = (GetTickCount() + dur) | 1;
+            logf("bridge: chpoke Arisen +%X = %.3f (was %.3f) for %u ms", off, v, game::at<float>(a, off), dur);
+        }
+        _snprintf(g_current, sizeof g_current, "chpoke %X", off);
     } else if (strncmp(line, "peek ", 5) == 0) { // peek <hex address>...: the words there (tests)
         char buf[300] = "";
         int len = 0;
@@ -1155,6 +1168,12 @@ void run_line(const char *line)
     } else if (sscanf(line, "cutplay %u", &slot) == 1) { // cutplay <event>: start that event (cutscene) here
         cutscene_play(int(slot));
         _snprintf(g_current, sizeof g_current, "cutplay %u", slot);
+    } else if (strncmp(line, "units", 5) == 0) { // units: the game's unit lists and the objects in them (issue #4)
+        units_scan();
+        _snprintf(g_current, sizeof g_current, "units");
+    } else if (strncmp(line, "setinfo", 7) == 0) { // setinfo: each enemy's layout entry pointers (issue #6)
+        enemies_setinfo_scan();
+        _snprintf(g_current, sizeof g_current, "setinfo");
     } else if (strncmp(line, "where", 5) == 0) { // where: the Arisen's position
         if (uintptr_t a = possess_arisen())
             logf("bridge: where %.0f %.0f %.0f", game::at<float>(a, 0x40), game::at<float>(a, 0x44), game::at<float>(a, 0x48));

@@ -1,8 +1,8 @@
-# Two-copy enemy sync (milestone 4): both copies load the save and walk to the underground on
+﻿# Two-copy enemy sync (milestone 4): both copies load the save and walk to the underground on
 # their own (net_late=1, so the network starts only once both are there), then the host's Arisen
 # walks up to the small creatures and the party fights. The guest must pair its enemies with the
 # host's, follow their positions and end with the same HP. Prints PASS/FAIL lines and a summary.
-param([ValidateSet("udp", "mock")][string]$Transport = "udp")
+param([ValidateSet("udp", "mock")][string]$Transport = "udp", [switch]$LogActions) # -LogActions: both log their action changes, the host its enemies' (issue #6)
 # the copies: Steam's DDDA, DDDA2, or GOG's gog1, gog2 (COOP_GOG=1, run_pair.ps1)
 $copy1 = if ($env:COOP_GOG -eq "1") { "J:\coop-test\gog1" } else { "J:\coop-test\DDDA" }
 $copy2 = if ($env:COOP_GOG -eq "1") { "J:\coop-test\gog2" } else { "J:\coop-test\DDDA2" }
@@ -21,8 +21,8 @@ $route = Join-Path $tests "route_guild_to_underground.txt"
 $run = & (Join-Path $tools "run_pair.ps1") -Seconds 350 -OutDir $out -Shots 240, 330 `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "bot_load_game_p2.txt") `
     -HostBridge @($route, (Join-Path $tests "pair_enemy_host.txt")) -GuestBridge @($route, (Join-Path $tests "pair_enemy_guest.txt")) `
-    -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "net_late=1") + $hostNet) `
-    -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "net_late=1", "send_character=0") + $guestNet) 2>$null
+    -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "net_late=1") + $(if ($LogActions) { @("test_log_actions=1") } else { @() }) + $hostNet) `
+    -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "net_late=1", "send_character=0") + $(if ($LogActions) { @("test_log_actions=1") } else { @() }) + $guestNet) 2>$null
 $run | ForEach-Object { "   $_" }
 Copy-Item "$copy1\dump_end_enemies.txt" (Join-Path $out "host_enemies.txt") -ErrorAction SilentlyContinue
 Copy-Item "$copy2\dump_end_enemies.txt" (Join-Path $out "guest_enemies.txt") -ErrorAction SilentlyContinue

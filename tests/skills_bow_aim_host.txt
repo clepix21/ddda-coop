@@ -1,0 +1,20 @@
+# Bow aim, host (saves/ranger.sav, Strider; does not walk, never A or B alone: the Rift stone is near):
+# draws (LT), aims the shortbow (LB held) at a pitch set as a mouse sets it (+0x32D4 written every frame, no
+# stick), shoots (RT) twice down, then twice up; the guest's pawn of the host must aim the same (its log).
+wait 3000
+pad 0 0 0 0 0 0 255 0 300
+wait 2000
+chpoke 32D4 -0.6 4500
+pad 0 0100 0 0 0 0 0 0 1500
+pad 0 0100 0 0 0 0 0 255 300
+pad 0 0100 0 0 0 0 0 0 800
+pad 0 0100 0 0 0 0 0 255 300
+pad 0 0100 0 0 0 0 0 0 800
+wait 1500
+chpoke 32D4 0.7 4500
+pad 0 0100 0 0 0 0 0 0 1500
+pad 0 0100 0 0 0 0 0 255 300
+pad 0 0100 0 0 0 0 0 0 800
+pad 0 0100 0 0 0 0 0 255 300
+pad 0 0100 0 0 0 0 0 0 800
+wait 30000

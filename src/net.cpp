@@ -64,6 +64,7 @@ enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_
                        MSG_AREA_ENEMIES = 14, MSG_PING = 15, MSG_PONG = 16, MSG_EVENT = 17 };
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
+constexpr uintptr_t kAimPitch = 0x32D4; // aim pitch (radians) while aiming a bow or a staff (bridge chdiff, 2026-11-17)
 // A big correction must move every copy the movement code keeps, or the next collision pass pulls
 // the character back (write watchpoints, 2026-10-26): FUN_0076C540(physics ch+0x10E0, pos ch+0x40,
 // destination ch+0xE70, ...) sweeps the collision object (ch+0x19C0, FUN_0079E200) toward the
@@ -117,6 +118,8 @@ struct CharState {
     float hold_off[3];              // holding an enemy: where it is from the holder (forward, up, right)
     uint8_t lantern;                // shared world: its lantern is lit (lantern_on)
     int32_t look[16];               // shared world: its model numbers, [ch+0x3DEC] +0x10..+0x50 (look_of)
+    uint8_t monster_held;           // caught by a monster (its action is the monster's: cEm0900ActCarryCatchPl...)
+    float aim_pitch;                // ch+0x32D4: its aim's pitch (radians, +-0.9156 at the ends), sent for weapon actions
 };
 struct StageState {
     int32_t stage, point;           // current stage and entry point ([0x018FA4BC]+0x34 / +0x44)
@@ -207,6 +210,8 @@ struct EnemyState {
     float yaw;        // +0x2578
     float hp, hp_max; // [[em+0x1D18]]+8, +0xC; hp_max 0 = unknown
     uint8_t died;     // its death handler ran on the host
+    uint32_t sid;     // its spawn entry ((index << 16) | group, sSetManager::cUnitData +0x14), 0 = none: the same on every PC
+    int32_t action;   // its action number (+0x2DD4): the guest's twin plays the same (issue #6)
 };
 constexpr int kEnemiesPerPage = 20;
 struct EnemiesMsg {
@@ -258,9 +263,10 @@ struct SaveNeedMsg {
 
 // The message format's version: 'DDC2' since 2026-10-29 (32-bit action numbers), 'DDC3' (the held
 // monster's place), 'DDC4' (players' Steam ids in the SNAP, for the launcher's salon), 'DDC5' (pings),
-// 'DDC6' (the lantern), 'DDC7' (places in world places: the open world's cells, issue #4). Messages of another
+// 'DDC6' (the lantern), 'DDC7' (places in world places: the open world's cells, issue #4), 'DDC8' (enemies' spawn entries,
+// issue #6; a player held by a monster). Messages of another
 // format ('DDCO', 'DDC2'...) come from a player with another mod version: dropped, and said (the badge, the log).
-constexpr uint32_t kMagic = 0x37434444;
+constexpr uint32_t kMagic = 0x38434444;
 
 // The places in a message, between this game's cell and world places: the open world shifts every place by
 // 10000 u at its cell edges, each game at its own Arisen's crossing, and two players in different cells saw
@@ -638,6 +644,13 @@ uintptr_t holder_of(uintptr_t ch)
             return p;
     return 0; // anything else (a monster's hold, a lift...): +0x40 left as it is
 }
+// Caught by a monster: the caught character plays one of the monster's actions (cEm0900ActCarryCatchPl, an
+// ogre's carry; cEm5000ActCatchPl...: dti), with its +0x40 relative to the monster (issue #4 logs 2026-11-16).
+bool monster_caught(uintptr_t ch)
+{
+    return ch && strncmp(action_name(ch), "cEm", 3) == 0;
+}
+
 void world_pos(uintptr_t ch, float out[3])
 {
     memcpy(out, reinterpret_cast<void *>(ch + 0x40), 12);
@@ -670,6 +683,20 @@ void shared_apply_commands(uintptr_t ch, int i)
     memcpy(reinterpret_cast<void *>(cmd + kCmdExtraFrom), s.cmd_extra, kCmdExtraLen);
     game::at<uint32_t>(cmd, 0x2C) = press;
     game::at<uint32_t>(cmd, 0x34) = release;
+    // its player's aim pitch in a weapon action (bows, magick bows, staves): the game writes +0x32D4 from the
+    // character's own input only when it changes (FUN near 00B52627, write watch 2026-11-17: +-0.9156 at the
+    // stick's ends), and a mouse aim does not come with the sticks: the other player's shots went into the
+    // ceiling (issue #4, 2026-11-16)
+    if ((uint32_t(s.action) >> 16) != 0 && s.aim_pitch == s.aim_pitch && std::fabs(s.aim_pitch) < 1.6f) {
+        static DWORD next_log[kParty] = {};
+        float was = game::at<float>(ch, kAimPitch);
+        if ((std::fabs(was - s.aim_pitch) > 0.05f || early_flag("test_log_actions")) && (!next_log[i] || int(GetTickCount() - next_log[i]) >= 0)) {
+            next_log[i] = (GetTickCount() + 1000) | 1;
+            logf("net: shared: party %d aims at pitch %.3f here, its player at %.3f (0x%X): set", i, was, s.aim_pitch,
+                 unsigned(s.action));
+        }
+        game::at<float>(ch, kAimPitch) = s.aim_pitch;
+    }
 }
 
 // Local party index i (1..3, a pawn) shows which player (place 0 = host, 1 + guest), -1 = none.
@@ -1406,6 +1433,28 @@ void shared_apply_transform(uintptr_t ch, int i)
         }
         return;
     }
+    // caught by a monster here: its +0x40 is relative to the monster, and writing its player's place there
+    // threw it 4000-4950 u off every 1.5 s for 1.5 min while its player walked free (issue #4 logs
+    // 2026-11-16, an ogre's carry). Left to the catch while its player is caught too; caught here only,
+    // the catch is ended (the game's own action change) after 1 s, then every 3 s while it lasts.
+    static DWORD caught_since[kParty] = {}, next_end[kParty] = {}, next_caught_log[kParty] = {};
+    if (monster_caught(ch)) {
+        DWORD t = GetTickCount();
+        if (!caught_since[i])
+            caught_since[i] = t | 1;
+        if (!s.monster_held && t - caught_since[i] > 1000 && (!next_end[i] || int(t - next_end[i]) >= 0)) {
+            next_end[i] = (t + 3000) | 1;
+            logf("net: shared: party %d is caught by a monster here (%s) and its player is not: catch ended", i,
+                 action_name(ch));
+            action_set(ch, 0);
+        } else if (!next_caught_log[i] || int(t - next_caught_log[i]) >= 0) {
+            next_caught_log[i] = (t + 1000) | 1;
+            logf("net: shared: party %d is caught by a monster here (%s; its player %s): its place left to the catch", i,
+                 action_name(ch), s.monster_held ? "too" : "not yet");
+        }
+        return;
+    }
+    caught_since[i] = 0;
     // where that player is now: its last place, moved on at its speed for the age of that state plus
     // the time it took to come (about 60 ms), at most 0.3 s ahead; ground height as received
     float ahead = age + 0.06f > 0.3f ? 0.3f : age + 0.06f;
@@ -1524,12 +1573,14 @@ struct Follow {
     int paired_to;        // host_slot of the first update applied (the pairing's own jump is not an error)
     float host_spawn[3];  // the spawn of the host enemy it pairs with: a new one in that host slot ends the pair
     bool loose;           // paired by "kind, closest" (not on its spawn): a spawn match may take its host enemy
+    uint32_t host_sid;    // the spawn entry of the host enemy it pairs with (0 = none): another one in that host slot ends the pair
 };
 Follow g_follow[kEnemySlots] = {};
 struct EnemyStats {
     int applied, matched_new, unmatched;
     float worst_err;
     int blocked, allowed, forced, removed, puppet_blocked, felt;
+    int actions; // host actions started on the twins (issue #6)
 } g_enemy_stats = {};
 DWORD g_last_enemies_rx = 0; // guest: last ENEMIES page received (0 = none)
 
@@ -1559,8 +1610,31 @@ void capture_state(uintptr_t ch, CharState &s)
     if (!ch)
         return;
     world_pos(ch, s.pos); // a held Arisen's +0x40 is near its holder's origin, not a world place
+    // caught by a monster: +0x40 is relative to it too ((-28, -25, 20), (0, -50, 60): issue #4 logs, an
+    // ogre's carry): its last place before the catch is sent instead, with the flag
+    struct Kept {
+        uintptr_t ch;
+        float pos[3];
+    };
+    static Kept kept[8] = {};
+    int slot = -1;
+    for (int k = 0; k < 8 && slot < 0; ++k)
+        if (kept[k].ch == ch)
+            slot = k;
+    if (slot < 0)
+        for (int k = 0; k < 8 && slot < 0; ++k)
+            if (!kept[k].ch)
+                slot = k, kept[k].ch = ch;
+    s.monster_held = monster_caught(ch);
+    if (s.monster_held && std::fabs(s.pos[0]) + std::fabs(s.pos[1]) + std::fabs(s.pos[2]) < 600.f) {
+        if (slot >= 0)
+            memcpy(s.pos, kept[slot].pos, sizeof kept[slot].pos);
+    } else if (slot >= 0) {
+        memcpy(kept[slot].pos, s.pos, sizeof kept[slot].pos);
+    }
     memcpy(s.rot, reinterpret_cast<void *>(ch + 0x50), sizeof s.rot);
     s.yaw = game::at<float>(ch, kYawA);
+    s.aim_pitch = game::at<float>(ch, kAimPitch);
     memcpy(s.cmd, reinterpret_cast<void *>(ch + game::kCmd + kCmdCopyFrom), kCmdCopyLen);
     memcpy(s.cmd_extra, reinterpret_cast<void *>(ch + game::kCmd + kCmdExtraFrom), kCmdExtraLen);
     if (const float *hp = enemies_hp(ch)) {
@@ -2146,9 +2220,10 @@ void log_enemy_stats(DWORD now)
     else
         logf("net: enemies: %d from the host, %d local updates applied, %d new pairs, %d unpaired updates, "
              "worst error %.1f u; local hits %d blocked, %d let through (host: dead), %d deaths forced, %d "
-             "guest-only removed, %d hits on the puppets blocked; %d blocked hits played here without the kill",
+             "guest-only removed, %d hits on the puppets blocked; %d blocked hits played here without the kill; "
+             "%d host actions played",
              fresh, st.applied, st.matched_new, st.unmatched, st.worst_err, st.blocked, st.allowed, st.forced, st.removed,
-             st.puppet_blocked, st.felt);
+             st.puppet_blocked, st.felt, st.actions);
 }
 
 // Host: one page of live enemies per call (~30 calls/s), cycling through the table.
@@ -3595,6 +3670,18 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
             s.hp_max = hp[1];
         }
         s.died = slot.died != 0;
+        s.sid = slot.spawn_id;
+        s.action = game::at<int32_t>(em, 0x2DD4);
+        if (early_flag("test_log_actions")) { // tests: each enemy's action as its number and its class
+            static int32_t logged[kEnemySlots] = {};
+            static const char *logged_name[kEnemySlots] = {};
+            const char *an = action_name(em);
+            if (logged[i] != s.action || logged_name[i] != an) {
+                logged[i] = s.action;
+                logged_name[i] = an;
+                logf("net: host enemy #%d %s action 0x%X %s", i, slot.name, unsigned(s.action), an);
+            }
+        }
         EnterCriticalSection(&g_enemy_lock);
         g_enemy_state[i] = s;
         g_enemy_tick[i] = now;
@@ -3606,7 +3693,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     perf_add(PERF_WAIT, tw);
     Follow &f = g_follow[i];
     if (f.first_seen != slot.first_seen) // a new enemy in this local slot
-        f = {slot.first_seen, -1, now, em, 0, false, 0, 0, 0, {}, false}; // never 0: int(now - 0) < 0 after 24.8 days of uptime
+        f = {slot.first_seen, -1, now, em, 0, false, 0, 0, 0, {}, false, 0}; // never 0: int(now - 0) < 0 after 24.8 days of uptime
     f.last = now;
     if (f.host_slot >= 0 && (!g_enemy_tick[f.host_slot] || now - g_enemy_tick[f.host_slot] > 3000))
         f.host_slot = -1; // the host's enemy is gone (or the host stopped sending it)
@@ -3614,9 +3701,45 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     // its host slot, 5538 u off, enemy suite 2026-11-08 13:13)
     if (f.host_slot >= 0) {
         const float *hs = g_enemy_state[f.host_slot].spawn;
-        if (std::fabs(hs[0] - f.host_spawn[0]) > 1.f || std::fabs(hs[2] - f.host_spawn[2]) > 1.f) {
+        uint32_t hsid = g_enemy_state[f.host_slot].sid;
+        if (std::fabs(hs[0] - f.host_spawn[0]) > 1.f || std::fabs(hs[2] - f.host_spawn[2]) > 1.f || hsid != f.host_sid) {
             logf("net: enemy #%d %s: host #%d is another enemy now, pairing again", i, slot.name, f.host_slot);
             f.host_slot = -1;
+        } else if (slot.spawn_id && hsid && hsid != slot.spawn_id) {
+            // paired before either knew its spawn entry, and they differ: not its twin
+            logf("net: enemy #%d %s: host #%d has another spawn entry (%X, here %X), pairing again", i, slot.name,
+                 f.host_slot, hsid, slot.spawn_id);
+            f.host_slot = -1;
+            f.next_try = now;
+        }
+    }
+    // its twin by spawn entry (issue #6: the same entry on every PC), wherever each one stands: it takes that
+    // host enemy from any other pair, and replaces a pair made on places
+    if (slot.spawn_id && !slot.died && (f.host_slot < 0 || f.host_sid != slot.spawn_id)) {
+        uint32_t cls = class_hash(slot.name);
+        int twin = -1;
+        for (int k = 0; k < kEnemySlots && twin < 0; ++k) {
+            const EnemyState &h = g_enemy_state[k];
+            if (g_enemy_tick[k] && now - g_enemy_tick[k] <= 3000 && h.sid == slot.spawn_id && h.cls == cls && !h.died)
+                twin = k;
+        }
+        if (twin >= 0 && twin != f.host_slot) {
+            for (int k = 0; k < kEnemySlots; ++k)
+                if (k != i && g_follow[k].host_slot == twin && g_follow[k].first_seen && now - g_follow[k].last < 1000) {
+                    logf("net: enemy #%d %s takes host #%d from enemy #%d (spawn entry %X)", i, slot.name, twin, k, slot.spawn_id);
+                    g_follow[k].host_slot = -1;
+                    g_follow[k].loose = false;
+                    g_follow[k].next_try = now;
+                }
+            f.host_slot = twin;
+            memcpy(f.host_spawn, g_enemy_state[twin].spawn, sizeof f.host_spawn);
+            f.host_sid = g_enemy_state[twin].sid;
+            f.loose = false;
+            ++g_enemy_stats.matched_new;
+            float d[3] = {g_enemy_state[twin].spawn[0] - slot.spawn[0], g_enemy_state[twin].spawn[1] - slot.spawn[1],
+                          g_enemy_state[twin].spawn[2] - slot.spawn[2]};
+            logf("net: enemy #%d %s paired with host #%d (spawn entry %X, spawns %.1f u apart)", i, slot.name, twin,
+                 slot.spawn_id, std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]));
         }
     }
     // never a dead one: a guest-only enemy removed (dead here) was paired 4 s later with a living host
@@ -3642,7 +3765,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
             const EnemyState &h = g_enemy_state[k];
             float dx = h.spawn[0] - slot.spawn[0], dy = h.spawn[1] - slot.spawn[1], dz = h.spawn[2] - slot.spawn[2];
             twin_known = g_enemy_tick[k] && now - g_enemy_tick[k] < 30000 && claimed[k] != 1 && !h.died &&
-                         fam.has(h.cls) && dx * dx + dy * dy + dz * dz < 40.f * 40.f;
+                         fam.has(h.cls) && (dx * dx + dy * dy + dz * dz < 40.f * 40.f || (slot.spawn_id && h.sid == slot.spawn_id));
         }
         // 1. same class, spawn within 40 u; 2. same class, standing within 40 u now (critters such as
         // uEm8100 move away from their spawn after their first frames, not at the same moment on both PCs);
@@ -3675,6 +3798,8 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
                     continue;
                 if (claimed[k] == 1 || (claimed[k] == 2 && pass == 2))
                     continue;
+                if (slot.spawn_id && h.sid && h.sid != slot.spawn_id) // both know their spawn entries: not its twin
+                    continue;
                 const float *theirs = pass == 0 ? h.spawn : h.pos;
                 float dx = theirs[0] - mine[0], dy = theirs[1] - mine[1], dz = theirs[2] - mine[2];
                 float d2 = dx * dx + dy * dy + dz * dz;
@@ -3688,6 +3813,7 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         }
         if (f.host_slot >= 0) {
             memcpy(f.host_spawn, g_enemy_state[f.host_slot].spawn, sizeof f.host_spawn);
+            f.host_sid = g_enemy_state[f.host_slot].sid;
             f.loose = strcmp(how, "kind, closest") == 0;
             if (claimed[f.host_slot] == 2) { // taken over from a loose pair: that enemy pairs again
                 Follow &other = g_follow[claimer[f.host_slot]];
@@ -3803,6 +3929,39 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     game::at<float>(em, kYawB) = s.yaw;
     game::at<float>(em, kYawC) = s.yaw;
     memcpy(reinterpret_cast<void *>(em + 0x50), s.rot, sizeof s.rot);
+    // its actions: the host's (issue #6, "the host decides the monsters' attacks"; issue #4: "the combat itself
+    // still not synced but the enemies are", each game's AI chose its own attacks). Each new host action is
+    // started here the game's way (the character's SetAction, as for the players' puppets); a local one
+    // taken meanwhile (its own AI) is replaced after 300 ms. Not for NPCs (talks, shops: this game's).
+    if (slot.kind != ENEMY_NPC && s.action >= 0 && !slot.died && !s.died) {
+        static int32_t last_host[kEnemySlots] = {};
+        static DWORD off_since[kEnemySlots] = {};
+        static DWORD first_seen_of[kEnemySlots] = {};
+        if (first_seen_of[i] != slot.first_seen) {
+            first_seen_of[i] = slot.first_seen;
+            last_host[i] = 0;
+            off_since[i] = 0;
+        }
+        int32_t here = game::at<int32_t>(em, 0x2DD4);
+        bool changed = s.action != last_host[i];
+        if (here == s.action) {
+            off_since[i] = 0;
+        } else if (!off_since[i]) {
+            off_since[i] = now | 1;
+        }
+        if (here != s.action && (changed || now - off_since[i] > 300)) {
+            static DWORD next_log = 0;
+            if (early_flag("test_log_actions") && (!next_log || int(now - next_log) >= 0)) {
+                next_log = (now + 250) | 1;
+                logf("net: enemy #%d %s plays host #%d's action 0x%X (was 0x%X, %s)", i, slot.name, f.host_slot,
+                     unsigned(s.action), unsigned(here), changed ? "new" : "its own AI meanwhile");
+            }
+            action_set_quiet(em, s.action);
+            off_since[i] = 0;
+            ++g_enemy_stats.actions;
+        }
+        last_host[i] = s.action;
+    }
     // HP: the host's value wins. Local hits are dropped while the host's enemy lives
     // (enemy_net_block_damage); once it is dead they go through, so the guest's puppets, which
     // replay the host's attacks, land the killing blow with the game's own death. If none lands

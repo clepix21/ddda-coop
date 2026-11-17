@@ -92,6 +92,7 @@ static DWORD WINAPI pad_thread(LPVOID)
     if (cfg_bridge())
         bridge_start();
     hang_watch_start();
+    discord_start(); // Discord Rich Presence (discord_app_id in coop.ini)
     DWORD t0 = GetTickCount();
     bool combo_was_down = false;
     bool auto_done = false; // auto possession fires once; the combo stays in charge afterwards

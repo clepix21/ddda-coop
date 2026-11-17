@@ -103,6 +103,7 @@ void loot_net_apply(const LootEv &e, int from_slot); // net thread: another play
 const char *action_name(uintptr_t ch);       // actions.cpp: the class of a character's current action
 const char *action_class(int n);             // actions.cpp: the class of action number n ("" if none)
 void action_set(uintptr_t ch, int number);
+void action_set_quiet(uintptr_t ch, int number); // the same, not logged
 void action_stand_up(uintptr_t ch);
 void action_lie_down(uintptr_t ch);          // into near death (0x80), the HP entry flags remembered          // up from near death (0x80), its flags cleared   // game thread: change it (vtable slot 0x210)
 void action_queue(int who, int number);      // tests: 0 = the Arisen, 1..3 = pawn 0..2
@@ -273,6 +274,8 @@ struct EnemySlot {
     bool settled;      // spawn final: some classes are placed after their first frames (uEm8100)
     uint8_t kind;      // ENEMY_*: a monster (uEnemy), a human foe (uHumanEnemy), an NPC (uNpc, uMultiNpc)
     float last_pos[3]; // place at its last finalize (a new enemy of the same class at a reused address)
+    uint32_t spawn_id; // its spawn entry, the same on every PC ((index << 16) | group, issue #6), 0 = none (yet)
+    uint8_t spawn_tries; // lookups made for it (a few, from its settle)
 };
 bool mem_readable(const void *p, size_t n); // committed, readable memory
 // enemies.cpp: the open world's cell origin (stage 100 shifts every place by 10000 u at cell edges, so two
@@ -309,3 +312,8 @@ int enemy_net_follow(int local_slot); // guest: host slot it follows, -1 = none 
 void enemy_net_death(uintptr_t ch); // the game's own death handler (vtable slot 0x120), no hit info
 uintptr_t enemy_net_after_finalize(EnemySlot &s, int index);
 void enemies_dump(const char *name);
+void enemies_setinfo_scan(); // bridge "setinfo": each enemy's spawn entry
+void units_scan(); // bridge "units": the game's unit lists (objects, issue #4)
+// an enemy's spawn entry (sSetManager::cUnitData): block, (index << 16) | group, kind; false if none
+bool enemy_spawn_entry(uintptr_t em, uint32_t &block, uint32_t &group_index, uint32_t &kind);
+void discord_start(); // discord.cpp: Discord Rich Presence through the local Discord app (discord_app_id)

@@ -1,0 +1,18 @@
+# Bow aim RE (saves/ranger.sav, Strider; does not walk, never A or B alone: the Rift stone is near):
+# draws (LT), aims the shortbow up (LB + right stick up), snapshot, then aims down (LB + right stick down), diff;
+# then up again, diff: the words that follow the aim's pitch change both times, the other way.
+wait 3000
+pad 0 0 0 0 0 0 255 0 300
+wait 2000
+pad 0 0100 0 0 0 0 0 0 800
+pad 0 0100 0 0 0 30000 0 0 1500
+chsnap
+pad 0 0100 0 0 0 -30000 0 0 1500
+chdiff
+chsnap
+pad 0 0100 0 0 0 30000 0 0 1500
+chdiff
+chsnap
+pad 0 0100 0 0 30000 0 0 0 1500
+chdiff
+wait 5000

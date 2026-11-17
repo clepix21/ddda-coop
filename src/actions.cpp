@@ -382,3 +382,11 @@ bool actions_install()
     logf("actions: hook FallCheck 00B78BF0: %s", MH_StatusToString(st));
     return st == MH_OK;
 }
+
+// Game thread: the same without the log (enemies following the host's actions: many a second).
+void action_set_quiet(uintptr_t ch, int number)
+{
+    using SetAction_t = void(__thiscall *)(uintptr_t, int);
+    auto set = reinterpret_cast<SetAction_t>(game::at<uintptr_t>(game::at<uintptr_t>(ch, 0), 0x210));
+    set(ch, number);
+}

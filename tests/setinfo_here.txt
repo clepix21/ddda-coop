@@ -1,0 +1,4 @@
+where
+wait 12000
+setinfo
+wait 2000

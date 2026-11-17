@@ -186,12 +186,19 @@ uintptr_t field_origin_object()
 // the open world where there is none, it held the players' states back 1-3 s (0.10.1 Steam series).
 void field_origin_pass();
 
+void spawn_scan_pass();
+
 DWORD WINAPI field_origin_thread(void *)
 {
     for (;;) {
         Sleep(1000);
         if (!field_origin_object() && possess_arisen()) // in game only: while the game starts or loads, globals point to memory being freed
             field_origin_pass();
+        static DWORD next_spawn = 0; // the spawn manager (issue #6): every 5 s until found
+        if (possess_arisen() && (!next_spawn || int(GetTickCount() - next_spawn) >= 0)) {
+            next_spawn = (GetTickCount() + 5000) | 1;
+            spawn_scan_pass();
+        }
     }
 }
 
@@ -446,6 +453,16 @@ void enemies_on_finalize(uintptr_t em)
                 logf("enemy: settled #%d %s at (%.0f, %.0f, %.0f)", i, s.name, s.spawn[0], s.spawn[1], s.spawn[2]);
             }
         }
+        // its spawn entry (issue #6), from its settle: once a second, 5 tries (one made by another enemy or an
+        // event has none)
+        if (s.settled && !s.spawn_id && s.spawn_tries < 5 && now - s.first_seen >= 1000u + 1000u * s.spawn_tries) {
+            ++s.spawn_tries;
+            uint32_t block, gi, kind;
+            if (enemy_spawn_entry(em, block, gi, kind) && gi) {
+                s.spawn_id = gi;
+                logf("enemy: spawn entry #%d %s: group %X index %u (kind %X)", i, s.name, gi & 0xFFFF, gi >> 16, kind);
+            }
+        }
         // uNpc children have another death handler than uEnemy's (hk_death): dead = HP 0
         if (s.kind && !s.died) {
             float *hp = enemies_hp(em);
@@ -543,6 +560,275 @@ const char *enemies_class_of(uintptr_t obj) { return class_of(obj); }
 
 // Tests only (bridge "edump <name>"): raw bytes of every live enemy, dump_<name>_e<slot>.bin, plus
 // dump_<name>_enemies.txt (slot, class, address, position).
+// Bridge "setinfo": for each enemy, the pointers in its object (and one level below) to the layout data it
+// was made from (cSetInfo*, cLayoutSet*, cLotData): the spawn entry, the same on every PC (issue #6).
+// Spawn entries (issue #6: match enemies by the game's own spawn entry, the same on every PC, instead of
+// by kind and place). sSetManager (a cSystem singleton, dti 0x1B950 bytes) keeps an array of
+// sSetManager::cUnitData (0x20 bytes each): +4 the character it made, +0xC the entry's kind, +0x10 its
+// block, +0x14 (index in its group << 16) | group, +0x1C its cGroupParam (underground, 2026-11-17: two uEm0503
+// of group 0x19 at indexes 0 and 1, uEm8100 of group 0x1A at indexes 3 and 4).
+namespace {
+bool strict_in_exe(uintptr_t a) { return a >= 0x00401000 && a < 0x01A00000; }
+// Reads that cannot fault: ReadProcessMemory on this process fails on memory freed meanwhile, where a
+// VirtualQuery check followed by a read crashed (0.10.1 Steam series, 5 games).
+bool safe_read(uintptr_t a, void *out, size_t n)
+{
+    SIZE_T got = 0;
+    return a >= 0x10000 && a + n > a &&
+           ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void *>(a), out, n, &got) && got == n;
+}
+uintptr_t safe_u32(uintptr_t a, bool &ok)
+{
+    uintptr_t v = 0;
+    ok = safe_read(a, &v, 4);
+    return v;
+}
+// the class name (dti), or nullptr; the name itself lives in the exe image (always mapped)
+const char *strict_class_of(uintptr_t q)
+{
+    bool ok;
+    if (q < 0x10000 || q >= 0x7FFF0000 || (q & 3))
+        return nullptr;
+    uintptr_t vt = safe_u32(q, ok);
+    if (!ok || !strict_in_exe(vt))
+        return nullptr;
+    uintptr_t fnp = safe_u32(vt + 16, ok);
+    uint8_t fn[6];
+    if (!ok || !strict_in_exe(fnp) || !safe_read(fnp, fn, 6) || fn[0] != 0xB8 || fn[5] != 0xC3)
+        return nullptr;
+    uintptr_t dti;
+    memcpy(&dti, fn + 1, 4);
+    uintptr_t nm = strict_in_exe(dti) ? safe_u32(dti + 4, ok) : 0;
+    return ok && strict_in_exe(nm) ? reinterpret_cast<const char *>(nm) : nullptr;
+}
+volatile uintptr_t g_setman = 0, g_setman_vt = 0, g_unit_vt = 0;
+volatile uintptr_t g_units = 0; // first cUnitData
+volatile int g_unit_count = 0;
+constexpr size_t kSetManSize = 0x1B950;
+
+// a run of cUnitData (vtable uvt) 0x20 apart from a, at most max bytes
+int unit_run(uintptr_t a, uintptr_t uvt, size_t max)
+{
+    bool ok;
+    int n = 0;
+    while ((n + 1) * 0x20 <= int(max) && safe_u32(a + n * 0x20, ok) == uvt && ok)
+        ++n;
+    return n;
+}
+} // namespace
+
+// Background thread (field_origin_thread): looks for the sSetManager among the objects the exe's globals
+// point to (.data and the zeroed data after it: a static instance pointer), then its cUnitData array, inside
+// it or pointed to from it.
+void spawn_scan_pass()
+{
+    bool ok;
+    uintptr_t m = g_setman;
+    if (m && safe_u32(m, ok) == g_setman_vt && ok && g_units && safe_u32(g_units, ok) == g_unit_vt && ok)
+        return;
+    g_unit_count = 0;
+    g_setman = 0;
+    static uint8_t page[0x1000];
+    for (uintptr_t g = 0x01600000; g < 0x019C0000; g += 0x1000) {
+        if (!safe_read(g, page, sizeof page))
+            continue;
+        for (int o = 0; o < 0x1000; o += 4) {
+            uintptr_t q;
+            memcpy(&q, page + o, 4);
+            if (q < 0x10000 || q >= 0x7FFF0000 || (q & 3) || strict_in_exe(q))
+                continue;
+            const char *c = strict_class_of(q);
+            if (!c || strcmp(c, "sSetManager") != 0)
+                continue;
+            uintptr_t first = 0, uvt = 0;
+            size_t room = 0;
+            for (uintptr_t off = 4; off + 0x20 <= kSetManSize && !first; off += 4) {
+                uintptr_t v = safe_u32(q + off, ok);
+                if (!ok)
+                    break;
+                if (strict_in_exe(v)) { // inline
+                    const char *uc = strict_class_of(q + off);
+                    if (uc && strcmp(uc, "sSetManager::cUnitData") == 0) {
+                        first = q + off;
+                        uvt = v;
+                        room = kSetManSize - off;
+                    }
+                } else if (v >= 0x10000 && v < 0x7FFF0000 && !(v & 3)) { // pointed to
+                    const char *uc = strict_class_of(v);
+                    if (uc && strcmp(uc, "sSetManager::cUnitData") == 0) {
+                        first = v;
+                        uvt = safe_u32(v, ok);
+                        room = 0x100000;
+                    }
+                }
+            }
+            if (!first)
+                continue;
+            int n = unit_run(first, uvt, room);
+            g_setman_vt = safe_u32(q, ok);
+            g_unit_vt = uvt;
+            g_units = first;
+            g_unit_count = n;
+            g_setman = q;
+            logf("spawn: sSetManager %08X (global %08X), %d units at %08X", unsigned(q), unsigned(g + o), n, unsigned(first));
+            return;
+        }
+    }
+    static bool told = false;
+    if (!told) {
+        told = true;
+        logf("spawn: no sSetManager found among the exe's globals");
+    }
+}
+
+bool spawn_units(uintptr_t &units, int &count)
+{
+    units = g_units;
+    count = g_unit_count;
+    return g_setman && units && count > 0;
+}
+
+// The spawn entry an enemy was made from: block (+0x10) and (index << 16 | group) (+0x14), and the entry's
+// kind (+0xC). False when it has none (made by another enemy, an event...) or the manager is not found.
+bool enemy_spawn_entry(uintptr_t em, uint32_t &block, uint32_t &group_index, uint32_t &kind)
+{
+    uintptr_t units;
+    int count;
+    if (!em || !spawn_units(units, count))
+        return false;
+    uint32_t buf[64 * 8]; // 64 units a read (the array may be freed with its stage: reads that cannot fault)
+    for (int k = 0; k < count; k += 64) {
+        int m = count - k < 64 ? count - k : 64;
+        if (!safe_read(units + k * 0x20, buf, m * 0x20))
+            return false;
+        for (int j = 0; j < m; ++j) {
+            const uint32_t *u = buf + j * 8;
+            if (u[0] == g_unit_vt && u[1] == em) {
+                kind = u[3];
+                block = u[4];
+                group_index = u[5];
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Bridge "units": the game's sUnit (every live unit, in move lines) found among the exe's globals, its
+// fields, and for each pointer to a sUnit::MoveLine the classes of what it holds (objects: uOm*; issue #4,
+// carried crates and barrels).
+void units_scan()
+{
+    static uint8_t page[0x1000];
+    uintptr_t su = 0, from = 0;
+    for (uintptr_t g = 0x01600000; g < 0x019C0000 && !su; g += 0x1000) {
+        if (!safe_read(g, page, sizeof page))
+            continue;
+        for (int o = 0; o < 0x1000; o += 4) {
+            uintptr_t q;
+            memcpy(&q, page + o, 4);
+            if (q < 0x10000 || q >= 0x7FFF0000 || (q & 3) || strict_in_exe(q))
+                continue;
+            const char *c = strict_class_of(q);
+            if (c && (strcmp(c, "sUnit") == 0 || strcmp(c, "sUnitExt") == 0)) {
+                su = q;
+                from = g + o;
+                break;
+            }
+        }
+    }
+    if (!su) {
+        logf("units: no sUnit among the exe's globals");
+        return;
+    }
+    logf("units: sUnit %08X (global %08X)", unsigned(su), unsigned(from));
+    // its first 0x400 bytes: pointers and what they are
+    int lines = 0;
+    for (int off = 4; off < 0x19F370 && lines < 40; off += 4) {
+        bool ok;
+        uintptr_t v = safe_u32(su + off, ok);
+        if (!ok)
+            break;
+        const char *c = strict_in_exe(v) ? strict_class_of(su + off) : strict_class_of(v);
+        if (!c)
+            continue;
+        uintptr_t line = strict_in_exe(v) ? su + off : v; // an embedded line, or a pointer to one
+        if (strncmp(c, "sUnit::", 7) != 0)
+            continue;
+        logf("units: sUnit +%X: %s %08X", off, c, unsigned(line));
+        if (strcmp(c, "sUnit::MoveLine") != 0)
+            continue;
+        ++lines;
+        // the line's words: unit pointers among them, then follow each unit's own words for the next one
+        uint32_t w[16] = {};
+        safe_read(line, w, sizeof w);
+        logf("units:   line %08X: %08X %08X %08X %08X %08X %08X %08X %08X", unsigned(line), w[0], w[1], w[2], w[3], w[4],
+             w[5], w[6], w[7]);
+        for (int j = 1; j < 16; ++j) {
+            const char *uc = strict_class_of(w[j]);
+            if (!uc)
+                continue;
+            // walk: from this unit, the field that leads to another unit of the line (tried +4..+0x20)
+            int shown = 0;
+            uintptr_t u = w[j];
+            int next_off = -1;
+            for (int no = 4; no <= 0x20 && next_off < 0; no += 4) {
+                uintptr_t n = safe_u32(u + no, ok);
+                if (ok && n != u && strict_class_of(n) && !strict_in_exe(n))
+                    next_off = no;
+            }
+            logf("units:   line +%X -> %s %08X (next at +%X)", j * 4, uc, unsigned(u), unsigned(next_off));
+            for (int k = 0; k < 400 && u && next_off > 0; ++k) {
+                const char *nc = strict_class_of(u);
+                if (!nc)
+                    break;
+                if (strncmp(nc, "uOm", 3) == 0 && shown < 60) {
+                    float p[3] = {};
+                    safe_read(u + 0x40, p, sizeof p);
+                    logf("units:     %s %08X at (%.0f, %.0f, %.0f)", nc, unsigned(u), p[0], p[1], p[2]);
+                    ++shown;
+                }
+                u = safe_u32(u + next_off, ok);
+                if (!ok)
+                    break;
+            }
+            break;
+        }
+    }
+}
+
+// Bridge "setinfo": each enemy's spawn entry, then every unit of the manager (class, entry, place).
+void enemies_setinfo_scan()
+{
+    {
+        uintptr_t units;
+        int count;
+        static uint32_t buf[0x20 / 4];
+        if (spawn_units(units, count))
+            for (int k = 0; k < count; ++k) {
+                if (!safe_read(units + k * 0x20, buf, 0x20) || !buf[1])
+                    continue;
+                const char *c = strict_class_of(buf[1]);
+                float p[3] = {};
+                safe_read(buf[1] + 0x40, p, sizeof p);
+                logf("setinfo: unit %d %s kind %X block %X group %X index %u at (%.0f, %.0f, %.0f) +18 %08X", k, c ? c : "?",
+                     buf[3], buf[4], buf[5] & 0xFFFF, buf[5] >> 16, p[0], p[1], p[2], buf[6]);
+            }
+    }
+    EnemySlot list[kMax];
+    int n = enemies_snapshot(list, kMax);
+    for (int k = 0; k < n; ++k) {
+        uint32_t b = 0, gi = 0, kd = 0;
+        bool ok = enemy_spawn_entry(list[k].ptr, b, gi, kd);
+        float p[3];
+        memcpy(p, reinterpret_cast<const void *>(list[k].ptr + 0x40), sizeof p);
+        field_to_world(p);
+        logf("setinfo: #%d %s at (%.0f, %.0f, %.0f) spawn (%.0f, %.0f, %.0f): %s kind %X block %X group %X index %u",
+             list[k].index, list[k].name, p[0], p[1], p[2], list[k].spawn[0], list[k].spawn[1], list[k].spawn[2],
+             ok ? "entry" : "no entry", kd, b, gi & 0xFFFF, gi >> 16);
+    }
+}
+
 void enemies_dump(const char *name)
 {
     EnemySlot list[kMax];

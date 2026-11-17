@@ -1,0 +1,9 @@
+# Bow aim RE: who writes the aim pitch (Arisen +0x32D4) while aiming (saves/ranger.sav; no A or B alone)
+wait 3000
+pad 0 0 0 0 0 0 255 0 300
+wait 2000
+pad 0 0100 0 0 0 0 0 0 800
+watch arisen 32D4 6
+pad 0 0100 0 0 0 30000 0 0 1500
+pad 0 0100 0 0 0 -30000 0 0 1500
+wait 3000
