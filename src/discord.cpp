@@ -181,8 +181,9 @@ void describe(Presence &p)
     }
     if (p.players < 1)
         p.players = 1;
-    const char *what = role == NET_HOST ? (p.players > 1 ? "Hosting" : "Hosting, waiting for players")
-                                        : (p.players > 1 ? "Playing as a guest" : "Joining a host");
+    // short: the profile card cuts the state at about 30 characters ("Hosting, waiting for players in ..." showed
+    // no place, test 2026-11-17); "(1 of 4)" next to it says the rest
+    const char *what = role == NET_HOST ? "Hosting" : (p.players > 1 ? "Guest" : "Joining");
     snprintf(p.state, sizeof p.state, "%s%s%s", what, area ? " in " : "", area ? area : "");
 }
 
