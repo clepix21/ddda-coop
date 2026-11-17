@@ -82,7 +82,7 @@ function Shot($h, $path) { # the window's own drawing (PrintWindow), whatever co
 function Prepare-Copy($dir, $window, [string[]]$lines, $bot, [switch]$gog) {
     foreach ($f in "dinput8.dll", "coop.ini", "bot.txt", "coop.log", "coop_status.txt", "bridge_in.txt", "bridge_out.txt") { Remove-Item (Join-Path $dir $f) -ErrorAction SilentlyContinue }
     Get-ChildItem $dir -Filter "coop_avatar_*.bmp" -ErrorAction SilentlyContinue | Remove-Item
-    (@("p2_pad=1", "idle_pad=3", "block_saves=1", "multi_instance=1", "keep_active=1", "private_appdata=1", "window=$window") + $lines) | Set-Content (Join-Path $dir "coop.ini") -Encoding ascii
+    (@("p2_pad=1", "idle_pad=3", "block_saves=1", "multi_instance=1", "keep_active=1", "private_appdata=1", "discord=0", "window=$window") + $lines) | Set-Content (Join-Path $dir "coop.ini") -Encoding ascii
     $cfgDir = Join-Path $dir "coop_appdata\CAPCOM\DRAGONS DOGMA DARK ARISEN"
     New-Item -ItemType Directory -Force $cfgDir | Out-Null
     (Get-Content $ownerConfig) -replace '^FullScreen=ON$', 'FullScreen=OFF' | Set-Content (Join-Path $cfgDir "config.ini") -Encoding ascii

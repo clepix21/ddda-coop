@@ -3,8 +3,8 @@
 // (\\.\pipe\discord-ipc-0..9: frames of opcode u32, length u32, JSON; handshake {"v":1,"client_id":...},
 // then SET_ACTIVITY). No Discord SDK, nothing sent anywhere else: the pipe goes to the Discord app on this PC.
 //
-// coop.ini: discord_app_id=<the Discord application's id> (the owner's application on the Discord developer
-// portal, whose name Discord shows: "Playing <name>"); discord=0 turns it off. Without an id: off.
+// The application is "DDDA Coop" on the Discord developer portal (its name is what Discord shows: "Playing DDDA
+// Coop"; its art asset "logo"). coop.ini: discord=0 turns it off; discord_app_id=<id> another application.
 
 #include <windows.h>
 
@@ -16,6 +16,7 @@
 
 namespace {
 
+constexpr const char *kAppId = "1572203907013287986"; // the DDDA Coop application (public, not a secret)
 HANDLE g_pipe = INVALID_HANDLE_VALUE;
 char g_app_id[32] = "";
 int g_nonce = 0;
@@ -190,13 +191,16 @@ DWORD WINAPI discord_thread(void *)
 
 void discord_start()
 {
-    char off[8] = "";
-    if (cfg_str("discord", off, sizeof off) && off[0] == '0')
+    char on[8] = "";
+    bool set = cfg_str("discord", on, sizeof on);
+    if (set && on[0] == '0')
         return;
-    if (!cfg_str("discord_app_id", g_app_id, sizeof g_app_id) || !g_app_id[0]) {
-        logf("discord: no discord_app_id in coop.ini: Rich Presence off");
+    // the test copies (private_appdata=1, tests only) run on a PC where the owner's Discord may be open: off
+    // there unless discord=1 says otherwise
+    if (!set && early_flag("private_appdata"))
         return;
-    }
+    if (!cfg_str("discord_app_id", g_app_id, sizeof g_app_id) || !g_app_id[0])
+        snprintf(g_app_id, sizeof g_app_id, "%s", kAppId);
     for (const char *c = g_app_id; *c; ++c)
         if (*c < '0' || *c > '9') { // an application id is a number
             logf("discord: discord_app_id is not a number: Rich Presence off");

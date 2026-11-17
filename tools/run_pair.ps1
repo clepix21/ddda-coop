@@ -92,7 +92,7 @@ function Start-Side($s, $el) {
     $block = if ($GuestSavesFromRole -and $s.Name -like "guest*") { "block_saves=0" } else { "block_saves=1" }
     # a frozen copy of a save (default: the Pawn Guild one every route starts from), never the owner's
     $testSave = if (($s.Ini -join "`n") -match "(?m)^test_save=") { @() } else { @("test_save=J:\coop-test\saves\guild.sav") }
-    (@($block, "debug_log=1", "multi_instance=1", "keep_active=1", "private_appdata=1", "window=$($s.Window)") + $testSave + $s.Ini) | Set-Content (Join-Path $d "coop.ini") -Encoding ascii
+    (@($block, "debug_log=1", "multi_instance=1", "keep_active=1", "private_appdata=1", "discord=0", "window=$($s.Window)") + $testSave + $s.Ini) | Set-Content (Join-Path $d "coop.ini") -Encoding ascii
     # private game config (copied read-only from the owner's, windowed), so the owner's file is never rewritten
     $cfgDir = Join-Path $d "coop_appdata\CAPCOM\DRAGONS DOGMA DARK ARISEN"
     New-Item -ItemType Directory -Force $cfgDir | Out-Null

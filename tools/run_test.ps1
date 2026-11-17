@@ -56,7 +56,7 @@ Copy-Item $Dll $GameDir -Force
 # from), never the owner's current one, which moves when they play
 $testSave = if (($Ini -join "`n") -match "(?m)^test_save=") { @() } else { @("test_save=J:\coop-test\saves\guild.sav") }
 $classic = if (($Ini -join "`n") -match "(?m)^shared_world=") { @() } else { @("shared_world=0") } # the shared world is the default since 2026-11-06
-(@("block_saves=1", "debug_log=1", "private_appdata=1") + $classic + $testSave + $Ini) | Set-Content (Join-Path $GameDir "coop.ini") -Encoding ascii
+(@("block_saves=1", "debug_log=1", "private_appdata=1", "discord=0") + $classic + $testSave + $Ini) | Set-Content (Join-Path $GameDir "coop.ini") -Encoding ascii
 # private game config (copied read-only from the owner's), so the owner's settings file is never rewritten
 $cfgDir = Join-Path $GameDir "coop_appdata\CAPCOM\DRAGONS DOGMA DARK ARISEN"
 New-Item -ItemType Directory -Force $cfgDir | Out-Null
