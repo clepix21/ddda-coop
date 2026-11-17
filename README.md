@@ -138,6 +138,22 @@ The build gives `build\dinput8.dll` (the mod), `build\DDDA-Coop.exe` (the window
 
 </details>
 
+## Privacy
+
+DDDA Coop collects nothing: no account, no analytics, no server of its own. What it sends, and where:
+
+- **To the other players of your game only:** what co-op needs (your character's place, actions, health,
+  equipment, quests and world changes). On Steam it goes through Steam's own network, between Steam
+  friends; on GOG it goes straight to the host's IP address that you typed in.
+- **To GitHub:** the launcher asks GitHub (api.github.com) if a newer version is out, and downloads it
+  from this repository's releases only if you choose to update.
+- **To the Discord app on your PC (Rich Presence):** your vocation, level, the place you are in, host or
+  guest, and the number of players, shown on your Discord profile. It goes through the local connection
+  to the Discord app, not over the internet by the mod; Discord then shows it as it shows any game.
+  Your character's name is never sent. Turn it off in the launcher, or with `discord=0` in `coop.ini`.
+- **Nothing else.** The log and the save backups (`Documents\DDDA Coop`) stay on your PC; a log leaves
+  it only if you export it and attach it to a bug report yourself.
+
 ## Credits
 
 - **clepix21**: author of the mod.
