@@ -7,7 +7,8 @@ version (0.10.2).
 - GOG: players join by IP address (direct IP, UDP port 27101). See "GOG and direct IP" below.
 
 Files: DDDA-Coop.exe (the launcher), dinput8.dll (the mod), coop.ini (settings). Keep them together,
-anywhere. The launcher is in English, French, Italian, German and Spanish (globe button, bottom left).
+in a folder of their own, not the game folder (the launcher copies what the game needs). The launcher
+is in English, French, Italian, German and Spanish (globe button, bottom left).
 
 Play
 ----

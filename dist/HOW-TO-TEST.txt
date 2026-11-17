@@ -1,4 +1,4 @@
-﻿How to test DDDA Coop 0.10.0 with friends
+﻿How to test DDDA Coop 0.10.2 with friends
 ========================================
 
 Before
@@ -6,7 +6,8 @@ Before
 - Everyone: the game up to date. Steam: Steam friends with the host.
   GOG (or Steam with a GOG friend): direct IP, see "GOG and direct IP" in README.txt; the host's
   address from their "Lobby"; over the internet, UDP port 27101 open on the host's router.
-- Everyone: unzip, open DDDA-Coop.exe. It must say "Game version supported".
+- Everyone: the same mod version (0.10.2). Unzip it in a folder of its own (not the game folder),
+  open DDDA-Coop.exe. It must say "Game version supported".
   Windows may warn that the program is not signed: "More info", then "Run anyway".
 - Keep "Detailed log" on ("Settings").
 
@@ -25,6 +26,14 @@ Try
 - A friend quits and comes back.
 - A friend explores alone (LB + RB + Y for 1.5 s, or F7) and comes back the same way.
 - Light the lantern; change a piece of gear in the menu.
+- New in 0.10.2, please try:
+  - Fight together: the monsters should attack and move the same way on every screen.
+  - Shoot with a bow or a staff, also aiming with the mouse: the others should see the shots go
+    where you aim.
+  - Pick up, throw or push a crate or a barrel: it should end up at the same place for everyone.
+  - Split up in a big area (the underground, the open world), then meet again: the monsters
+    should not jump or swap.
+  - If an ogre grabs someone: where does that player stand on the other screens?
 - Avoid the Rift and the game's online features.
 
 If something goes wrong
