@@ -1023,13 +1023,21 @@ bool install_dll()
         ask(tr(L"dinput8.dll manque à côté de DDDA-Coop.exe : garde les deux fichiers dans le même dossier."), MB_ICONERROR);
         return false;
     }
+    // the mod unzipped into the game folder itself (issue #8): it is already there, and Windows refuses to copy a
+    // file onto itself ("Could not copy dinput8.dll to the game folder")
+    wchar_t fs[MAX_PATH] = L"", fd[MAX_PATH] = L"";
+    if (GetFullPathNameW(src.c_str(), MAX_PATH, fs, nullptr) && GetFullPathNameW(dst.c_str(), MAX_PATH, fd, nullptr) &&
+        _wcsicmp(fs, fd) == 0)
+        return true;
     if (exists(dst) && !our_dll(dst)) {
         ask(tr(L"Le dossier du jeu contient déjà un autre dinput8.dll (un autre mod ?).\n\nDéplace-le ailleurs toi-même, puis réessaie. DDDA Coop ne le remplace pas."),
             MB_ICONWARNING);
         return false;
     }
     if (!CopyFileW(src.c_str(), dst.c_str(), FALSE)) {
-        ask(tr(L"Impossible de copier dinput8.dll dans le dossier du jeu."), MB_ICONERROR);
+        DWORD err = GetLastError();
+        ask((std::wstring(tr(L"Impossible de copier dinput8.dll dans le dossier du jeu.")) + L" (Windows: " + std::to_wstring(err) + L")").c_str(),
+            MB_ICONERROR);
         return false;
     }
     return true;

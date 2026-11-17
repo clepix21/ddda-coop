@@ -70,6 +70,8 @@ What's new in 0.10.2
   each game sends the objects it moves, the others put theirs at the same place (issue #4).
 - A player caught by a monster (an ogre's carry...) is no longer thrown thousands of units away on the
   other screens; a catch seen on one PC only is ended there.
+- Fixed (issue #8): with the mod unzipped into the game folder itself, the launcher said "Could not copy
+  dinput8.dll to the game folder" and did not start the game.
 - Every player needs 0.10.2 (the message format changed).
 
 What's new in 0.10.1

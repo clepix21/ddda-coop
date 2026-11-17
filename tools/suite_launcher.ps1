@@ -344,6 +344,26 @@ if (-not $Only -or $Only -eq "firstrun") {
     "   screenshots: $out\lang_*.png (looked at by hand)"
 }
 
+# ---- infolder: the mod unzipped into the game folder itself (issue #8: "Could not copy dinput8.dll to the
+# game folder"): the launcher must go on, its dinput8.dll being the game's already ----
+if (-not $Only -or $Only -eq "infolder") {
+    $g4 = 'J:\coop-test\gog4'
+    $added = @("DDDA-Coop.exe", "DDDA-Coop.ini", "dinput8.dll", "coop.ini") | Where-Object { -not (Test-Path (Join-Path $g4 $_)) }
+    Copy-Item (Join-Path $build "DDDA-Coop.exe"), (Join-Path $build "dinput8.dll") $g4
+    [IO.File]::WriteAllText("$g4\DDDA-Coop.ini", "[launcher]`r`nhelp_seen=1`r`ngog_help_seen=1`r`ncheck_updates=0`r`nlang=EN`r`nrole=host`r`ngame=$g4`r`n")
+    New-Item -ItemType Directory -Force "$out\infolder_docs" | Out-Null
+    $p = Start-Process "$g4\DDDA-Coop.exe" -ArgumentList @('--docs', "$out\infolder_docs", '--gog-storage', (Join-Path $out "fake_galaxy_storage"), '--no-launch') -PassThru
+    for ($k = 0; $k -lt 40 -and $p.MainWindowHandle -eq 0; $k++) { Start-Sleep -Milliseconds 250; $p.Refresh() }
+    Start-Sleep 1
+    $said = @(Press-Launch $p)
+    $said | ForEach-Object { "   infolder: launcher said: $_" }
+    Stop-Process -Id $p.Id -ErrorAction SilentlyContinue; Start-Sleep 1
+    $ini = Get-Content "$g4\coop.ini" -ErrorAction SilentlyContinue
+    $checks += Check (-not ($said -match 'dinput8')) "infolder: no box about dinput8.dll when the launcher sits in the game folder"
+    $checks += Check ($ini -contains "role=host") "infolder: coop.ini written for the host"
+    foreach ($f in $added) { Remove-Item (Join-Path $g4 $f) -ErrorAction SilentlyContinue }
+}
+
 $checks += Check (-not (Compare-Object $before (Get-SaveHashes))) "owner's saves (Steam, GOG Galaxy) and game config unchanged"
 $checks | ForEach-Object { "   $_" }
 $failed = ($checks | Where-Object { $_ -like "FAIL*" }).Count
