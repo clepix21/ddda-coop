@@ -53,6 +53,10 @@ def jumps(track, spans, pad=1.5):
         if not any(s - pad <= t1 <= e + pad for s, e in spans):
             continue
         d = ((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z1 - z0) ** 2) ** 0.5
+        # a player caught in mid-air is pulled down into the holder's hands (by design since 0.9.7): 151 u
+        # from a jump's top (rough run 2026-11-17 20:00:22.7); the throw this check is for was 1172 u
+        if d <= 300 and a1 == "cPlActDmgHagaijime" and ("Jump" in a0 or "Fall" in a0):
+            continue
         if d > JUMP and t1 - t0 < 0.5:
             out_.append((round(d), a0, a1))
     return out_
@@ -101,7 +105,9 @@ for who, mine, other in (("host", host, guest), ("guest", guest, host)):
     # in mid-air at once, by design: rough run 2026-11-14 17:43:59, JumpBegin 0.23 s before the GrabStart)
     track = arisen_track(other)
     starts = [(t, a) for k, (t, x, y, z, a) in enumerate(track) if "Jump" in a and (k == 0 or "Jump" not in track[k - 1][4])]
-    hops = [(round(t, 1), a) for t, a in starts if any(s <= t <= e for s, e in holding)
+    # nor one begun before the hold could reach the jumper: the hold starts 0.09 s before its JumpBegin
+    # sample, its next jump then refused (GOG rough run 2026-11-17 20:13:38.13 / 38.216): 0.3 s allowed
+    hops = [(round(t, 1), a) for t, a in starts if any(s + 0.3 <= t <= e for s, e in holding)
             and not any(0 <= t - f <= 3.0 for f in freed)]
     check(not hops, f"{who} holding: the other player did not jump meanwhile ({len(holding)} holds; jumps: {hops[:4]})")
 falls = [ln for ln in host + guest if "revive: down (a fall)" in ln]

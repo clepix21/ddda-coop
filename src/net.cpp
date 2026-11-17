@@ -1105,6 +1105,9 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     static float rel_y[kParty] = {}; // a player let go here: the height it was let go at
     static int applied_was[kParty] = {};
     static int applied_act[kParty] = {}; // the holder's action when the hold was last rebuilt
+    // a rebuild that threw the held player away (below): not tried again until this hold ends
+    static bool gave_up[kParty] = {};
+    static float pre_at[kParty][3] = {};
     DWORD t = GetTickCount();
     int want = !hold_action(s.action) ? -1 : s.hold_slot >= 0 ? s.hold_slot : s.hold_enemy >= 0 ? 0x100 + s.hold_enemy : -1;
     if (want >= 0 && want == net_my_slot())
@@ -1116,6 +1119,7 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
             g_hold_fall = 0;
     }
     if (want < 0) {
+        gave_up[i] = false;
         // let go in the holder's world: the links set here go, and a held player stands up if its
         // release action is still running 1.2 s later (it stayed in DmgHagaijimeEnd for 10 s)
         if (applied[i] >= 0 && held_by[i] && !held_player[i]) {
@@ -1198,6 +1202,29 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
     }
     static DWORD next_why[kParty] = {};
     bool tell = !next_why[i] || int(t - next_why[i]) >= 0;
+    // the rebuild from the pawn's wait did not take once (the pawn stayed in cPlActWait) and the held Arisen,
+    // tied to a pawn not holding it, had its world place taken as one relative to the pawn: thrown 1172 u
+    // away, it fell (rough grab run 2026-11-17 19:20:31.842). Right after a rebuild, a player found that far
+    // goes back where it stood, untied, and this hold is not rebuilt again.
+    if (player && !held && reach >= 300.f && applied[i] == want && held_by[i] && int(t - again[i]) < 1500 &&
+        game::at<uintptr_t>(held_by[i], 0x30) == ch) {
+        uintptr_t h = held_by[i];
+        memcpy(reinterpret_cast<void *>(h + 0x40), pre_at[i], 12);
+        for (uintptr_t off : kPosCopies)
+            memcpy(reinterpret_cast<void *>(h + off), pre_at[i], 12);
+        game::at<uintptr_t>(h, 0x30) = old_30[i];
+        if (game::at<uintptr_t>(h, 0x2104) == ch)
+            game::at<uintptr_t>(h, 0x2104) = old_2104[i];
+        if (game::at<uintptr_t>(ch, 0x38F0) == h)
+            game::at<uintptr_t>(ch, 0x38F0) = 0;
+        action_set(h, 0);
+        logf("net: shared: party %d's hold of player %d threw it %.0f u away here: put back at (%.0f, %.0f, %.0f), not rebuilt again",
+             i, want, reach, pre_at[i][0], pre_at[i][1], pre_at[i][2]);
+        applied[i] = -1;
+        held_by[i] = 0;
+        gave_up[i] = true;
+        return;
+    }
     if (!held || held == ch) {
         if (tell) {
             next_why[i] = (t + 2000) | 1;
@@ -1246,7 +1273,11 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
         if (holding || (int(t - again[i]) < 1000 && applied_act[i] == s.action))
             return;
     }
+    if (gave_up[i])
+        return;
     again[i] = t | 1;
+    if (player)
+        world_pos(held, pre_at[i]); // where it stood, should the rebuild throw it away
     if (held_by[i] != held) { // what the held one pointed at before the hold
         old_2104[i] = game::at<uintptr_t>(held, 0x2104) == ch ? 0 : game::at<uintptr_t>(held, 0x2104);
         old_30[i] = game::at<uintptr_t>(held, 0x30) == ch ? 0 : game::at<uintptr_t>(held, 0x30);
