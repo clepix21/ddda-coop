@@ -99,11 +99,17 @@ Les touches et les détails sont dans `README.txt` (en anglais), à l'intérieur
 - **Après le tutoriel seulement.** La co-op démarre quand l'hôte et chaque invité ont un perso qui a
   fini le tutoriel, c'est-à-dire avec son pion principal. Sur une nouvelle partie, faites-le chacun
   seul d'abord.
-- **Alpha.** Testé surtout par des bots et lors d'une soirée entre amis. Garde le « Journal détaillé »
-  activé (Paramètres) pour pouvoir signaler un bug.
-- Les autres joueurs peuvent encore glisser un peu quand la connexion est irrégulière (amélioré en
-  0.9.2).
+- **Alpha.** Testé avec 23 suites de tests co-op automatiques sur Steam et sur GOG (deux jeux joués par
+  des bots), des parties entre amis et vos rapports de bugs. Garde le « Journal détaillé » activé
+  (Paramètres) pour pouvoir signaler un bug.
+- **Pas encore synchronisé :** les monstres aléatoires de l'Île du Crépuscule peuvent être différents
+  d'un joueur à l'autre ; un joueur attrapé par un monstre (la prise d'un ogre) peut ne pas s'afficher
+  pareil sur tous les écrans.
+- Les autres joueurs peuvent encore glisser un peu quand la connexion est irrégulière.
 - Pas encore testés : la Mort (Île du Crépuscule), l'eau profonde, les longues sessions.
+- **Discord :** avec l'application Discord ouverte, ton profil montre ce que tu fais dans le jeu
+  (vocation, niveau, lieu, hôte ou invité). Désactivable dans les **Paramètres**, voir
+  [Confidentialité](#confidentialité).
 - Les fonctions en ligne du jeu (la Faille, les pions d'autres joueurs) ne sont pas prises en charge
   par le mod : évite-les pendant une partie en co-op.
 
@@ -140,6 +146,25 @@ La compilation donne `build\dinput8.dll` (le mod), `build\DDDA-Coop.exe` (la fen
 [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
 </details>
+
+## Confidentialité
+
+DDDA Coop ne collecte rien : pas de compte, pas de statistiques, pas de serveur à lui. Ce qu'il envoie,
+et à qui :
+
+- **Aux autres joueurs de ta partie seulement :** ce dont la co-op a besoin (la position de ton perso,
+  ses actions, sa santé, son équipement, les quêtes et les changements du monde). Sur Steam, ça passe
+  par le réseau de Steam, entre amis Steam ; sur GOG, ça va directement à l'adresse IP de l'hôte que tu
+  as saisie.
+- **À GitHub :** la fenêtre demande à GitHub (api.github.com) si une nouvelle version existe, et ne la
+  télécharge depuis les releases de ce dépôt que si tu choisis de mettre à jour.
+- **À l'application Discord de ton PC (Rich Presence) :** ta vocation, ton niveau, le lieu où tu es,
+  hôte ou invité, et le nombre de joueurs, affichés sur ton profil Discord. Ça passe par la connexion
+  locale avec l'application Discord, pas par internet depuis le mod ; Discord l'affiche ensuite comme
+  pour n'importe quel jeu. Le nom de ton perso n'est jamais envoyé. Désactivable dans la fenêtre, ou
+  avec `discord=0` dans `coop.ini`.
+- **Rien d'autre.** Le journal et les copies des sauvegardes (`Documents\DDDA Coop`) restent sur ton
+  PC ; un journal n'en sort que si tu l'exportes et le joins toi-même à un rapport de bug.
 
 ## Crédits
 
