@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "mod.h"
 #include "version.h"
@@ -130,13 +131,20 @@ bool arisen_vocation(int &job, int &level)
     return true;
 }
 
-// The area's name, for the stages known for sure (the open world is stage 100: the cell origin work, issue #4);
-// nullptr for the others (their names are not in the mod yet)
-const char *area_name(int32_t stage)
+// Where the Arisen stands, by name (places.cpp, from the game files): "Pawn Guild, Gran Soren", "Verda
+// Woodlands", "Cassardis"... empty when unknown
+std::string where_name()
 {
-    if (stage == 100)
-        return "Gransys";
-    return nullptr;
+    uintptr_t a = possess_arisen();
+    float p[3];
+    if (!a || !mem_safe_read(a + 0x40, p, sizeof p))
+        return "";
+    field_to_world(p);
+    std::string area, spot;
+    place_names(net_my_stage(), p, area, spot);
+    if (!spot.empty() && !area.empty() && area != "Gransys" && spot != area)
+        return spot + ", " + area;
+    return !spot.empty() ? spot : area;
 }
 
 struct Presence {
@@ -163,8 +171,9 @@ void describe(Presence &p)
     } else {
         snprintf(p.details, sizeof p.details, "%s", mode);
     }
-    const char *area = area_name(net_my_stage());
-    snprintf(p.large_text, sizeof p.large_text, "%s", area ? area : "DDDA Coop " DDDA_COOP_VERSION);
+    std::string where = where_name();
+    const char *area = where.empty() ? nullptr : where.c_str();
+    snprintf(p.large_text, sizeof p.large_text, "%s", "DDDA Coop " DDDA_COOP_VERSION);
     if (role == NET_OFF) {
         snprintf(p.state, sizeof p.state, "%s%s", area ? "Solo in " : "Not in a co-op session", area ? area : "");
         p.players = 0;
@@ -261,4 +270,13 @@ void discord_start()
         SetThreadPriority(t, THREAD_PRIORITY_BELOW_NORMAL);
         CloseHandle(t);
     }
+}
+
+// Bridge "presence" (tests): what the presence would show now, in the log only (Discord not involved).
+void discord_describe_log()
+{
+    Presence p;
+    describe(p);
+    logf("discord: would show: details \"%s\", state \"%s\", small image \"%s\" (%s), players %d", p.details, p.state,
+         p.small_image, p.small_text, p.players);
 }

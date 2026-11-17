@@ -1168,6 +1168,9 @@ void run_line(const char *line)
     } else if (sscanf(line, "cutplay %u", &slot) == 1) { // cutplay <event>: start that event (cutscene) here
         cutscene_play(int(slot));
         _snprintf(g_current, sizeof g_current, "cutplay %u", slot);
+    } else if (strncmp(line, "presence", 8) == 0) { // presence: what the Discord presence would show (log only)
+        discord_describe_log();
+        _snprintf(g_current, sizeof g_current, "presence");
     } else if (strncmp(line, "pfind", 5) == 0) { // pfind: bytes of the Arisen's param object ([+0x3DEC]) for level/job
         uintptr_t a = possess_arisen();
         uintptr_t prm = a ? game::at<uintptr_t>(a, 0x3DEC) : 0;

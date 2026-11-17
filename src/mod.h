@@ -336,3 +336,5 @@ template <class F> void units_each_unit(F f)
 }
 void objects_debug(const char *what, float dx, float dz); // bridge objpush / objnear (tests)
 void placename_scan(); // bridge "placename": the area name GUI units and their text (tests)
+void place_names(int32_t stage, const float world[3], std::string &area, std::string &spot); // places.cpp: names from the game files
+void discord_describe_log(); // bridge "presence": what the Discord presence would show (log only)
