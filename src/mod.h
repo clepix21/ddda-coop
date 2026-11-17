@@ -335,3 +335,4 @@ template <class F> void units_each_unit(F f)
     units_each_raw([](uintptr_t u, void *c) { return (*static_cast<F *>(c))(u); }, &f);
 }
 void objects_debug(const char *what, float dx, float dz); // bridge objpush / objnear (tests)
+void placename_scan(); // bridge "placename": the area name GUI units and their text (tests)

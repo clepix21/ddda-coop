@@ -107,29 +107,74 @@ void json_text(char *out, size_t cap, const char *in)
     out[o] = 0;
 }
 
-// The presence for now: what the player does and with how many
-void describe(char *details, size_t dcap, char *state, size_t scap, int &players)
+// The Arisen's vocation and level, from its parameter object ([ch+0x3DEC]): the vocation at +0x10 (1 Fighter ..
+// 9 Sorcerer, the save's mJob), the level at +0x700 (the save's mLevel); found with three test saves
+// (Mystic Knight 200, Sorcerer 45, Strider 200), 2026-11-17. The character's name follows the level: not shown.
+struct Vocation {
+    const char *name, *asset; // the asset: a small image of the Discord application, by that name
+};
+const Vocation kVocations[] = {{"Fighter", "fighter"},   {"Strider", "strider"},   {"Mage", "mage"},
+                               {"Mystic Knight", "mystic_knight"}, {"Assassin", "assassin"}, {"Magick Archer", "magick_archer"},
+                               {"Warrior", "warrior"},   {"Ranger", "ranger"},     {"Sorcerer", "sorcerer"}};
+
+bool arisen_vocation(int &job, int &level)
+{
+    uintptr_t a = possess_arisen(), prm = 0;
+    if (!a || !mem_safe_read(a + 0x3DEC, &prm, 4) || !prm)
+        return false;
+    int32_t j = 0, l = 0;
+    if (!mem_safe_read(prm + 0x10, &j, 4) || !mem_safe_read(prm + 0x700, &l, 4) || j < 1 || j > 9 || l < 1 || l > 200)
+        return false;
+    job = j;
+    level = l;
+    return true;
+}
+
+// The area's name, for the stages known for sure (the open world is stage 100: the cell origin work, issue #4);
+// nullptr for the others (their names are not in the mod yet)
+const char *area_name(int32_t stage)
+{
+    if (stage == 100)
+        return "Gransys";
+    return nullptr;
+}
+
+struct Presence {
+    char details[128], state[128], small_image[24], small_text[128], large_text[128];
+    int players;
+};
+
+// The presence for now: what the player does, with how many, as what and where
+void describe(Presence &p)
 {
     NetRole role = net_role();
-    players = 0;
+    p = {};
     for (int s = 0; s < 4; ++s) {
         PlayerInfo pi;
         if (net_player_info(s, pi) && pi.present)
-            ++players;
+            ++p.players;
     }
+    const char *mode = role == NET_OFF ? "Solo" : net_shared() ? "Co-op, shared world" : "Co-op, classic mode";
+    int job = 0, level = 0;
+    if (arisen_vocation(job, level)) {
+        snprintf(p.details, sizeof p.details, "%s, level %d", kVocations[job - 1].name, level);
+        snprintf(p.small_image, sizeof p.small_image, "%s", kVocations[job - 1].asset);
+        snprintf(p.small_text, sizeof p.small_text, "%s", mode);
+    } else {
+        snprintf(p.details, sizeof p.details, "%s", mode);
+    }
+    const char *area = area_name(net_my_stage());
+    snprintf(p.large_text, sizeof p.large_text, "%s", area ? area : "DDDA Coop " DDDA_COOP_VERSION);
     if (role == NET_OFF) {
-        snprintf(details, dcap, "Solo");
-        snprintf(state, scap, "Not in a co-op session");
-        players = 0;
+        snprintf(p.state, sizeof p.state, "%s%s", area ? "Solo in " : "Not in a co-op session", area ? area : "");
+        p.players = 0;
         return;
     }
-    if (players < 1)
-        players = 1;
-    snprintf(details, dcap, "%s", net_shared() ? "Co-op, shared world" : "Co-op, classic mode");
-    if (role == NET_HOST)
-        snprintf(state, scap, players > 1 ? "Hosting" : "Hosting, waiting for players");
-    else
-        snprintf(state, scap, players > 1 ? "Playing as a guest" : "Joining a host");
+    if (p.players < 1)
+        p.players = 1;
+    const char *what = role == NET_HOST ? (p.players > 1 ? "Hosting" : "Hosting, waiting for players")
+                                        : (p.players > 1 ? "Playing as a guest" : "Joining a host");
+    snprintf(p.state, sizeof p.state, "%s%s%s", what, area ? " in " : "", area ? area : "");
 }
 
 DWORD WINAPI discord_thread(void *)
@@ -158,20 +203,26 @@ DWORD WINAPI discord_thread(void *)
             disconnect();
             continue;
         }
-        char details[128], state[128], d2[160], s2[160];
-        int players;
-        describe(details, sizeof details, state, sizeof state, players);
-        json_text(d2, sizeof d2, details);
-        json_text(s2, sizeof s2, state);
-        char party[96] = "";
-        if (players > 0) // Discord shows "(2 of 4)" next to the state
+        Presence pr;
+        describe(pr);
+        char d2[160], s2[160], st2[160], lt2[160];
+        json_text(d2, sizeof d2, pr.details);
+        json_text(s2, sizeof s2, pr.state);
+        json_text(st2, sizeof st2, pr.small_text);
+        json_text(lt2, sizeof lt2, pr.large_text);
+        char party[96] = "", small[256] = "";
+        if (pr.players > 0) // Discord shows "(2 of 4)" next to the state
             snprintf(party, sizeof party, ",\"party\":{\"id\":\"ddda-coop-%lu\",\"size\":[%d,4]}",
-                     (unsigned long)GetCurrentProcessId(), players);
+                     (unsigned long)GetCurrentProcessId(), pr.players);
+        if (pr.small_image[0]) // the vocation's small image over the logo's corner
+            snprintf(small, sizeof small, ",\"small_image\":\"%s\",\"small_text\":\"%s\"", pr.small_image, st2);
         char activity[1024];
         snprintf(activity, sizeof activity,
                  "{\"details\":\"%s\",\"state\":\"%s\",\"timestamps\":{\"start\":%lld},"
-                 "\"assets\":{\"large_image\":\"logo\",\"large_text\":\"DDDA Coop " DDDA_COOP_VERSION "\"}%s}",
-                 d2, s2, start, party);
+                 "\"assets\":{\"large_image\":\"logo\",\"large_text\":\"%s\"%s}%s}",
+                 d2, s2, start, lt2, small, party);
+        const char *details = pr.details, *state = pr.state;
+        int players = pr.players;
         if (strcmp(activity, last_sent) == 0)
             continue; // Discord limits updates (about 5 per 20 s): sent only when it changes
         char frame[1400];

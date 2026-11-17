@@ -882,3 +882,41 @@ void units_each_raw(bool (*f)(uintptr_t unit, void *ctx), void *ctx)
 {
     units_each([&](uintptr_t u, int) { return f(u, ctx); });
 }
+
+// Bridge "placename" (tests, Discord presence): the GUI units that show the area's name (uGUIPlaceName,
+// uGUIMiniMap) and the text they hold or point to (UTF-8 / UTF-16 runs of letters).
+void placename_scan()
+{
+    auto text_at = [](uintptr_t a, char *out, size_t cap) -> bool {
+        uint8_t b[96];
+        if (!safe_read(a, b, sizeof b))
+            return false;
+        size_t n = 0; // UTF-8 / ASCII letters
+        while (n < sizeof b && n + 1 < cap && ((b[n] >= 0x20 && b[n] < 0x7F) || b[n] >= 0xC0))
+            out[n] = char(b[n]), ++n;
+        out[n] = 0;
+        if (n >= 5)
+            return true;
+        n = 0; // UTF-16
+        while (2 * n + 1 < sizeof b && n + 1 < cap && b[2 * n] >= 0x20 && b[2 * n] < 0x7F && b[2 * n + 1] == 0)
+            out[n] = char(b[2 * n]), ++n;
+        out[n] = 0;
+        return n >= 5;
+    };
+    units_each([&](uintptr_t u, int line) {
+        const char *c = strict_class_of(u);
+        if (!c || (!strstr(c, "PlaceName") && !strstr(c, "MiniMap") && !strstr(c, "uGUIMap")))
+            return true;
+        logf("placename: line %d %s %08X", line, c, unsigned(u));
+        char s[100];
+        for (int off = 0; off < 0x1000; off += 4) {
+            if (text_at(u + off, s, sizeof s))
+                logf("placename:   +%X inline \"%s\"", off, s);
+            bool ok;
+            uintptr_t p = safe_u32(u + off, ok);
+            if (ok && p >= 0x10000 && p < 0x7FFF0000 && !strict_in_exe(p) && text_at(p, s, sizeof s))
+                logf("placename:   +%X -> %08X \"%s\"", off, unsigned(p), s);
+        }
+        return true;
+    });
+}

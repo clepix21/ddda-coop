@@ -1168,6 +1168,21 @@ void run_line(const char *line)
     } else if (sscanf(line, "cutplay %u", &slot) == 1) { // cutplay <event>: start that event (cutscene) here
         cutscene_play(int(slot));
         _snprintf(g_current, sizeof g_current, "cutplay %u", slot);
+    } else if (strncmp(line, "pfind", 5) == 0) { // pfind: bytes of the Arisen's param object ([+0x3DEC]) for level/job
+        uintptr_t a = possess_arisen();
+        uintptr_t prm = a ? game::at<uintptr_t>(a, 0x3DEC) : 0;
+        if (prm && mem_readable(reinterpret_cast<void *>(prm), 0x1000)) {
+            for (int off = 0; off < 0x1000; off += 32) {
+                char hex[32 * 3 + 1];
+                for (int j = 0; j < 32; ++j)
+                    snprintf(hex + j * 3, 4, "%02X ", game::at<uint8_t>(prm, off + j));
+                logf("bridge: pfind +%03X %s", off, hex);
+            }
+        }
+        _snprintf(g_current, sizeof g_current, "pfind");
+    } else if (strncmp(line, "placename", 9) == 0) { // placename: the area name GUI's text (tests)
+        placename_scan();
+        _snprintf(g_current, sizeof g_current, "placename");
     } else if (strncmp(line, "objpush ", 8) == 0) { // objpush <dx> <dz>: moves the nearest object (tests, issue #4)
         float dx = 0.f, dz = 0.f;
         if (sscanf(line + 8, "%f %f", &dx, &dz) == 2)
