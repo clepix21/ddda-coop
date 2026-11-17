@@ -46,7 +46,7 @@ enum {
     ID_GAME_EDIT = 100, ID_BROWSE, ID_HOST, ID_GUEST, ID_OWN_CHAR, ID_DEBUG, ID_LAUNCH, ID_REMOVE,
     ID_BACKUP, ID_EXPORT, ID_EVENTS, ID_SOLO, ID_KEEP, ID_TIMER, ID_PLAYERS, ID_HELP, ID_EVENTS_TOGGLE, ID_FIRST_HELP,
     ID_OPEN_BACKUPS, ID_COPY_CODE, ID_CODE_EDIT, ID_CODE_CLEAR, ID_BACKUP_LIST, ID_UPDATE, ID_CHECK_UPDATES, ID_PROJECT, ID_LANG,
-    ID_LAN, ID_STORE_STEAM, ID_STORE_GOG, ID_GOG_HELP, ID_UNSUPPORTED_HELP,
+    ID_LAN, ID_STORE_STEAM, ID_STORE_GOG, ID_GOG_HELP, ID_UNSUPPORTED_HELP, ID_DISCORD,
     ID_NAV = 200 // ID_NAV + page: the sidebar's buttons
 };
 // the screens, in the sidebar's order
@@ -109,7 +109,7 @@ std::vector<Switch> g_switches;
 int g_game_state = 0;     // 0 DDDA.exe not found, 1 found but another version, 2 supported (the header's line)
 bool g_log_unseen = false; // a warning or an error in the journal since it was last shown (a dot on its icon)
 
-HWND g_wnd, g_game_edit, g_version, g_host, g_guest, g_solo, g_own_char, g_keep, g_debug, g_launch, g_state, g_events,
+HWND g_wnd, g_game_edit, g_version, g_host, g_guest, g_solo, g_own_char, g_keep, g_debug, g_discord, g_launch, g_state, g_events,
     g_players, g_backup_note, g_update, g_check_updates, g_lan;
 HFONT g_font, g_bold, g_head, g_title, g_icon, g_small, g_small_icon, g_code_font;
 HBRUSH g_bg_brush, g_card_brush;
@@ -349,6 +349,7 @@ void save_settings()
     WritePrivateProfileStringW(L"launcher", L"check_updates", switch_on(g_check_updates) ? L"1" : L"0", p.c_str());
     // "direct_ip", not the first builds' "lan": those saved the switch on whenever a GOG game had been chosen
     WritePrivateProfileStringW(L"launcher", L"direct_ip", switch_on(g_lan) ? L"1" : L"0", p.c_str());
+    WritePrivateProfileStringW(L"launcher", L"discord", switch_on(g_discord) ? L"1" : L"0", p.c_str());
 }
 
 // ---- the update check: the project's newest release on GitHub (a release from the public repo) ----
@@ -974,7 +975,7 @@ bool write_coop_ini()
     std::string base;
     if (!read_file(g_game_dir + L"\\coop.ini", base) && !read_file(g_exe_dir + L"\\coop.ini", base))
         base = "p2_pad=1\nidle_pad=3\nauto_possess=0\nblock_saves=0\nguest_cam_pawn=1\n";
-    const char *ours[] = {"role=", "#role=", "transport=", "debug_log=", "send_character=", "keep_progress=", "peer_steamid=", "peer=", "port=",
+    const char *ours[] = {"role=", "#role=", "transport=", "debug_log=", "discord=", "send_character=", "keep_progress=", "peer_steamid=", "peer=", "port=",
                           "# Lines below are set by DDDA-Coop.exe"};
     std::string out, line;
     for (size_t i = 0; i <= base.size(); ++i) {
@@ -1008,6 +1009,8 @@ bool write_coop_ini()
     }
     out += switch_on(g_keep) ? "keep_progress=1\n" : "keep_progress=0\n";
     out += switch_on(g_debug) ? "debug_log=1\n" : "debug_log=0\n";
+    if (!switch_on(g_discord)) // on by default in the mod (and off in the test copies: private_appdata)
+        out += "discord=0\n";
     if (guest && !switch_on(g_own_char))
         out += "send_character=0\n";
     uint64_t host_id = 0;
@@ -2047,7 +2050,7 @@ ButtonKind kind_of(int id)
         return BTN_NAV;
     if (id == ID_HOST || id == ID_GUEST || id == ID_SOLO)
         return BTN_ROLE;
-    if (id == ID_OWN_CHAR || id == ID_KEEP || id == ID_DEBUG || id == ID_CHECK_UPDATES || id == ID_LAN)
+    if (id == ID_OWN_CHAR || id == ID_KEEP || id == ID_DEBUG || id == ID_CHECK_UPDATES || id == ID_LAN || id == ID_DISCORD)
         return BTN_SWITCH;
     if (id == ID_STORE_STEAM || id == ID_STORE_GOG)
         return BTN_CHOICE;
@@ -2058,7 +2061,7 @@ ButtonKind kind_of(int id)
 // time, so the window fits a laptop's screen (~768 px high) without scrolling (owner's direction,
 // 2026-10-29). Each screen's controls are listed in g_pages and shown or hidden together.
 const int kW = 960, kH = 600, kSide = 84, kX = kSide + 28, kCW = kW - kX - 28, kHeaderH = 112;
-const int kDangerY = 346; // Paramètres: the sensitive card's top
+const int kDangerY = 370; // Paramètres: the sensitive card's top
 int g_height = kH;
 std::vector<HWND> g_pages[PAGE_COUNT];
 int g_building = PAGE_PLAY; // the screen the controls made now belong to
@@ -2187,10 +2190,12 @@ void build_window()
     g_version = add(make(L"STATIC", L"", 0, L, 140 + G, W, 22, 0));
     g_debug = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 176 + G, W, 32, ID_DEBUG));
     g_switches.push_back({g_debug, true, tr(L"&Journal détaillé (utile pour signaler un problème)")});
-    g_check_updates = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 212 + G, W, 32, ID_CHECK_UPDATES));
+    g_check_updates = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 210 + G, W, 32, ID_CHECK_UPDATES));
     g_switches.push_back({g_check_updates, true, tr(L"&Mettre à jour automatiquement au démarrage (GitHub)")});
-    g_lan = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 248 + G, W, 32, ID_LAN));
+    g_lan = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 244 + G, W, 32, ID_LAN));
     g_switches.push_back({g_lan, false, tr(L"Jouer sans Steam : réseau &local ou IP directe (port UDP 27101)")});
+    g_discord = add(make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, L, 278 + G, W, 32, ID_DISCORD));
+    g_switches.push_back({g_discord, true, tr(L"Afficher ce que je fais sur mon profil &Discord (Rich Presence)")});
     // the sensitive part in a card of its own (painted), red-tinted
     add(make(L"STATIC", tr(L"Zone sensible"), 0, L + 18, kDangerY + 14, W - 36, 22, 0, g_bold));
     add(make(L"STATIC",
@@ -2198,7 +2203,7 @@ void build_window()
              0, L + 18, kDangerY + 40, W - 36 - 200, 44, 0));
     add(make(L"BUTTON", tr(L"&Retirer le mod"), BS_PUSHBUTTON | WS_TABSTOP, L + W - 18 - 180, kDangerY + 38, 180, 40, ID_REMOVE));
     // credits
-    int ay = kDangerY + 96 + 22;
+    int ay = kDangerY + 96 + 14;
     add(make(L"STATIC", tr(L"À propos"), 0, L, ay, W, 22, 0, g_bold));
     add(make(L"STATIC",
              (L"DDDA Coop v" + widen(DDDA_COOP_VERSION) +
@@ -2222,6 +2227,7 @@ void build_window()
     g_switches[2].on = setting(L"debug_log", L"1") == L"1";
     g_switches[3].on = setting(L"check_updates", L"1") == L"1";
     g_switches[4].on = setting(L"direct_ip", L"0") == L"1";
+    g_switches[5].on = setting(L"discord", L"1") == L"1";
     refresh_names();
     update_players();
     show_page(PAGE_PLAY);
@@ -2487,6 +2493,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         case ID_DEBUG:
         case ID_CHECK_UPDATES:
         case ID_LAN:
+        case ID_DISCORD:
             for (Switch &sw : g_switches)
                 if (sw.h == HWND(l))
                     sw.on = !sw.on;
