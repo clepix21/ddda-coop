@@ -1,8 +1,8 @@
-DDDA Coop 0.10.2 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam or GOG, 2 to 4 players)
+DDDA Coop 0.11.0 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam or GOG, 2 to 4 players)
 =======================================================================================================
 
 Each player needs the game (Steam or GOG, current version) on their own PC, and this same mod
-version (0.10.2).
+version (0.11.0).
 - Steam: guests must be Steam friends with the host. No IP address or port to set.
 - GOG: players join by IP address (direct IP, UDP port 27101). See "GOG and direct IP" below.
 
@@ -57,6 +57,21 @@ Good to know
 ------------
 - Alpha: keep copies of your saves.
 - If the game folder already has another dinput8.dll (another mod), it is not replaced: remove it first.
+
+What's new in 0.11.0
+--------------------
+- Discord Rich Presence: your Discord profile shows "Playing DDDA Coop" with what you are doing:
+  your vocation and level ("Strider, level 200"), whether you host or joined and where you are
+  ("Hosting in Pawn Guild, Gran Soren", "Guest in Verda Woodlands"), the number of players
+  ("2 of 4") and the time played. Your vocation's icon shows in the corner of the logo.
+- Place names come from your own game files, read when the game runs: the mod carries no game data.
+- Nothing is sent anywhere but the Discord app on your own PC (its local connection). Your
+  character's name is never shown.
+- To turn it off: untick "Show what I'm doing on my Discord profile (Rich Presence)" in the launcher,
+  or put discord=0 in coop.ini. Without Discord open, nothing changes.
+- Fixed: in a fight between players, a player held by another one could, rarely, be thrown about a
+  thousand units away and fall. It is now put back where it stood.
+- 0.11.0 plays with 0.10.2 (the message format did not change), but updating is recommended.
 
 What's new in 0.10.2
 --------------------
