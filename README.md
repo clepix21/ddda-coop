@@ -98,10 +98,15 @@ The controls and the details are in `README.txt` inside the zip; `HOW-TO-TEST.tx
 
 - **After the tutorial only.** Co-op starts once the host and each guest have a character that has
   finished the tutorial, that is, with its main pawn. On a new game, play it alone first.
-- **Alpha.** Tested mostly by bots and during one evening with friends. Keep "Detailed log" on
-  (Settings) so you can report a bug.
-- Other players may still slide a little on an uneven connection (improved in 0.9.2).
+- **Alpha.** Tested with 23 automated co-op test suites on Steam and on GOG (two games played by
+  bots), games with friends and your bug reports. Keep "Detailed log" on (Settings) so you
+  can report a bug.
+- **Not synced yet:** the random monsters of Bitterblack Isle can differ between players; a player
+  caught by a monster (an ogre's grab) may not look the same on every screen.
+- Other players may still slide a little on an uneven connection.
 - Not tested yet: Death (Bitterblack Isle), deep water, long sessions.
+- **Discord:** with the Discord app open, your profile shows what you are doing in the game (vocation,
+  level, place, host or guest). Turn it off in **Settings**, see [Privacy](#privacy).
 - The game's online features (the Rift, other players' pawns) are not supported by the mod: avoid them
   during a co-op game.
 
