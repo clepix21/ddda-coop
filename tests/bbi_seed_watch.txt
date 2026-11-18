@@ -1,0 +1,12 @@
+# Bitterblack Isle lottery: the set manager's draws are seeded with sGameSys+0xB8784 (FUN_004a21b0 / 004a2900 /
+# 004a2c30 call the seed FUN_00d006c0 with it), a counter the game steps with its clock (FUN_0043cd10). Logs every
+# change of that counter and the set manager's units on both games, to compare.
+wait 25000
+watchg 018FA4BC B8784 60
+units
+wait 50000
+units
+wait 50000
+units
+wait 40000
+units

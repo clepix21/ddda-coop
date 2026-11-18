@@ -61,7 +61,8 @@ namespace {
 
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
                        MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11, MSG_REVIVE = 12, MSG_QUEST = 13,
-                       MSG_AREA_ENEMIES = 14, MSG_PING = 15, MSG_PONG = 16, MSG_EVENT = 17, MSG_OBJECTS = 18 };
+                       MSG_AREA_ENEMIES = 14, MSG_PING = 15, MSG_PONG = 16, MSG_EVENT = 17, MSG_OBJECTS = 18,
+                       MSG_LOTTERY = 19 }; // 0.11.1; an older version drops a type it does not know
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 constexpr uintptr_t kAimPitch = 0x32D4; // aim pitch (radians) while aiming a bow or a staff (bridge chdiff, 2026-11-17)
@@ -244,6 +245,10 @@ struct ObjectsMsg {
     ObjState o[kObjPerMsg];
 };
 constexpr int objects_msg_size(int count) { return int(offsetof(ObjectsMsg, o) + count * sizeof(ObjState)); }
+struct LotteryMsg { // host -> guests every 2 s: its lottery counter (lottery.cpp: the random spawns' seed)
+    Header h;
+    uint32_t counter;
+};
 constexpr int kSaveChunk = 1024;
 struct SaveChunkMsg {
     Header h;
@@ -2215,6 +2220,9 @@ void receive_all()
             }
             if (m->stage == my_stage())
                 objects_receive(m->o, count);
+        } else if (h->type == MSG_LOTTERY && n == int(sizeof(LotteryMsg))) {
+            if (g_role == NET_GUEST && g_shared)
+                lottery_host_counter(reinterpret_cast<LotteryMsg *>(buf)->counter);
         } else if (h->type == MSG_AREA_ENEMIES && n >= area_msg_size(0)) {
             auto m = reinterpret_cast<AreaEnemiesMsg *>(buf);
             int count = m->count;
@@ -2954,6 +2962,17 @@ DWORD WINAPI net_thread(LPVOID)
                 om.count = uint8_t(objects_collect(om.o, kObjPerMsg));
                 if (om.count)
                     send_raw(&om, objects_msg_size(om.count));
+            }
+        }
+        // the host's lottery counter, for the guests' random spawns (lottery.cpp), every 2 s
+        static DWORD lot_next = 0;
+        if (g_shared && g_role == NET_HOST && (!lot_next || int(now - lot_next) >= 0)) {
+            lot_next = (now + 2000) | 1;
+            if (uint32_t c = lottery_counter()) {
+                LotteryMsg lm = {};
+                lm.h = {kMagic, MSG_LOTTERY, ++g_seq};
+                lm.counter = c;
+                send_raw(&lm, sizeof lm);
             }
         }
         if (int(now - next_send) >= 0) {

@@ -57,6 +57,8 @@ static DWORD WINAPI pad_thread(LPVOID)
     input_redirect_install();
     if (cfg_role() != NET_OFF && !early_flag("test_no_catchup_hook"))
         catchup_install();
+    if (cfg_role() != NET_OFF)
+        lottery_install(); // Bitterblack Isle's random spawns: the same seed in every game (issue #6)
     save_guard_install(cfg_block_saves()); // storage hooks always; writes blocked only when asked
     // GOG: every role, so a save made on another account (a friend's, a Steam one) loads too
     if ((cfg_role() == NET_GUEST || game::build() == game::BUILD_GOG) && !early_flag("test_no_owner_patch")) // tests: show what the patch avoids

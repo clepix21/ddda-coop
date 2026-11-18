@@ -113,6 +113,9 @@ bool actions_install();
 void actions_quiet_save();                    // the next seconds of saving show no save icon (mod snapshots)                       // the fall check skips the pawns showing players
 bool net_puppet_ptr(uintptr_t ch);
 void catchup_install();         // catchup.cpp: the game's catch-up off for the pawns showing players
+void lottery_install();         // lottery.cpp: the set manager's random spawns the same in every game (shared world)
+uint32_t lottery_counter();     // the game's lottery counter ([sGameSys]+0xB8784), 0 when none
+void lottery_host_counter(uint32_t host); // guest: the host's counter came (MSG_LOTTERY)
 long catchup_skipped_take();     // catch-ups skipped since the last call
 bool net_puppet_in_weapon_action(uintptr_t ch); // its player is in a weapon action (aiming a bow...)
 bool net_hidden_pawn_ptr(uintptr_t ch);       // net.cpp: a hired pawn no player uses (shared world)            // net.cpp: a pawn showing another player (shared world)            // tests: the Arisen holds that pawn (0xA9 / 0xAA)          // game thread
