@@ -1,8 +1,8 @@
-DDDA Coop 0.11.0 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam or GOG, 2 to 4 players)
+DDDA Coop 0.11.1 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam or GOG, 2 to 4 players)
 =======================================================================================================
 
 Each player needs the game (Steam or GOG, current version) on their own PC, and this same mod
-version (0.11.0).
+version (0.11.1).
 - Steam: guests must be Steam friends with the host. No IP address or port to set.
 - GOG: players join by IP address (direct IP, UDP port 27101). See "GOG and direct IP" below.
 
@@ -57,6 +57,19 @@ Good to know
 ------------
 - Alpha: keep copies of your saves.
 - If the game folder already has another dinput8.dll (another mod), it is not replaced: remove it first.
+
+What's new in 0.11.1
+--------------------
+- Random spawns are the same for every player: the monsters and enemy groups the game draws when an
+  area loads (Bitterblack Isle's random monsters included) now come from the same draw in every
+  player's game, instead of each game drawing its own. Players entering the same area within about
+  five minutes get the same monsters.
+- Carried objects: a jar, a barrel or a crate another player carries is now seen in their hands on
+  your screen, and is gone for everyone once it breaks.
+- Fixed: a player let go by another one could, rarely, be kept in the air for a moment and then fall
+  through the floor.
+- Fixed: this README quoted the Discord switch with the wrong words.
+- Everyone should update: random spawns only match when every player has 0.11.1.
 
 What's new in 0.11.0
 --------------------
