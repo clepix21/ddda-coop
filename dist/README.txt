@@ -67,7 +67,7 @@ What's new in 0.11.0
 - Place names come from your own game files, read when the game runs: the mod carries no game data.
 - Nothing is sent anywhere but the Discord app on your own PC (its local connection). Your
   character's name is never shown.
-- To turn it off: untick "Show what I'm doing on my Discord profile (Rich Presence)" in the launcher,
+- To turn it off: untick "Show what I am playing on my Discord profile (Rich Presence)" in the launcher,
   or put discord=0 in coop.ini. Without Discord open, nothing changes.
 - Fixed: in a fight between players, a player held by another one could, rarely, be thrown about a
   thousand units away and fall. It is now put back where it stood.
