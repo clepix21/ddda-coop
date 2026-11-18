@@ -1149,6 +1149,11 @@ void shared_grab_look(uintptr_t ch, int i, const CharState &s)
                 rel_y[i] = game::at<float>(h, 0x44);
                 applied_was[i] = applied[i];
             }
+            // the game's release can also take the let-go Arisen 145 u up (y -242 -> -96, GOG rough grab run
+            // 2026-11-18 11:45:45): kept there for 2.5 s it fell through the floor at its end (to y -1825).
+            // It is never kept higher than where it stood when the hold was last rebuilt.
+            if (held_player[i] && pre_at[i][1] < rel_y[i])
+                rel_y[i] = pre_at[i][1];
             if (held_player[i] && h == possess_arisen())
                 g_hold_fall = t | 1;
             if (game::at<uintptr_t>(h, 0x2104) == ch)

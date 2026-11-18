@@ -57,6 +57,10 @@ def jumps(track, spans, pad=1.5):
         # from a jump's top (rough run 2026-11-17 20:00:22.7); the throw this check is for was 1172 u
         if d <= 300 and a1 == "cPlActDmgHagaijime" and ("Jump" in a0 or "Fall" in a0):
             continue
+        # the catch itself pulls a standing player into the holder's hands: 153 and 157 u from cPlActWait
+        # (Steam rough runs 2026-11-18 12:30 and 12:34); a single step into the hold, not a throw
+        if d <= 200 and a1 == "cPlActDmgHagaijime" and a0 != "cPlActDmgHagaijime":
+            continue
         if d > JUMP and t1 - t0 < 0.5:
             out_.append((round(d), a0, a1))
     return out_
@@ -80,12 +84,25 @@ for who, mine in (("host", host), ("guest", guest)):
                        f"for {sum(e - s for s, e in spans):.1f} s)")
     check(not j, f"{who}: no jump over {JUMP:.0f} u while held or just after ({len(j)}: {j[:5]})")
     # under the floor after being let go (the release took it 145 u down and it fell for ever, 2026-11-06)
-    sank = []
+    # A fall off a ledge is not that: the merchant save's yard has a drop near z -1520, and a struggling player
+    # mashing the stick walked or jumped off it after the hold, landed 1600 u lower and stood up (GOG 2026-11-18
+    # 11:45:47, Steam 12:33:30). It moved more than 60 u from where it was let go before dropping, and was on
+    # its feet down there within 10 s.
+    sank, ledge = [], []
     for s, e in spans:
         before = [y for t, x, y, z, a in track if s - 1.0 <= t < s]
-        after = [y for t, x, y, z, a in track if e <= t <= e + 6.0]
-        if before and after and min(after) < before[-1] - 300:
-            sank.append((round(before[-1]), round(min(after))))
+        after = [r for r in track if e <= r[0] <= e + 6.0]
+        if not (before and after and min(r[2] for r in after) < before[-1] - 300):
+            continue
+        low = before[-1] - 300
+        drop = next(r for r in after if r[2] < before[-1] - 100)  # where it began to go down
+        let = after[0]
+        moved = ((drop[1] - let[1]) ** 2 + (drop[3] - let[3]) ** 2) ** 0.5
+        stood = any(r[2] < low and re.search(r"StandUp|Wait|Walk|Run|Land", r[4])
+                    for r in track if e <= r[0] <= e + 10.0)
+        (ledge if moved > 60 and stood else sank).append((round(before[-1]), round(min(r[2] for r in after)), round(moved)))
+    if ledge:
+        print(f"info  {who}: fell off a ledge after a hold and stood up below ((y before, lowest y, u moved): {ledge})")
     check(spans and not sank, f"{who}: back on its feet after each hold, not under the floor ({len(spans)} holds; sank: {sank})")
 
 # the held player jumped in its own world while the other still held it (Nexus 2026-11-08: "the guest turns
