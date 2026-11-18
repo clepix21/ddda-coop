@@ -1191,6 +1191,18 @@ void run_line(const char *line)
         if (sscanf(line + 8, "%f %f", &dx, &dz) == 2)
             objects_debug("push", dx, dz);
         _snprintf(g_current, sizeof g_current, "objpush");
+    } else if (strncmp(line, "objgo", 5) == 0) { // objgo [turn]: the Arisen next to the nearest object, facing it (tests)
+        float turn = 0.f;
+        unsigned cls = 0; // objgo <turn> [class hex]: the nearest object of that class
+        sscanf(line + 5, "%f %x", &turn, &cls);
+        char what[16] = "go";
+        if (cls)
+            _snprintf(what, sizeof what, "go:%08X", cls);
+        objects_debug(what, turn, 0.f);
+        _snprintf(g_current, sizeof g_current, "objgo");
+    } else if (strncmp(line, "objlift", 7) == 0) { // objlift: what the Arisen holds, and where (tests)
+        objects_debug("lift", 0.f, 0.f);
+        _snprintf(g_current, sizeof g_current, "objlift");
     } else if (strncmp(line, "objnear", 7) == 0) { // objnear: the objects around, as objects.cpp tracks them
         objects_debug("near", 0.f, 0.f);
         _snprintf(g_current, sizeof g_current, "objnear");

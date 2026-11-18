@@ -2,7 +2,7 @@
 # (saves/ocean.sav, on the coast). The host walks west to the goblins and fights them, the guest walks
 # the same way a little behind. The guest must pair its enemies with the host's and keep them where the
 # host's stand. Prints PASS/FAIL lines and a summary.
-param([ValidateSet("udp", "mock")][string]$Transport = "udp")
+param([ValidateSet("udp", "mock")][string]$Transport = "udp", [string[]]$ExtraIni = @())
 $tools = $PSScriptRoot
 $tests = Join-Path $PSScriptRoot "..\tests"
 $out = "J:\coop-test\re\runs\cassardis_$Transport"
@@ -19,8 +19,8 @@ foreach ($d in $copy1, $copy2) { Get-ChildItem $d -Filter "dump_*" -File -ErrorA
 $run = & (Join-Path $tools "run_pair.ps1") -Seconds 330 -OutDir $out -Shots 150, 220, 300 -GuestSavesFromRole `
     -HostBot (Join-Path $tests "bot_load_game_p2.txt") -GuestBot (Join-Path $tests "bot_load_game_p2.txt") `
     -HostBridge @((Join-Path $tests "cassardis_host.txt")) -GuestBridge @((Join-Path $tests "cassardis_guest.txt")) `
-    -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "shared_world=1", "test_save=J:\coop-test\saves\ocean.sav") + $hostNet) `
-    -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "shared_world=1", "test_save=J:\coop-test\saves\guest_arisen.sav") + $guestNet) 2>$null
+    -HostIni (@("p2_pad=1", "idle_pad=3", "role=host", "port=27101", "bridge=1", "shared_world=1", "test_save=J:\coop-test\saves\ocean.sav") + $hostNet + $ExtraIni) `
+    -GuestIni (@("p2_pad=1", "idle_pad=3", "role=guest", "port=27101", "bridge=1", "shared_world=1", "test_save=J:\coop-test\saves\guest_arisen.sav") + $guestNet + $ExtraIni) 2>$null
 $run | ForEach-Object { "   $_" }
 Copy-Item "$copy1\dump_end_enemies.txt" (Join-Path $out "host_enemies.txt") -ErrorAction SilentlyContinue
 Copy-Item "$copy2\dump_end_enemies.txt" (Join-Path $out "guest_enemies.txt") -ErrorAction SilentlyContinue

@@ -1,0 +1,49 @@
+# Ogre scout (issue #4: an ogre (uEm0900) caught a player in the underground near (2188, 2392), players' logs
+# of 2026-11-16): the underground route, then to that place, waiting there with the enemies logged.
+# iron gate ("Entrer", area load + autosave, blocked by the save guard) -> underground area.
+# Found interactively on 2026-10-26 with the owner's save (Arisen starts at -2661 -4032).
+goto -2350 -4550 60 8000
+goto -2235 -3940 60 9000
+goto -2015 -3546 60 8000
+goto -1669 -2891 60 10000
+goto -1111 -1884 60 14000
+goto 733 -394 80 20000
+# the gate opens when pressed from (570, -413) while pushing east into it, as in the successful
+# runs (a press right after arriving from the south-east did nothing); press twice
+goto 570 -413 30 8000
+goto 733 -394 20 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 1500
+pad 0 2000 0 0 0 0 0 0 150
+wait 10000
+# it did not always open (about 1 run in 3 stayed in front of it, lift suite 2026-10-29): twice more
+# unless the underground (stage 600) is loaded already
+ifstage 600 skip 6
+goto 570 -413 30 8000
+goto 733 -394 20 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 1500
+pad 0 2000 0 0 0 0 0 0 150
+wait 10000
+ifstage 600 skip 6
+goto 570 -413 30 8000
+goto 733 -394 20 2500
+pad 0 2000 0 0 0 0 0 0 150
+wait 1500
+pad 0 2000 0 0 0 0 0 0 150
+wait 10000
+goto 700 900 80 30000
+goto 1500 1700 80 15000
+goto 2050 2250 80 15000
+# the ogre stood on a lower floor (y -3767): put there, 250 u from it
+warpat 1950 -3700 2150
+wait 3000
+where
+units
+wait 20000
+units
+wait 20000
+units
+wait 20000
+units
+wait 30000

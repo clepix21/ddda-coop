@@ -63,8 +63,22 @@ def compare(key, hs, gs, who):
     check(d < 5, f"the other game's copy stands where the {who} put it ({d:.1f} u apart)")
 
 
+def last_put(name):
+    """where a game's last push put its object: from + by (x, z)"""
+    put = None
+    for ln in lines(name):
+        m = re.search(r"objects: push \S+ class \S+ home \([^)]*\) from \((\S+), (\S+), (\S+)\) by \((\S+), (\S+)\)", ln)
+        if m:
+            x, y, z, dx, dz = (float(v) for v in m.groups())
+            put = (x + dx, y, z + dz)
+    return put
+
+
 if hp_keys and len(h) >= 2 and len(g) >= 2:
-    compare(hp_keys[0], h[1], g[1], "host")
+    # the host's put from its own push lines: its second objnear can come after the guest's push already (objects
+    # run 2026-11-18 05:30: host objnear at 46.5 s, the guest's push at 45.8 s: "200 u apart" though both agreed)
+    put = last_put("host.log")
+    compare(hp_keys[0], {hp_keys[0]: put} if put else h[1], g[1], "host")
 if gp_keys and len(h) >= 3 and len(g) >= 3:
     compare(gp_keys[-1], h[-1], g[-1], "guest")
 check(not any("crash?" in ln for ln in lines("host.log") + lines("guest.log")), "no crash")

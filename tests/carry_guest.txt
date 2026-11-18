@@ -1,0 +1,15 @@
+# Carry test, guest: logs the objects around while the host lifts, carries and throws one (carry_host.txt).
+wait 22000
+objnear
+wait 5000
+objnear
+wait 2000
+objnear
+wait 2000
+objnear
+wait 3000
+objnear
+wait 6000
+objnear
+wait 10000
+objnear

@@ -1,0 +1,42 @@
+﻿# Lift probe (ocean.sav, the coast): which object classes RT lifts. For each class seen there: the Arisen next to
+# the nearest one facing it, RT, the action logged (cPlActLift* = lifted).
+wait 25000
+objnear
+objgo 0 C45AFD53
+wait 500
+pad 0 0 0 0 0 0 0 255 400
+wait 700
+actname
+wait 1500
+pad 0 4000 0 0 0 0 0 0 200
+wait 2500
+objgo 0 47CF14D5
+wait 500
+pad 0 0 0 0 0 0 0 255 400
+wait 700
+actname
+wait 1500
+pad 0 4000 0 0 0 0 0 0 200
+wait 2500
+objgo 0 D8569FA1
+wait 500
+pad 0 0 0 0 0 0 0 255 400
+wait 700
+actname
+wait 1500
+pad 0 4000 0 0 0 0 0 0 200
+wait 2500
+objgo 0 01349798
+wait 500
+pad 0 0 0 0 0 0 0 255 400
+wait 700
+actname
+wait 1500
+pad 0 4000 0 0 0 0 0 0 200
+wait 2500
+objgo 3.14 C45AFD53
+wait 500
+pad 0 0 0 0 0 0 0 255 400
+wait 700
+actname
+wait 3000

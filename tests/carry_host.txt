@@ -1,0 +1,40 @@
+# Carry test, host (saves/ocean.sav, the coast): a real lift. The Arisen is put next to the nearest object facing it
+# (objgo), RT lifts it, the Arisen walks with it, X throws it. actname logs the action at each step; objnear the
+# objects around (the guest's log shows whether its copy followed).
+wait 25000
+objnear
+# C45AFD53 lifts (lift probe 2026-11-18: the one at (7343, 4640), facing it with the half turn)
+# walked into it with the stick, so it faces it as a player would (an objgo facing was not enough)
+warpat 7250 29975 4540
+wait 1500
+goto 7343 4640 50 3000
+wait 400
+actname
+pad 0 0 0 0 0 0 0 255 400
+wait 300
+actname
+objlift
+wait 600
+objlift
+wait 600
+actname
+objlift
+objnear
+pad 0 0 0 20000 0 0 0 0 1500
+actname
+objlift
+objnear
+wait 300
+pad 0 4000 0 0 0 0 0 0 200
+wait 300
+actname
+objlift
+wait 500
+objlift
+wait 2500
+actname
+objnear
+wait 6000
+objnear
+wait 10000
+objnear

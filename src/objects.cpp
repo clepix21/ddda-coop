@@ -1,4 +1,4 @@
-﻿// Objects moved by a player (issue #4: "desynced boxes and materials"; carried crates and barrels, thrown or
+// Objects moved by a player (issue #4: "desynced boxes and materials"; carried crates and barrels, thrown or
 // pushed things): each game sends the places of the objects it moves itself, and the others move their copy
 // there. An object is known on every PC by its class and its place when its area loaded (layout data, the same
 // everywhere). The game that moves an object owns it while it moves and 2 s after; meanwhile the others
@@ -10,6 +10,7 @@
 #include <windows.h>
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 #include "game.h"
@@ -158,6 +159,73 @@ int objects_collect(ObjState *out, int cap)
         }
         return true;
     });
+    // A real carry (RT on a jar or a barrel; carry test 2026-11-18): the Arisen's +0x38F0 is the object (kind
+    // +0x3938 = 2), whose +0x40 reads (0, 0, 0) while carried (relative to the holder), so the scan above never
+    // sees it move. It is sent above this Arisen's head instead, and the others' copies follow. Thrown, a jar
+    // broke: its memory took another vtable (01608BB8 -> 01558134) at once; then its copies are sent 30000 u
+    // under where it was (out of sight in the others' games: no way known to break theirs). A thrown object
+    // that stays whole moves on its own afterwards, and the scan sends it as any moved object.
+    static struct {
+        bool active;
+        uintptr_t ptr, vt;
+        uint32_t cls;
+        float home[3], at[3];
+        DWORD released;
+    } carry = {};
+    uintptr_t a = possess_arisen();
+    uintptr_t held = 0;
+    int32_t kind = 0;
+    if (a && mem_safe_read(a + 0x38F0, &held, 4) && mem_safe_read(a + 0x3938, &kind, 4) && held && kind == 2) {
+        Track *t = nullptr;
+        for (int k = 0; k < g_ntracks && !t; ++k)
+            if (g_tracks[k].ptr == held)
+                t = &g_tracks[k];
+        if (t) {
+            if (!carry.active || carry.ptr != held)
+                logf("objects: this Arisen carries %08X (class %08X home (%.0f, %.0f, %.0f))", unsigned(held), t->cls, t->home[0],
+                     t->home[1], t->home[2]);
+            carry.active = true;
+            carry.ptr = held;
+            carry.vt = t->vt;
+            carry.cls = t->cls;
+            memcpy(carry.home, t->home, 12);
+            float at[3] = {me[0], me[1] + 150.f, me[2]};
+            field_to_world(at);
+            memcpy(carry.at, at, 12);
+            t->seen = now; // kept while carried
+            if (n < cap) {
+                ObjState &s = out[n++];
+                s.cls = carry.cls;
+                memcpy(s.home, carry.home, 12);
+                memcpy(s.pos, at, 12);
+                float rot[4] = {0.f, 0.f, 0.f, 1.f};
+                mem_safe_read(held + 0x50, rot, 16);
+                memcpy(s.rot, rot, 16);
+            }
+        }
+    } else if (carry.active) {
+        carry.active = false;
+        carry.released = now | 1;
+    }
+    if (carry.released && now - carry.released < 1500) {
+        uintptr_t vt = 0;
+        if ((!mem_safe_read(carry.ptr, &vt, 4) || vt != carry.vt) && n < cap) { // broken (or freed)
+            static DWORD told = 0;
+            if (told != carry.released) {
+                told = carry.released;
+                logf("objects: the object this Arisen carried (class %08X) is gone: its copies are put out of sight", carry.cls);
+            }
+            ObjState &s = out[n++];
+            s.cls = carry.cls;
+            memcpy(s.home, carry.home, 12);
+            float under[3] = {carry.at[0], carry.at[1] - 30000.f, carry.at[2]};
+            memcpy(s.pos, under, 12);
+            float rot[4] = {0.f, 0.f, 0.f, 1.f};
+            memcpy(s.rot, rot, 16);
+        }
+    } else if (carry.released) {
+        carry.released = 0;
+    }
     // objects gone (broken, picked up, unloaded): out of the table
     int w = 0;
     for (int k = 0; k < g_ntracks; ++k)
@@ -257,8 +325,35 @@ void objects_debug(const char *what, float dx, float dz)
     EnterCriticalSection(&g_lock);
     Track *best = nullptr;
     float bd = 1e30f;
+    // "lift": what the Arisen holds (+0x38F0, kind +0x3938): its vtable, place, and whether objects.cpp tracks it
+    // (a real carry, tests: the lifted object left the tracked list, 2026-11-18 carry run)
+    static uintptr_t s_lifted = 0;
+    if (strcmp(what, "lift") == 0) {
+        uintptr_t h = game::at<uintptr_t>(a, 0x38F0);
+        if (h)
+            s_lifted = h;
+        uintptr_t o = h ? h : s_lifted, vt = 0;
+        float p[3] = {};
+        bool ok = o && mem_safe_read(o, &vt, 4) && mem_safe_read(o + 0x40, p, 12);
+        const char *tracked = "not tracked";
+        for (int k = 0; k < g_ntracks; ++k) // g_lock is held here (taken above)
+            if (g_tracks[k].ptr == o)
+                tracked = "tracked";
+        LeaveCriticalSection(&g_lock);
+        logf("objects: lift: holds %08X (kind %d), last held %08X: vt %08X%s at (%.1f, %.1f, %.1f), %s; Arisen at (%.1f, %.1f, %.1f)",
+             unsigned(h), game::at<int32_t>(a, 0x3938), unsigned(s_lifted), unsigned(vt), ok ? "" : " (unreadable)", p[0], p[1], p[2],
+             tracked, me[0], me[1], me[2]);
+        return;
+    }
+    uint32_t want_cls = 0; // "go:<class hex>": the nearest object of that class
+    if (strncmp(what, "go:", 3) == 0) {
+        want_cls = uint32_t(strtoul(what + 3, nullptr, 16));
+        what = "go";
+    }
     for (int k = 0; k < g_ntracks; ++k) {
         float d = dist2(g_tracks[k].last, me);
+        if (want_cls && g_tracks[k].cls != want_cls)
+            d = 1e30f;
         if (strcmp(what, "near") == 0 && d < 1500.f * 1500.f)
             logf("objects: near %08X class %08X home (%.0f, %.0f, %.0f) at (%.1f, %.1f, %.1f)", unsigned(g_tracks[k].ptr),
                  g_tracks[k].cls, g_tracks[k].home[0], g_tracks[k].home[1], g_tracks[k].home[2], g_tracks[k].last[0],
@@ -266,6 +361,23 @@ void objects_debug(const char *what, float dx, float dz)
         if (d < bd) {
             bd = d;
             best = &g_tracks[k];
+        }
+    }
+    // "go": the Arisen put 60 u from the nearest object, on its side, facing it (a real lift with RT, tests). The
+    // facing: yaw at +0x2578 (forward = (sin, 0, cos)) and the rotation at +0x50 (quaternion about y).
+    if (strcmp(what, "go") == 0 && best) {
+        float ox = best->last[0] - me[0], oz = best->last[2] - me[2];
+        float d = std::sqrt(ox * ox + oz * oz);
+        if (d > 1.f) {
+            float yaw = std::atan2(ox, oz) + dx; // dx: a turn added (tests the convention)
+            float to[3] = {best->last[0] - ox / d * 60.f, me[1], best->last[2] - oz / d * 60.f};
+            for (uintptr_t off : {uintptr_t(0x40), uintptr_t(0xE70), uintptr_t(0xE80), uintptr_t(0x1990)})
+                memcpy(reinterpret_cast<void *>(a + off), to, 12);
+            float q[4] = {0.f, std::sin(yaw / 2.f), 0.f, std::cos(yaw / 2.f)};
+            memcpy(reinterpret_cast<void *>(a + 0x50), q, 16);
+            game::at<float>(a, 0x2578) = yaw;
+            logf("objects: go to %08X class %08X at (%.1f, %.1f, %.1f): Arisen at (%.1f, %.1f), yaw %.2f", unsigned(best->ptr),
+                 best->cls, best->last[0], best->last[1], best->last[2], to[0], to[2], yaw);
         }
     }
     if (strcmp(what, "push") == 0 && best) {
