@@ -1437,7 +1437,11 @@ void shared_apply_transform(uintptr_t ch, int i)
     EnterCriticalSection(&g_cap_lock);
     float vel[3];
     memcpy(vel, g_rp_vel[i], sizeof vel);
-    float age = g_rp_at[i] ? (GetTickCount() - g_rp_at[i]) / 1000.f : 0.f;
+    // a state stamped by the net thread just after this tick was read is a few ms in the future: the
+    // unsigned difference wrapped to about 49 days (logged as -2147483648 ms, the target then put the whole
+    // 0.3 s ahead; background run on GOG 2026-11-22)
+    int age_ms = g_rp_at[i] ? int(GetTickCount() - g_rp_at[i]) : 0;
+    float age = age_ms > 0 ? age_ms / 1000.f : 0.f;
     LeaveCriticalSection(&g_cap_lock);
     float *pos = reinterpret_cast<float *>(ch + 0x40);
     // the last place each player was seen in this area: when it goes to another area its pawn waits
