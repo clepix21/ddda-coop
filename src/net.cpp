@@ -62,7 +62,8 @@ namespace {
 enum MsgType : uint8_t { MSG_INPUT = 1, MSG_SNAP = 2, MSG_ENEMIES = 3, MSG_SAVE_CHUNK = 4, MSG_SAVE_NEED = 5, MSG_CHAR_CHUNK = 6,
                        MSG_PROGRESS = 7, MSG_PROGRESS_ACK = 8, MSG_PSTATE = 9, MSG_LOOT = 10, MSG_FLAGS = 11, MSG_REVIVE = 12, MSG_QUEST = 13,
                        MSG_AREA_ENEMIES = 14, MSG_PING = 15, MSG_PONG = 16, MSG_EVENT = 17, MSG_OBJECTS = 18,
-                       MSG_LOTTERY = 19 }; // 0.11.1; an older version drops a type it does not know
+                       MSG_LOTTERY = 19, // 0.11.1; an older version drops a type it does not know
+                       MSG_HIT = 20 }; // 0.11.2: a guest's own hit on a host enemy
 
 constexpr uintptr_t kYawA = 0x2578, kYawB = 0x257C, kYawC = 0x2654; // facing angle (radians)
 constexpr uintptr_t kAimPitch = 0x32D4; // aim pitch (radians) while aiming a bow or a staff (bridge chdiff, 2026-11-17)
@@ -248,6 +249,13 @@ constexpr int objects_msg_size(int count) { return int(offsetof(ObjectsMsg, o) +
 struct LotteryMsg { // host -> guests every 2 s: its lottery counter (lottery.cpp: the random spawns' seed)
     Header h;
     uint32_t counter;
+};
+struct HitMsg { // guest -> host: its Arisen hit this host enemy (host slot, its spawn entry) for `dmg`
+    Header h;
+    uint8_t host_slot;
+    uint8_t pad[3];
+    uint32_t sid;
+    float dmg;
 };
 constexpr int kSaveChunk = 1024;
 struct SaveChunkMsg {
@@ -1652,6 +1660,39 @@ struct EnemyStats {
 } g_enemy_stats = {};
 DWORD g_last_enemies_rx = 0; // guest: last ENEMIES page received (0 = none)
 
+// A guest's own hits (issue #10, "enemies take a while to die"): on the guest a hit on an enemy the host runs
+// is only felt (enemy_net_block_damage, enemy_net_feel_hit); the HP stayed the host's, so only the guest's
+// pawn here, replaying its attacks, could hurt the host's enemy, and it missed when it stood a little off
+// (deaths 1 to 20 s late in the issue's logs). The guest now sends its Arisen's hits (MSG_HIT); the host
+// applies each one with the game's own damage function on its enemy, and from then on the pawn showing that
+// guest deals no damage of its own (else both would count).
+float g_hit_pending[kEnemySlots] = {};  // host: forwarded damage waiting for that enemy's next finalize
+bool g_hits_from_pawn[kPawns] = {};      // host: the guest shown by this pawn sends its own hits
+int g_hits_received = 0, g_hits_applied = 0, g_hits_sent = 0, g_puppet_hits_blocked = 0;
+
+void enemy_net_hit_received(int k, const HitMsg &m)
+{
+    int p = g_peers[k].pawn;
+    if (p >= 0 && p < kPawns && !g_hits_from_pawn[p]) {
+        g_hits_from_pawn[p] = true;
+        logf("net: hits: the guest on pawn %d sends its own hits: that pawn's own hits on enemies no longer count", p);
+    }
+    if (m.host_slot >= kEnemySlots || !(m.dmg > 0.f && m.dmg < 100000.f))
+        return;
+    EnterCriticalSection(&g_enemy_lock);
+    bool same = g_enemy_tick[m.host_slot] && g_enemy_state[m.host_slot].sid == m.sid && !g_enemy_state[m.host_slot].died;
+    if (same)
+        g_hit_pending[m.host_slot] += m.dmg;
+    ++g_hits_received;
+    LeaveCriticalSection(&g_enemy_lock);
+    static DWORD next_log = 0;
+    if (!next_log || int(GetTickCount() - next_log) >= 0) {
+        next_log = (GetTickCount() + 1000) | 1;
+        logf("net: hits: guest on pawn %d hit enemy #%d for %.1f%s (received %d)", p, m.host_slot, m.dmg,
+             same ? "" : ": not that enemy any more, dropped", g_hits_received);
+    }
+}
+
 // Shared world: whose game runs the enemies around this player (its group: the same stage, within
 // kLeadRange): the host when it is there, else the lowest slot there. The others follow that game's
 // enemies the way guests follow the host's. -1 = none (classic mode, or no one known yet). Stage 200
@@ -2228,6 +2269,9 @@ void receive_all()
         } else if (h->type == MSG_LOTTERY && n == int(sizeof(LotteryMsg))) {
             if (g_role == NET_GUEST && g_shared)
                 lottery_host_counter(reinterpret_cast<LotteryMsg *>(buf)->counter);
+        } else if (h->type == MSG_HIT && n == int(sizeof(HitMsg))) {
+            if (g_role == NET_HOST && g_shared)
+                enemy_net_hit_received(k, *reinterpret_cast<HitMsg *>(buf));
         } else if (h->type == MSG_AREA_ENEMIES && n >= area_msg_size(0)) {
             auto m = reinterpret_cast<AreaEnemiesMsg *>(buf);
             int count = m->count;
@@ -2300,14 +2344,15 @@ void log_enemy_stats(DWORD now)
     g_enemy_stats = {};
     LeaveCriticalSection(&g_enemy_lock);
     if (g_role == NET_HOST)
-        logf("net: enemies: %d live on the host", fresh);
+        logf("net: enemies: %d live on the host; guests' hits %d received, %d applied; %d hits of their pawns dropped",
+             fresh, g_hits_received, g_hits_applied, g_puppet_hits_blocked);
     else
         logf("net: enemies: %d from the host, %d local updates applied, %d new pairs, %d unpaired updates, "
              "worst error %.1f u; local hits %d blocked, %d let through (host: dead), %d deaths forced, %d "
              "guest-only removed, %d hits on the puppets blocked; %d blocked hits played here without the kill; "
-             "%d host actions played",
+             "%d host actions played; %d own hits sent to the host",
              fresh, st.applied, st.matched_new, st.unmatched, st.worst_err, st.blocked, st.allowed, st.forced, st.removed,
-             st.puppet_blocked, st.felt, st.actions);
+             st.puppet_blocked, st.felt, st.actions, g_hits_sent);
 }
 
 // Host: one page of live enemies per call (~30 calls/s), cycling through the table.
@@ -3780,6 +3825,29 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         s.cls = class_hash(slot.name);
         memcpy(s.spawn, slot.spawn, sizeof s.spawn);
         memcpy(s.pos, reinterpret_cast<void *>(em + 0x40), sizeof s.pos);
+        // held or lifted by a party character here (its +0x38F0, in a hold action): a lifted monster's +0x40
+        // is no longer where it is drawn (about (0, 0, 0), or 6000 u off): the guest's copy was sent there,
+        // 30874 u away, and fell and died there 12 s before the host's (issue #10 logs, 2026-11-18 17:54:33).
+        // Sent above the holder's head instead, as the holder's own hold line says (hold_off).
+        {
+            uintptr_t hd = 0;
+            uintptr_t cands[1 + kPawns] = {possess_arisen()};
+            for (int p = 0; p < kPawns; ++p)
+                cands[1 + p] = possess_pawn_ptr(p);
+            for (uintptr_t c : cands)
+                if (c && game::at<uintptr_t>(c, 0x38F0) == em && hold_action(game::at<int32_t>(c, 0x2DD4)))
+                    hd = c;
+            if (hd) {
+                float hx = game::at<float>(hd, 0x40), hy = game::at<float>(hd, 0x44), hz = game::at<float>(hd, 0x48);
+                if (strstr(action_name(hd), "Lift") || !(std::fabs(s.pos[0] - hx) + std::fabs(s.pos[2] - hz) < 300.f)) {
+                    float fx, fz;
+                    facing(hd, fx, fz);
+                    s.pos[0] = hx + fx * 15.f;
+                    s.pos[1] = hy + 180.f;
+                    s.pos[2] = hz + fz * 15.f;
+                }
+            }
+        }
         field_to_world(s.pos); // enemy states travel in world places, as the spawns (issue #4)
         memcpy(s.rot, reinterpret_cast<void *>(em + 0x50), sizeof s.rot);
         s.yaw = game::at<float>(em, kYawA);
@@ -3803,7 +3871,14 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
         EnterCriticalSection(&g_enemy_lock);
         g_enemy_state[i] = s;
         g_enemy_tick[i] = now;
+        float forwarded = g_hit_pending[i];
+        g_hit_pending[i] = 0.f;
         LeaveCriticalSection(&g_enemy_lock);
+        // a guest's own hits on it (MSG_HIT): the game's damage function, its death with it at 0 HP
+        if (forwarded > 0.f && !slot.died && g_role == NET_HOST) {
+            enemies_apply_damage(em, forwarded);
+            ++g_hits_applied;
+        }
         return pending_death;
     }
     int64_t tw = perf_now();
@@ -4015,6 +4090,33 @@ uintptr_t enemy_net_after_finalize(EnemySlot &slot, int i)
     EnemyState s = g_enemy_state[f.host_slot];
     field_to_local(s.pos); // the host's place, in this game's cell
     float *pos = reinterpret_cast<float *>(em + 0x40);
+    // a host place more than 2000 u from the last one taken, within a moment: not a walk (an older host
+    // still sends a lifted or thrown monster's place, about (0, 0, 0): issue #10, 30874 u). It is taken only
+    // once the host has kept sending it for 1.5 s; meanwhile this copy stays where it is.
+    {
+        static float took[kEnemySlots][3] = {};
+        static DWORD took_at[kEnemySlots] = {}, odd_since[kEnemySlots] = {};
+        int hk = f.host_slot;
+        float jx = s.pos[0] - took[hk][0], jy = s.pos[1] - took[hk][1], jz = s.pos[2] - took[hk][2];
+        bool jump = took_at[hk] && now - took_at[hk] < 1000 && f.paired_to == hk + 1 &&
+                    !(jx * jx + jy * jy + jz * jz < 2000.f * 2000.f);
+        if (jump && !odd_since[hk])
+            odd_since[hk] = now | 1;
+        if (jump && now - odd_since[hk] < 1500) {
+            took_at[hk] = now | 1; // still recent: the old place stays the reference
+            static DWORD next_odd_log = 0;
+            if (!next_odd_log || int(now - next_odd_log) >= 0) {
+                next_odd_log = (now + 1000) | 1;
+                logf("net: enemy #%d %s: host #%d's place jumped %.0f u, to (%.0f, %.0f, %.0f): not taken yet", i, slot.name, hk,
+                     std::sqrt(jx * jx + jy * jy + jz * jz), s.pos[0], s.pos[1], s.pos[2]);
+            }
+            LeaveCriticalSection(&g_enemy_lock);
+            return pending_death;
+        }
+        odd_since[hk] = 0;
+        memcpy(took[hk], s.pos, sizeof took[hk]);
+        took_at[hk] = now | 1;
+    }
     float dx = s.pos[0] - pos[0], dy = s.pos[1] - pos[1], dz = s.pos[2] - pos[2];
     float err = std::sqrt(dx * dx + dy * dy + dz * dz);
     ++g_enemy_stats.applied;
@@ -4173,6 +4275,57 @@ bool enemy_net_block_damage(uintptr_t ch)
     }
     LeaveCriticalSection(&g_enemy_lock);
     return block;
+}
+
+// Guest, damage hook: its own Arisen hit `ch`, an enemy whose HP the host runs (the hit was blocked here):
+// sent to the host (MSG_HIT), which applies it. Only while the host leads this group (shared world: the host's
+// game runs these enemies; with another guest leading, that guest's game would, and it gets no hits).
+void enemy_net_forward_hit(uintptr_t ch, float dmg)
+{
+    if (g_role != NET_GUEST || !g_shared || !g_enemy_ready || g_lead != 0 || !(dmg > 0.f))
+        return;
+    HitMsg m = {};
+    bool found = false;
+    EnterCriticalSection(&g_enemy_lock);
+    for (int i = 0; i < kEnemySlots && !found; ++i) {
+        const Follow &f = g_follow[i];
+        if (f.ptr != ch || f.host_slot < 0 || GetTickCount() - f.last > 1000 || g_enemy_state[f.host_slot].died)
+            continue;
+        m.host_slot = uint8_t(f.host_slot);
+        m.sid = g_enemy_state[f.host_slot].sid;
+        found = true;
+    }
+    LeaveCriticalSection(&g_enemy_lock);
+    if (!found)
+        return;
+    m.h = {kMagic, MSG_HIT, ++g_seq};
+    m.dmg = dmg;
+    send_raw(&m, sizeof m);
+    int sent = ++g_hits_sent;
+    static DWORD next_log = 0;
+    if (!next_log || int(GetTickCount() - next_log) >= 0) {
+        next_log = (GetTickCount() + 1000) | 1;
+        logf("net: hits: this Arisen hit host enemy #%d for %.1f: sent to the host (%d sent)", m.host_slot, dmg, sent);
+    }
+}
+
+// Host, damage hook: a hit by the pawn showing a guest that sends its own hits, on an enemy: dropped (that
+// guest's own hit comes as MSG_HIT; a guest on an older version keeps the pawn's hits, as before).
+bool enemy_net_puppet_hit(uintptr_t attacker, uintptr_t target)
+{
+    if (g_role != NET_HOST || !g_shared || !attacker)
+        return false;
+    if (target == possess_arisen())
+        return false;
+    for (int p = 0; p < kPawns; ++p)
+        if (target == possess_pawn_ptr(p))
+            return false;
+    for (int p = 0; p < kPawns; ++p)
+        if (attacker == possess_pawn_ptr(p) && net_puppet(1 + p) && g_hits_from_pawn[p]) {
+            ++g_puppet_hits_blocked;
+            return true;
+        }
+    return false;
 }
 
 // Guest, for a hit enemy_net_block_damage blocked: true when it is an enemy (not a player's pawn) whose

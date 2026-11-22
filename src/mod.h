@@ -310,6 +310,9 @@ const char *enemies_class_of(uintptr_t obj);
 // net.cpp: called under the enemy table lock, right after the enemy's own finalize.
 bool enemy_net_block_damage(uintptr_t ch);
 bool enemy_net_feel_hit(uintptr_t ch); // guest: a blocked hit on a living host enemy plays here, harmless
+void enemy_net_forward_hit(uintptr_t ch, float dmg); // guest: its Arisen's blocked hit, sent to the host (MSG_HIT)
+bool enemy_net_puppet_hit(uintptr_t attacker, uintptr_t target); // host: a hit by a guest's pawn that sends its own hits
+uintptr_t enemies_current_attacker(); // enemies.cpp: the attacker of the hit being applied on this thread (0 = none)
 void net_guest_stage(); // guest, game thread: follow the host's stage changes
 int enemy_net_follow(int local_slot); // guest: host slot it follows, -1 = none // guest: drop local damage to an enemy the host says is alive
 void enemy_net_death(uintptr_t ch); // the game's own death handler (vtable slot 0x120), no hit info

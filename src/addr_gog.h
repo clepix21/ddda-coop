@@ -34,6 +34,7 @@ inline constexpr VaPair kGogMap[] = {
     {0x006E3300, 0x006E1160}, // bytes; loot.cpp:109
     {0x006E3400, 0x006E1260}, // bytes; loot.cpp:109
     {0x006E676E, 0x006E45DE}, // insn; loot.cpp:34
+    {0x0076DB10, 0x0076B2C0}, // insn (insn_map.tsv); enemies.cpp hit apply, 2026-11-22
     {0x00776F50, 0x00774700}, // insn; game.h:38
     {0x0078D6D0, 0x0078AD20}, // insn; quest_sync.cpp:42
     {0x0084BF60, 0x008498D0}, // insn; probe.cpp:179

@@ -1,0 +1,112 @@
+# Guest hits (issue #10): after route_guild_to_underground the guest walks to the nearest small enemy and
+# hits it with X, three rounds. Its own hits must count on the host (MSG_HIT).
+wait 2000
+enear 60 15000 600
+wait 300
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+wait 1500
+actname
+enear 60 15000 600
+wait 300
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+wait 1500
+actname
+enear 60 15000 600
+wait 300
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+pad 0 4000 0 0 0 0 0 0 150
+wait 200
+wait 1500
+actname
+wait 20000

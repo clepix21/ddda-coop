@@ -1,0 +1,8 @@
+# Guest hits (issue #10), host: stays where the route left it, its Arisen does not attack.
+wait 2000
+actname
+wait 30000
+actname
+wait 30000
+actname
+wait 20000

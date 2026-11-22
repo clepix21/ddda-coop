@@ -32,13 +32,53 @@ extern "C" bool __cdecl enemies_damage_filter(uintptr_t entry, float *dmg) asm("
 extern "C" void *g_damage_orig asm("g_damage_orig");
 void *g_damage_orig = nullptr;
 
+// Who hits: FUN_0076DB10 (__stdcall: damage owner, hit record = owner + 0x640, flag) applies a hit and calls
+// the damage function above; the hit record's +0x50 is the attacker (the game reads its +0x2AC8 and its class
+// there; decompiled 2026-11-22, out/decomp_dmg.txt). Kept per thread while the hit is applied.
+using HitApply_t = void(__stdcall *)(uintptr_t, uintptr_t, uint32_t);
+HitApply_t g_hit_orig = nullptr;
+thread_local uintptr_t t_attacker = 0;
+uintptr_t enemies_current_attacker() { return t_attacker; }
+void __stdcall hk_hit_apply(uintptr_t owner, uintptr_t hit, uint32_t flag)
+{
+    uintptr_t prev = t_attacker;
+    t_attacker = hit ? game::at<uintptr_t>(hit, 0x50) : 0;
+    g_hit_orig(owner, hit, flag);
+    t_attacker = prev;
+}
+// a character as the logs name it: the Arisen, a pawn, or "other". Never action_name() here: an attacker
+// can be another object (a shot, a hit box), and action_name read its +0x2DC8 and called a "vtable" there:
+// the guest jumped to 0x00156000 and closed (DEP, guest hits suite 2026-11-22 04:11:43).
+const char *who_is(uintptr_t ch)
+{
+    static const char *pawns[] = {"pawn 0", "pawn 1", "pawn 2"};
+    if (!ch)
+        return "nobody";
+    if (ch == possess_arisen())
+        return "the Arisen";
+    for (int p = 0; p < kPawns && p < 3; ++p)
+        if (ch == possess_pawn_ptr(p))
+            return pawns[p];
+    return "other";
+}
+
 extern "C" bool __cdecl enemies_damage_filter(uintptr_t entry, float *dmg)
 {
     uintptr_t ch = game::at<uintptr_t>(entry, 0x1B4);
+    { // the first 40 hits of a session: who hit whom (checks hit + 0x50)
+        static LONG logged = 0;
+        if (InterlockedIncrement(&logged) <= 40)
+            logf("enemies: hit %.1f on %s (%08X) by %s (%08X)", dmg ? *dmg : 0.f, who_is(ch), unsigned(ch),
+                 who_is(t_attacker), unsigned(t_attacker));
+    }
     if (ch && revive_on_damage(ch, dmg)) // shared world: down instead of dead (revive.cpp)
+        return true;
+    if (ch && enemy_net_puppet_hit(t_attacker, ch)) // host: that guest's own hit comes over the network
         return true;
     if (!ch || !enemy_net_block_damage(ch))
         return false;
+    if (dmg && t_attacker && t_attacker == possess_arisen()) // guest: its own hit counts on the host
+        enemy_net_forward_hit(ch, *dmg);
     if (dmg && enemy_net_feel_hit(ch)) { // played here, never the kill: HP entry +8 stays above 0
         float cap = game::at<float>(entry, 8) - 1.f;
         if (*dmg > cap)
@@ -518,8 +558,12 @@ bool enemies_install()
     MH_STATUS st2 = MH_CreateHook(death, reinterpret_cast<void *>(&hk_death), reinterpret_cast<void **>(&g_death_orig));
     if (st2 == MH_OK)
         st2 = MH_EnableHook(death);
-    logf("enemies: table ready (fed by the finalize hook); hook ApplyDamage %p: %s, EnemyDeath %p: %s", dmg,
-         MH_StatusToString(st), death, MH_StatusToString(st2));
+    void *hit = reinterpret_cast<void *>(game::kHitApply);
+    MH_STATUS st3 = MH_CreateHook(hit, reinterpret_cast<void *>(&hk_hit_apply), reinterpret_cast<void **>(&g_hit_orig));
+    if (st3 == MH_OK)
+        st3 = MH_EnableHook(hit);
+    logf("enemies: table ready (fed by the finalize hook); hook ApplyDamage %p: %s, EnemyDeath %p: %s, HitApply %p: %s", dmg,
+         MH_StatusToString(st), death, MH_StatusToString(st2), hit, MH_StatusToString(st3));
     return st == MH_OK && st2 == MH_OK;
 }
 

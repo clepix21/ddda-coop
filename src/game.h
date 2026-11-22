@@ -56,6 +56,7 @@ constexpr uintptr_t kGsEvent = 0x9E3A8, kGsDay = 0xB8760, kGsDayMs = 0xB8768, kG
                     kGsMinute = 0xB8770, kGsSecond = 0xB8774, kGsTimeSpeed = 0xB877C;
 inline const uintptr_t kStageLoad = game::va(0x004FBD50); // EAX = {stage, point, flag}, ESI = area stack object
 inline const uintptr_t kApplyDamage = game::va(0x00776F50);     // HP entry in EAX, (float damage, char flag), ret 8
+inline const uintptr_t kHitApply = game::va(0x0076DB10);        // __stdcall (damage owner, hit = owner + 0x640, char flag), ret 0xC; hit + 0x50 = attacker
 inline const uintptr_t kEnemyFinalizeRet = game::va(0x00AA9A08); // return address of the FUN_0084BF60 call in uEnemy slot 91
 
 // uPlayerBase layout
