@@ -1,8 +1,8 @@
-DDDA Coop 0.11.1 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam or GOG, 2 to 4 players)
+DDDA Coop 0.11.2 (alpha) - online co-op for Dragon's Dogma: Dark Arisen (Steam or GOG, 2 to 4 players)
 =======================================================================================================
 
 Each player needs the game (Steam or GOG, current version) on their own PC, and this same mod
-version (0.11.1).
+version (0.11.2).
 - Steam: guests must be Steam friends with the host. No IP address or port to set.
 - GOG: players join by IP address (direct IP, UDP port 27101). See "GOG and direct IP" below.
 
@@ -57,6 +57,17 @@ Good to know
 ------------
 - Alpha: keep copies of your saves.
 - If the game folder already has another dinput8.dll (another mod), it is not replaced: remove it first.
+
+What's new in 0.11.2
+--------------------
+- A guest's hits now count on the host's side (issue #10): until now only the host's copy of the guest
+  could hurt the host's monsters, and it often missed, so monsters took several more seconds to die
+  for the guest. A guest's own hits are now sent to the host and applied there.
+- Fixed: a monster lifted or held by the host was seen by the guests at a far-away place (issue #10),
+  and could die there on their screen. It is now seen in the hands of the player holding it.
+- Small monsters can still be killed by the host's copy of a guest; no double damage was seen.
+- Players with 0.11.1 and 0.11.2 can still play together, but a guest's hits only count when both
+  the host and that guest have 0.11.2.
 
 What's new in 0.11.1
 --------------------

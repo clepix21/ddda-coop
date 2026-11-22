@@ -1,4 +1,4 @@
-How to test DDDA Coop 0.11.1 with friends
+How to test DDDA Coop 0.11.2 with friends
 ========================================
 
 Before
@@ -6,7 +6,7 @@ Before
 - Everyone: the game up to date. Steam: Steam friends with the host.
   GOG (or Steam with a GOG friend): direct IP, see "GOG and direct IP" in README.txt; the host's
   address from their "Lobby"; over the internet, UDP port 27101 open on the host's router.
-- Everyone: the same mod version (0.11.1). Unzip it in a folder of its own (not the game folder),
+- Everyone: the same mod version (0.11.2). Unzip it in a folder of its own (not the game folder),
   open DDDA-Coop.exe. It must say "Game version supported".
   Windows may warn that the program is not signed: "More info", then "Run anyway".
 - Keep "Detailed log" on ("Settings").
@@ -26,7 +26,12 @@ Try
 - A friend quits and comes back.
 - A friend explores alone (LB + RB + Y for 1.5 s, or F7) and comes back the same way.
 - Light the lantern; change a piece of gear in the menu.
-- New in 0.11.1, please try:
+- New in 0.11.2, please try:
+  - Guests: fight the host's monsters, bandits too. They should die as soon as they do on the host's
+    screen, not several seconds later.
+  - Host: lift or grab a bandit (RT), walk with it and throw it. The guests should see it in your
+    hands, never far away.
+- From 0.11.1:
   - Enter the same area together (Bitterblack Isle, the underground, the open world): every screen
     should show the same monsters and enemy groups.
   - Lift a jar, a barrel or a crate (RT) and walk with it: the others should see it in your hands.
